@@ -1,0 +1,144 @@
+// =========================
+// ENUMS
+// =========================
+enum UserRole {
+  ADMIN
+  TEACHER
+  STUDENT
+}
+
+enum DocumentKind {
+  PASSPORT
+  CONTRACT
+  CERTIFICATE
+  DIPLOMA
+  MEDICAL
+  OTHER
+}
+
+// =========================
+// AUTH USER (faqat login/auth)
+// =========================
+model User {
+  id        String   @id @default(cuid())
+  role      UserRole
+
+  // login uchun
+  username  String   @unique
+  password  String   // hashed bo‘ladi
+
+  // ixtiyoriy: keyin qo‘shasiz (xohlasangiz)
+  email     String?  @unique
+  phone     String?  @unique
+
+  isActive  Boolean  @default(true)
+
+  // 1:1 profil (role bo‘yicha bittasi bo‘ladi)
+  admin     Admin?
+  teacher   Teacher?
+  student   Student?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// =========================
+// ADMIN PROFILE (ism-familya shu yerda)
+// =========================
+model Admin {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  firstName  String
+  lastName   String
+
+  // rasm
+  avatarName String?
+  avatarPath String?
+
+  // hujjatlar
+  documents  FileDocument[]
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// =========================
+// TEACHER PROFILE
+// =========================
+model Teacher {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  firstName      String
+  lastName       String
+  phone          String?
+  specialization String?
+
+  // rasm
+  avatarName     String?
+  avatarPath     String?
+
+  // hujjatlar
+  documents      FileDocument[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// =========================
+// STUDENT PROFILE
+// =========================
+model Student {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  firstName   String
+  lastName    String
+  phone       String?
+  parentPhone String?
+
+  // rasm
+  avatarName  String?
+  avatarPath  String?
+
+  // hujjatlar
+  documents   FileDocument[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// =========================
+// HUJJATLAR (bitta jadval)
+// =========================
+model FileDocument {
+  id        String       @id @default(cuid())
+  kind      DocumentKind @default(OTHER)
+
+  // siz aytgan: "faylhujjat nomi"
+  fileName  String       // masalan: "passport.pdf"
+  filePath  String       // masalan: "/uploads/docs/passport.pdf"
+
+  title     String?
+  mimeType  String?
+  sizeBytes Int?
+
+  // kimniki (faqat bittasi to‘ladi)
+  adminId   String?
+  teacherId String?
+  studentId String?
+
+  admin     Admin?   @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  teacher   Teacher? @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  student   Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([adminId])
+  @@index([teacherId])
+  @@index([studentId])
+}
