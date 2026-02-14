@@ -1,6 +1,11 @@
-// =========================
-// ENUMS
-// =========================
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
 enum UserRole {
   ADMIN
   TEACHER
@@ -16,125 +21,111 @@ enum DocumentKind {
   OTHER
 }
 
-// =========================
-// AUTH USER (faqat login/auth)
-// =========================
 model User {
-  id        String   @id @default(cuid())
-  role      UserRole
+  id   String   @id @default(cuid())
+  role UserRole
 
-  // login uchun
-  username  String   @unique
-  password  String   // hashed bo‘ladi
+  username String @unique
+  password String
 
-  // ixtiyoriy: keyin qo‘shasiz (xohlasangiz)
-  email     String?  @unique
-  phone     String?  @unique
+  email String? @unique
+  phone String? @unique
 
-  isActive  Boolean  @default(true)
+  isActive Boolean @default(true)
 
-  // 1:1 profil (role bo‘yicha bittasi bo‘ladi)
-  admin     Admin?
-  teacher   Teacher?
-  student   Student?
+  admin   Admin?
+  teacher Teacher?
+  student Student?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-// =========================
-// ADMIN PROFILE (ism-familya shu yerda)
-// =========================
 model Admin {
-  id         String   @id @default(cuid())
-  userId     String   @unique
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  firstName  String
-  lastName   String
-
-  // rasm
-  avatarName String?
-  avatarPath String?
-
-  // hujjatlar
-  documents  FileDocument[]
-
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-}
-
-// =========================
-// TEACHER PROFILE
-// =========================
-model Teacher {
-  id             String   @id @default(cuid())
-  userId         String   @unique
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   firstName      String
   lastName       String
-  phone          String?
+  birthDate      DateTime?
+  yashashManzili String?
+
+  avatarName String?
+  avatarPath String?
+
+  documents FileDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([firstName, lastName, birthDate])
+}
+
+model Teacher {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  firstName      String
+  lastName       String
+  birthDate      DateTime?
+  yashashManzili String?
+
   specialization String?
 
-  // rasm
-  avatarName     String?
-  avatarPath     String?
+  avatarName String?
+  avatarPath String?
 
-  // hujjatlar
-  documents      FileDocument[]
+  documents FileDocument[]
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([firstName, lastName, birthDate])
 }
 
-// =========================
-// STUDENT PROFILE
-// =========================
 model Student {
-  id          String   @id @default(cuid())
-  userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  firstName   String
-  lastName    String
-  phone       String?
+  firstName      String
+  lastName       String
+  birthDate      DateTime?
+  yashashManzili String?
+
   parentPhone String?
 
-  // rasm
-  avatarName  String?
-  avatarPath  String?
+  avatarName String?
+  avatarPath String?
 
-  // hujjatlar
-  documents   FileDocument[]
+  documents FileDocument[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([firstName, lastName, birthDate])
 }
 
-// =========================
-// HUJJATLAR (bitta jadval)
-// =========================
 model FileDocument {
-  id        String       @id @default(cuid())
-  kind      DocumentKind @default(OTHER)
+  id   String       @id @default(cuid())
+  kind DocumentKind @default(OTHER)
 
-  // siz aytgan: "faylhujjat nomi"
-  fileName  String       // masalan: "passport.pdf"
-  filePath  String       // masalan: "/uploads/docs/passport.pdf"
+  fileName String
+  filePath String
 
   title     String?
   mimeType  String?
   sizeBytes Int?
 
-  // kimniki (faqat bittasi to‘ladi)
   adminId   String?
   teacherId String?
   studentId String?
 
-  admin     Admin?   @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  teacher   Teacher? @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  student   Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  admin   Admin?   @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  student Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
