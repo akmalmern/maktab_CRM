@@ -24,5 +24,30 @@ router.post(
   validateBody(createStudentSchema),
   asyncHandler(c.createStudent),
 );
+router.get(
+  "/teachers",
+  requireAuth,
+  requireRole("ADMIN"),
+  asyncHandler(c.getTeachers),
+);
+router.get(
+  "/students",
+  requireAuth,
+  requireRole("ADMIN"),
+  asyncHandler(c.getStudents),
+);
+
+router.delete(
+  "/teachers/:id",
+  requireAuth,
+  requireRole("ADMIN"),
+  asyncHandler(c.deleteTeacher),
+);
+router.delete(
+  "/students/:id",
+  requireAuth,
+  requireRole("ADMIN"),
+  asyncHandler(c.deleteStudent),
+);
 
 module.exports = router;

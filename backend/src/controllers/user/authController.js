@@ -44,4 +44,55 @@ async function login(req, res) {
   res.json({ ok: true, accessToken, role: user.role });
 }
 
-module.exports = { login };
+async function refresh(req, res) {
+  const token = req.cookies?.refreshToken;
+  if (!token) {
+    throw new ApiError(401, "REFRESH_TOKEN_MISSING", "Refresh token topilmadi");
+  }
+
+  let payload;
+  try {
+    payload = verifyRefresh(token);
+  } catch (_e) {
+    throw new ApiError(
+      401,
+      "REFRESH_TOKEN_INVALID",
+      "Refresh token noto'g'ri yoki eskirgan",
+    );
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: payload.sub },
+    select: { id: true, role: true, isActive: true },
+  });
+
+  if (!user || !user.isActive) {
+    throw new ApiError(401, "USER_INVALID", "Foydalanuvchi yaroqsiz");
+  }
+
+  const accessToken = signAccessToken({ sub: user.id, role: user.role });
+  const refreshToken = signRefreshToken({ sub: user.id, role: user.role });
+
+  // Refresh token rotation
+  res.cookie("refreshToken", refreshToken, COOKIE_OPTIONS);
+
+  res.json({
+    ok: true,
+    message: "Token yangilandi",
+    accessToken,
+    role: user.role,
+  });
+}
+
+async function logout(_req, res) {
+  res.clearCookie("refreshToken", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: false,
+    path: "/api/auth",
+  });
+
+  res.json({ ok: true, message: "Tizimdan chiqildi" });
+}
+
+module.exports = { login, refresh, logout };
