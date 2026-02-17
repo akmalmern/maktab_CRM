@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
+import { Button, Card, ConfirmModal, DataTable, Input, Select } from '../components/ui';
 import {
   deleteAvatarThunk,
   deleteDocumentThunk,
@@ -45,11 +46,17 @@ export default function PersonDetailPage() {
 
   const dispatch = useAppDispatch();
   const { detail, actionLoading } = useAppSelector((state) => state.admin);
+  const confirmResolverRef = useRef(null);
 
   const [docForm, setDocForm] = useState({ kind: 'OTHER', title: '', file: null });
   const [avatarFile, setAvatarFile] = useState(null);
   const [editDocId, setEditDocId] = useState(null);
   const [editForm, setEditForm] = useState({ kind: 'OTHER', title: '' });
+  const [confirmState, setConfirmState] = useState({
+    open: false,
+    title: 'Tasdiqlash',
+    message: '',
+  });
 
   async function loadDetail() {
     const result = await dispatch(fetchPersonDetailThunk({ type, id }));
@@ -63,6 +70,16 @@ export default function PersonDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, id]);
 
+  useEffect(
+    () => () => {
+      if (confirmResolverRef.current) {
+        confirmResolverRef.current(false);
+        confirmResolverRef.current = null;
+      }
+    },
+    [],
+  );
+
   const person = detail.data;
   const avatarUrl = person?.avatarPath ? resolveAssetUrl(person.avatarPath) : '';
 
@@ -70,6 +87,22 @@ export default function PersonDetailPage() {
     if (!person) return '-';
     return `${person.firstName} ${person.lastName}`;
   }, [person]);
+  const backLink = type === 'teacher' ? '/admin/teachers' : '/admin/students';
+
+  function askConfirm(message, title = 'Tasdiqlash') {
+    return new Promise((resolve) => {
+      confirmResolverRef.current = resolve;
+      setConfirmState({ open: true, title, message });
+    });
+  }
+
+  function handleConfirmClose(result) {
+    setConfirmState((prev) => ({ ...prev, open: false }));
+    if (confirmResolverRef.current) {
+      confirmResolverRef.current(result);
+      confirmResolverRef.current = null;
+    }
+  }
 
   async function handleUploadDocument(e) {
     e.preventDefault();
@@ -98,7 +131,7 @@ export default function PersonDetailPage() {
   }
 
   async function handleDeleteDocument(docId) {
-    const ok = window.confirm('Hujjat o`chirilsinmi?');
+    const ok = await askConfirm('Hujjat o`chirilsinmi?', "Hujjatni o'chirish");
     if (!ok) return;
 
     const result = await dispatch(deleteDocumentThunk(docId));
@@ -157,7 +190,7 @@ export default function PersonDetailPage() {
   async function handleDeleteAvatar() {
     if (!person?.user?.id) return;
 
-    const ok = window.confirm('Avatar o`chirilsinmi?');
+    const ok = await askConfirm('Avatar o`chirilsinmi?', "Avatarni o'chirish");
     if (!ok) return;
 
     const result = await dispatch(deleteAvatarThunk({ userId: person.user.id }));
@@ -170,11 +203,11 @@ export default function PersonDetailPage() {
   }
 
   if (detail.loading) {
-    return <div className="rounded-xl bg-white p-8 text-center text-slate-500">Yuklanmoqda...</div>;
+    return <Card className="p-8 text-center text-slate-500">Yuklanmoqda...</Card>;
   }
 
   if (detail.error) {
-    return <div className="rounded-xl bg-white p-8 text-center text-rose-600">{detail.error}</div>;
+    return <Card className="p-8 text-center text-rose-600">{detail.error}</Card>;
   }
 
   if (!person) return null;
@@ -183,8 +216,8 @@ export default function PersonDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <Link to="/" className="text-sm font-semibold text-indigo-600 hover:text-indigo-700">
-            {'<-'} Dashboardga qaytish
+          <Link to={backLink} className="text-sm font-semibold text-indigo-600 hover:text-indigo-700">
+            {'<-'} Ro'yxatga qaytish
           </Link>
           <h2 className="mt-1 text-2xl font-bold text-slate-900">{fullName}</h2>
           <p className="text-sm text-slate-500">{type === 'teacher' ? 'Teacher profili' : 'Student profili'}</p>
@@ -192,7 +225,7 @@ export default function PersonDetailPage() {
       </div>
 
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-1">
+        <Card className="lg:col-span-1">
           <div>
             <h4 className="mb-2 text-sm font-semibold text-slate-800">Avatar</h4>
             <div className="mb-3 h-44 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
@@ -203,28 +236,30 @@ export default function PersonDetailPage() {
               )}
             </div>
 
-            <input
+            <Input
               type="file"
               accept="image/*"
               onChange={(e) => setAvatarFile(e.target.files?.[0] || null)}
-              className="w-full text-sm"
+              className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white"
             />
 
             <div className="mt-3 flex gap-2">
-              <button
+              <Button
                 onClick={handleUploadAvatar}
                 disabled={actionLoading}
-                className="rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                size="sm"
+                variant="indigo"
               >
                 Avatar yuklash
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={handleDeleteAvatar}
                 disabled={actionLoading}
-                className="rounded-md bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+                size="sm"
+                variant="danger"
               >
                 Avatar o`chirish
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -245,159 +280,150 @@ export default function PersonDetailPage() {
               </p>
               {type === 'teacher' && (
                 <p>
-                  <span className="font-semibold">Mutaxassislik:</span> {person.specialization || '-'}
+                  <span className="font-semibold">Fan:</span> {person.subject?.name || '-'}
                 </p>
               )}
               {type === 'student' && (
-                <p>
-                  <span className="font-semibold">Ota-ona telefoni:</span> {person.parentPhone || '-'}
-                </p>
+                <>
+                  <p>
+                    <span className="font-semibold">Sinf:</span>{' '}
+                    {person.enrollments?.[0]?.classroom
+                      ? `${person.enrollments[0].classroom.name} (${person.enrollments[0].classroom.academicYear})`
+                      : '-'}
+                  </p>
+                  <p>
+                    <span className="font-semibold">Ota-ona telefoni:</span> {person.parentPhone || '-'}
+                  </p>
+                </>
               )}
             </div>
           </div>
-        </div>
+        </Card>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
+        <Card className="lg:col-span-2">
           <h3 className="text-lg font-semibold text-slate-900">Hujjatlar</h3>
 
           <form onSubmit={handleUploadDocument} className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-4">
-            <select
+            <Select
               value={docForm.kind}
               onChange={(e) => setDocForm((prev) => ({ ...prev, kind: e.target.value }))}
-              className="rounded-md border border-slate-300 px-2 py-2 text-sm"
             >
               {DOC_KINDS.map((kind) => (
                 <option key={kind} value={kind}>
                   {kind}
                 </option>
               ))}
-            </select>
+            </Select>
 
-            <input
+            <Input
               type="text"
               value={docForm.title}
               onChange={(e) => setDocForm((prev) => ({ ...prev, title: e.target.value }))}
               placeholder="Sarlavha"
-              className="rounded-md border border-slate-300 px-2 py-2 text-sm"
             />
 
-            <input
+            <Input
               type="file"
               onChange={(e) => setDocForm((prev) => ({ ...prev, file: e.target.files?.[0] || null }))}
-              className="text-sm"
+              className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white"
             />
 
-            <button
+            <Button
               type="submit"
               disabled={actionLoading}
-              className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              variant="success"
             >
               Hujjat qo`shish
-            </button>
+            </Button>
           </form>
 
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
-                <tr>
-                  <th className="px-3 py-2">Nomi</th>
-                  <th className="px-3 py-2">Turi</th>
-                  <th className="px-3 py-2">Hajmi</th>
-                  <th className="px-3 py-2">Sana</th>
-                  <th className="px-3 py-2">Amallar</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(person.documents || []).map((doc) => (
-                  <tr key={doc.id} className="border-b border-slate-100">
-                    <td className="px-3 py-3">{doc.title || doc.fileName}</td>
-                    <td className="px-3 py-3">{doc.kind}</td>
-                    <td className="px-3 py-3">{formatBytes(doc.sizeBytes)}</td>
-                    <td className="px-3 py-3">{formatDate(doc.createdAt)}</td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => handleDownload(doc)}
-                          className="rounded-md bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-white"
-                        >
-                          Download
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            setEditDocId(doc.id);
-                            setEditForm({ kind: doc.kind || 'OTHER', title: doc.title || '' });
-                          }}
-                          className="rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white"
-                        >
-                          Edit
-                        </button>
-
-                        <button
-                          onClick={() => handleDeleteDocument(doc.id)}
-                          className="rounded-md bg-rose-600 px-2.5 py-1.5 text-xs font-semibold text-white"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {!person.documents?.length && (
-                  <tr>
-                    <td className="px-3 py-6 text-center text-slate-500" colSpan={5}>
-                      Hujjatlar mavjud emas
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+          <div className="mt-4">
+            <DataTable
+              rows={person.documents || []}
+              emptyText="Hujjatlar mavjud emas"
+              columns={[
+                { key: 'title', header: 'Nomi', render: (doc) => doc.title || doc.fileName },
+                { key: 'kind', header: 'Turi', render: (doc) => doc.kind },
+                { key: 'sizeBytes', header: 'Hajmi', render: (doc) => formatBytes(doc.sizeBytes) },
+                { key: 'createdAt', header: 'Sana', render: (doc) => formatDate(doc.createdAt) },
+                {
+                  key: 'actions',
+                  header: 'Amallar',
+                  render: (doc) => (
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" onClick={() => handleDownload(doc)}>
+                        Download
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="indigo"
+                        onClick={() => {
+                          setEditDocId(doc.id);
+                          setEditForm({ kind: doc.kind || 'OTHER', title: doc.title || '' });
+                        }}
+                      >
+                        Edit
+                      </Button>
+                      <Button size="sm" variant="danger" onClick={() => handleDeleteDocument(doc.id)}>
+                        Delete
+                      </Button>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </div>
 
           {editDocId && (
             <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3">
               <p className="mb-2 text-sm font-semibold text-amber-800">Hujjatni yangilash</p>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                <select
+                <Select
                   value={editForm.kind}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, kind: e.target.value }))}
-                  className="rounded-md border border-amber-300 px-2 py-2 text-sm"
                 >
                   {DOC_KINDS.map((kind) => (
                     <option key={kind} value={kind}>
                       {kind}
                     </option>
                   ))}
-                </select>
+                </Select>
 
-                <input
+                <Input
                   type="text"
                   value={editForm.title}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, title: e.target.value }))}
-                  className="rounded-md border border-amber-300 px-2 py-2 text-sm"
                   placeholder="Yangi sarlavha"
                 />
 
                 <div className="flex gap-2">
-                  <button
+                  <Button
                     onClick={handleSaveDocument}
                     disabled={actionLoading}
-                    className="rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white"
+                    variant="success"
                   >
                     Saqlash
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     onClick={() => setEditDocId(null)}
-                    className="rounded-md border border-amber-500 px-3 py-2 text-sm font-semibold text-amber-700"
+                    variant="secondary"
                   >
                     Bekor qilish
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
           )}
-        </div>
+        </Card>
       </section>
+
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        onCancel={() => handleConfirmClose(false)}
+        onConfirm={() => handleConfirmClose(true)}
+      />
     </div>
   );
 }

@@ -21,6 +21,15 @@ enum DocumentKind {
   OTHER
 }
 
+enum HaftaKuni {
+  DUSHANBA
+  SESHANBA
+  CHORSHANBA
+  PAYSHANBA
+  JUMA
+  SHANBA
+}
+
 model User {
   id   String   @id @default(cuid())
   role UserRole
@@ -72,17 +81,20 @@ model Teacher {
   birthDate      DateTime?
   yashashManzili String?
 
-  specialization String?
+  subjectId String?
+  subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
 
   avatarName String?
   avatarPath String?
 
   documents FileDocument[]
+  darsJadvallari DarsJadvali[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([firstName, lastName, birthDate])
+  @@index([subjectId])
 }
 
 model Student {
@@ -101,6 +113,7 @@ model Student {
   avatarPath String?
 
   documents FileDocument[]
+  enrollments Enrollment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -132,4 +145,95 @@ model FileDocument {
   @@index([adminId])
   @@index([teacherId])
   @@index([studentId])
+}
+
+model Subject {
+  id   String @id @default(cuid())
+  name String @unique
+
+  teachers Teacher[]
+  darsJadvallari DarsJadvali[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Classroom {
+  id           String @id @default(cuid())
+  name         String
+  academicYear String
+  isArchived   Boolean @default(false)
+
+  enrollments Enrollment[]
+  darsJadvallari DarsJadvali[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, academicYear])
+  @@index([isArchived])
+}
+
+model Enrollment {
+  id String @id @default(cuid())
+
+  studentId   String
+  classroomId String
+
+  startDate DateTime @default(now())
+  endDate   DateTime?
+  isActive  Boolean  @default(true)
+
+  student   Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([classroomId])
+  @@index([isActive])
+}
+
+model VaqtOraliq {
+  id String @id @default(cuid())
+
+  nomi            String
+  boshlanishVaqti String
+  tugashVaqti     String
+  tartib          Int
+
+  darsJadvallari DarsJadvali[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([boshlanishVaqti, tugashVaqti])
+  @@unique([tartib])
+}
+
+model DarsJadvali {
+  id String @id @default(cuid())
+
+  sinfId       String
+  oqituvchiId  String
+  fanId        String
+  haftaKuni    HaftaKuni
+  vaqtOraliqId String
+  oquvYili     String
+
+  sinf       Classroom  @relation(fields: [sinfId], references: [id], onDelete: Restrict)
+  oqituvchi  Teacher    @relation(fields: [oqituvchiId], references: [id], onDelete: Restrict)
+  fan        Subject    @relation(fields: [fanId], references: [id], onDelete: Restrict)
+  vaqtOraliq VaqtOraliq @relation(fields: [vaqtOraliqId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sinfId])
+  @@index([oqituvchiId])
+  @@index([fanId])
+  @@index([vaqtOraliqId])
+  @@unique([sinfId, haftaKuni, vaqtOraliqId, oquvYili])
+  @@unique([oqituvchiId, haftaKuni, vaqtOraliqId, oquvYili])
 }

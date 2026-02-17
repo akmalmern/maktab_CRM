@@ -67,6 +67,207 @@ export const fetchStudentsThunk = createAsyncThunk(
   },
 );
 
+export const fetchSubjectsThunk = createAsyncThunk(
+  'admin/fetchSubjects',
+  async (_, { getState, rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: '/api/admin/subjects',
+        token: getToken(getState),
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const fetchClassroomsThunk = createAsyncThunk(
+  'admin/fetchClassrooms',
+  async (_, { getState, rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: '/api/admin/classrooms',
+        token: getToken(getState),
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const createSubjectThunk = createAsyncThunk(
+  'admin/createSubject',
+  async (payload, { getState, rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: '/api/admin/subjects',
+        method: 'POST',
+        token: getToken(getState),
+        body: payload,
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const deleteSubjectThunk = createAsyncThunk(
+  'admin/deleteSubject',
+  async (subjectId, { getState, rejectWithValue }) => {
+    try {
+      await apiRequest({
+        path: `/api/admin/subjects/${subjectId}`,
+        method: 'DELETE',
+        token: getToken(getState),
+      });
+      return subjectId;
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const createClassroomThunk = createAsyncThunk(
+  'admin/createClassroom',
+  async (payload, { getState, rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: '/api/admin/classrooms',
+        method: 'POST',
+        token: getToken(getState),
+        body: payload,
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const deleteClassroomThunk = createAsyncThunk(
+  'admin/deleteClassroom',
+  async (classroomId, { getState, rejectWithValue }) => {
+    try {
+      await apiRequest({
+        path: `/api/admin/classrooms/${classroomId}`,
+        method: 'DELETE',
+        token: getToken(getState),
+      });
+      return classroomId;
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const fetchVaqtOraliqlariThunk = createAsyncThunk(
+  'admin/fetchVaqtOraliqlari',
+  async (_, { getState, rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: '/api/admin/vaqt-oraliqlari',
+        token: getToken(getState),
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const createVaqtOraliqThunk = createAsyncThunk(
+  'admin/createVaqtOraliq',
+  async (payload, { getState, rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: '/api/admin/vaqt-oraliqlari',
+        method: 'POST',
+        token: getToken(getState),
+        body: payload,
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const deleteVaqtOraliqThunk = createAsyncThunk(
+  'admin/deleteVaqtOraliq',
+  async (id, { getState, rejectWithValue }) => {
+    try {
+      await apiRequest({
+        path: `/api/admin/vaqt-oraliqlari/${id}`,
+        method: 'DELETE',
+        token: getToken(getState),
+      });
+      return id;
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const fetchDarsJadvaliThunk = createAsyncThunk(
+  'admin/fetchDarsJadvali',
+  async (params = {}, { getState, rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: '/api/admin/dars-jadval',
+        token: getToken(getState),
+        query: params,
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const createDarsJadvaliThunk = createAsyncThunk(
+  'admin/createDarsJadvali',
+  async (payload, { getState, rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: '/api/admin/dars-jadval',
+        method: 'POST',
+        token: getToken(getState),
+        body: payload,
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const deleteDarsJadvaliThunk = createAsyncThunk(
+  'admin/deleteDarsJadvali',
+  async (id, { getState, rejectWithValue }) => {
+    try {
+      await apiRequest({
+        path: `/api/admin/dars-jadval/${id}`,
+        method: 'DELETE',
+        token: getToken(getState),
+      });
+      return id;
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const updateDarsJadvaliThunk = createAsyncThunk(
+  'admin/updateDarsJadvali',
+  async ({ id, payload }, { getState, rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: `/api/admin/dars-jadval/${id}`,
+        method: 'PATCH',
+        token: getToken(getState),
+        body: payload,
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
 export const deleteTeacherThunk = createAsyncThunk(
   'admin/deleteTeacher',
   async (teacherId, { getState, rejectWithValue }) => {
@@ -103,7 +304,7 @@ export const fetchPersonDetailThunk = createAsyncThunk(
   'admin/fetchPersonDetail',
   async ({ type, id }, { getState, rejectWithValue }) => {
     try {
-      const path = type === 'teacher' ? `/api/admin-detail/teachers/${id}` : `/api/admin-detail/students/${id}`;
+      const path = type === 'teacher' ? `/api/admin/details/teachers/${id}` : `/api/admin/details/students/${id}`;
       const data = await apiRequest({ path, token: getToken(getState) });
       return { type, id, data: type === 'teacher' ? data.teacher : data.student };
     } catch (error) {
@@ -125,7 +326,7 @@ export const uploadDocumentThunk = createAsyncThunk(
       if (ownerType === 'student') formData.append('studentId', ownerId);
 
       return await apiRequest({
-        path: '/api/docs',
+        path: '/api/admin/docs',
         method: 'POST',
         token: getToken(getState),
         body: formData,
@@ -142,7 +343,7 @@ export const updateDocumentThunk = createAsyncThunk(
   async ({ id, kind, title }, { getState, rejectWithValue }) => {
     try {
       return await apiRequest({
-        path: `/api/docs/${id}`,
+        path: `/api/admin/docs/${id}`,
         method: 'PATCH',
         token: getToken(getState),
         body: { kind, title },
@@ -158,7 +359,7 @@ export const deleteDocumentThunk = createAsyncThunk(
   async (id, { getState, rejectWithValue }) => {
     try {
       await apiRequest({
-        path: `/api/docs/${id}`,
+        path: `/api/admin/docs/${id}`,
         method: 'DELETE',
         token: getToken(getState),
       });
@@ -178,7 +379,7 @@ export const uploadAvatarThunk = createAsyncThunk(
       formData.append('userId', userId);
 
       return await apiRequest({
-        path: '/api/avatars',
+        path: '/api/admin/avatars',
         method: 'POST',
         token: getToken(getState),
         body: formData,
@@ -195,7 +396,7 @@ export const deleteAvatarThunk = createAsyncThunk(
   async ({ userId }, { getState, rejectWithValue }) => {
     try {
       return await apiRequest({
-        path: '/api/avatars',
+        path: '/api/admin/avatars',
         method: 'DELETE',
         token: getToken(getState),
         body: { userId },
@@ -211,7 +412,7 @@ export const downloadDocumentThunk = createAsyncThunk(
   async ({ id, fileName }, { rejectWithValue }) => {
     try {
       const response = await api.request({
-        url: `/api/docs/${id}/download`,
+        url: `/api/admin/docs/${id}/download`,
         method: 'GET',
         responseType: 'blob',
       });
@@ -247,6 +448,26 @@ const adminSlice = createSlice({
   initialState: {
     teachers: { ...initialListState },
     students: { ...initialListState },
+    subjects: {
+      items: [],
+      loading: false,
+      error: null,
+    },
+    classrooms: {
+      items: [],
+      loading: false,
+      error: null,
+    },
+    vaqtOraliqlari: {
+      items: [],
+      loading: false,
+      error: null,
+    },
+    darsJadvali: {
+      items: [],
+      loading: false,
+      error: null,
+    },
     detail: {
       type: null,
       id: null,
@@ -297,6 +518,54 @@ const adminSlice = createSlice({
         state.students.loading = false;
         state.students.error = action.payload || 'Studentlar olinmadi';
       })
+      .addCase(fetchSubjectsThunk.pending, (state) => {
+        state.subjects.loading = true;
+        state.subjects.error = null;
+      })
+      .addCase(fetchSubjectsThunk.fulfilled, (state, action) => {
+        state.subjects.loading = false;
+        state.subjects.items = action.payload.subjects || [];
+      })
+      .addCase(fetchSubjectsThunk.rejected, (state, action) => {
+        state.subjects.loading = false;
+        state.subjects.error = action.payload || 'Fanlar olinmadi';
+      })
+      .addCase(fetchClassroomsThunk.pending, (state) => {
+        state.classrooms.loading = true;
+        state.classrooms.error = null;
+      })
+      .addCase(fetchClassroomsThunk.fulfilled, (state, action) => {
+        state.classrooms.loading = false;
+        state.classrooms.items = action.payload.classrooms || [];
+      })
+      .addCase(fetchClassroomsThunk.rejected, (state, action) => {
+        state.classrooms.loading = false;
+        state.classrooms.error = action.payload || 'Sinflar olinmadi';
+      })
+      .addCase(fetchVaqtOraliqlariThunk.pending, (state) => {
+        state.vaqtOraliqlari.loading = true;
+        state.vaqtOraliqlari.error = null;
+      })
+      .addCase(fetchVaqtOraliqlariThunk.fulfilled, (state, action) => {
+        state.vaqtOraliqlari.loading = false;
+        state.vaqtOraliqlari.items = action.payload.vaqtOraliqlari || [];
+      })
+      .addCase(fetchVaqtOraliqlariThunk.rejected, (state, action) => {
+        state.vaqtOraliqlari.loading = false;
+        state.vaqtOraliqlari.error = action.payload || 'Vaqt oraliqlari olinmadi';
+      })
+      .addCase(fetchDarsJadvaliThunk.pending, (state) => {
+        state.darsJadvali.loading = true;
+        state.darsJadvali.error = null;
+      })
+      .addCase(fetchDarsJadvaliThunk.fulfilled, (state, action) => {
+        state.darsJadvali.loading = false;
+        state.darsJadvali.items = action.payload.darslar || [];
+      })
+      .addCase(fetchDarsJadvaliThunk.rejected, (state, action) => {
+        state.darsJadvali.loading = false;
+        state.darsJadvali.error = action.payload || 'Dars jadvali olinmadi';
+      })
 
       .addCase(fetchPersonDetailThunk.pending, (state) => {
         state.detail.loading = true;
@@ -320,6 +589,10 @@ const adminSlice = createSlice({
           action.type.endsWith('/pending') &&
           !action.type.includes('fetchTeachers') &&
           !action.type.includes('fetchStudents') &&
+          !action.type.includes('fetchSubjects') &&
+          !action.type.includes('fetchClassrooms') &&
+          !action.type.includes('fetchVaqtOraliqlari') &&
+          !action.type.includes('fetchDarsJadvali') &&
           !action.type.includes('fetchPersonDetail'),
         (state) => {
           state.actionLoading = true;
@@ -332,6 +605,10 @@ const adminSlice = createSlice({
           action.type.endsWith('/fulfilled') &&
           !action.type.includes('fetchTeachers') &&
           !action.type.includes('fetchStudents') &&
+          !action.type.includes('fetchSubjects') &&
+          !action.type.includes('fetchClassrooms') &&
+          !action.type.includes('fetchVaqtOraliqlari') &&
+          !action.type.includes('fetchDarsJadvali') &&
           !action.type.includes('fetchPersonDetail'),
         (state) => {
           state.actionLoading = false;
@@ -343,6 +620,10 @@ const adminSlice = createSlice({
           action.type.endsWith('/rejected') &&
           !action.type.includes('fetchTeachers') &&
           !action.type.includes('fetchStudents') &&
+          !action.type.includes('fetchSubjects') &&
+          !action.type.includes('fetchClassrooms') &&
+          !action.type.includes('fetchVaqtOraliqlari') &&
+          !action.type.includes('fetchDarsJadvali') &&
           !action.type.includes('fetchPersonDetail'),
         (state, action) => {
           state.actionLoading = false;

@@ -7,39 +7,36 @@ const {
   verifyRefresh,
 } = require("../../utils/tokens");
 
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  sameSite: "lax",
-  secure: false, // prod: true (https)
-  path: "/api/auth",
-  maxAge: 7 * 24 * 60 * 60 * 1000,
-};
+function getCookieOptions() {
+  const isProd = process.env.NODE_ENV === "production";
+  return {
+    httpOnly: true,
+    sameSite: isProd ? "none" : "lax",
+    secure: isProd,
+    path: "/api/auth",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  };
+}
 
 async function login(req, res) {
   const { username, password } = req.body;
-  if (!username || !password)
+  if (!username || !password) {
     throw new ApiError(400, "VALIDATION_ERROR", "username/password majburiy");
+  }
 
   const user = await prisma.user.findUnique({ where: { username } });
-  if (!user || !user.isActive)
-    throw new ApiError(
-      401,
-      "INVALID_CREDENTIALS",
-      "Login yoki parol noto‘g‘ri",
-    );
+  if (!user || !user.isActive) {
+    throw new ApiError(401, "INVALID_CREDENTIALS", "Login yoki parol noto'g'ri");
+  }
 
   const ok = await bcrypt.compare(password, user.password);
-  if (!ok)
-    throw new ApiError(
-      401,
-      "INVALID_CREDENTIALS",
-      "Login yoki parol noto‘g‘ri",
-    );
+  if (!ok) {
+    throw new ApiError(401, "INVALID_CREDENTIALS", "Login yoki parol noto'g'ri");
+  }
 
   const accessToken = signAccessToken({ sub: user.id, role: user.role });
   const refreshToken = signRefreshToken({ sub: user.id, role: user.role });
-
-  res.cookie("refreshToken", refreshToken, COOKIE_OPTIONS);
+  res.cookie("refreshToken", refreshToken, getCookieOptions());
 
   res.json({ ok: true, accessToken, role: user.role });
 }
@@ -65,16 +62,13 @@ async function refresh(req, res) {
     where: { id: payload.sub },
     select: { id: true, role: true, isActive: true },
   });
-
   if (!user || !user.isActive) {
     throw new ApiError(401, "USER_INVALID", "Foydalanuvchi yaroqsiz");
   }
 
   const accessToken = signAccessToken({ sub: user.id, role: user.role });
   const refreshToken = signRefreshToken({ sub: user.id, role: user.role });
-
-  // Refresh token rotation
-  res.cookie("refreshToken", refreshToken, COOKIE_OPTIONS);
+  res.cookie("refreshToken", refreshToken, getCookieOptions());
 
   res.json({
     ok: true,
@@ -86,12 +80,9 @@ async function refresh(req, res) {
 
 async function logout(_req, res) {
   res.clearCookie("refreshToken", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: false,
-    path: "/api/auth",
+    ...getCookieOptions(),
+    maxAge: undefined,
   });
-
   res.json({ ok: true, message: "Tizimdan chiqildi" });
 }
 

@@ -1,35 +1,6 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
 import { apiRequest, getErrorMessage } from '../../lib/apiClient';
 
-const STORAGE_KEY = 'crm_auth';
-
-function loadAuthState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { accessToken: null, role: null };
-
-    const parsed = JSON.parse(raw);
-    return {
-      accessToken: parsed.accessToken || null,
-      role: parsed.role || null,
-    };
-  } catch {
-    return { accessToken: null, role: null };
-  }
-}
-
-function persistAuthState(state) {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({
-      accessToken: state.accessToken,
-      role: state.role,
-    }),
-  );
-}
-
-const persisted = loadAuthState();
-
 export const loginThunk = createAsyncThunk(
   'auth/login',
   async (credentials, { rejectWithValue }) => {
@@ -50,9 +21,9 @@ export const loginThunk = createAsyncThunk(
 const authSlice = createSlice({
   name: 'auth',
   initialState: {
-    accessToken: persisted.accessToken,
-    role: persisted.role,
-    isAuthenticated: Boolean(persisted.accessToken),
+    accessToken: null,
+    role: null,
+    isAuthenticated: false,
     loading: false,
     error: null,
   },
@@ -62,14 +33,12 @@ const authSlice = createSlice({
       state.role = action.payload.role || null;
       state.isAuthenticated = Boolean(action.payload.accessToken);
       state.error = null;
-      persistAuthState(state);
     },
     logout(state) {
       state.accessToken = null;
       state.role = null;
       state.isAuthenticated = false;
       state.error = null;
-      persistAuthState(state);
     },
     clearAuthError(state) {
       state.error = null;
@@ -86,7 +55,6 @@ const authSlice = createSlice({
         state.accessToken = action.payload.accessToken;
         state.role = action.payload.role;
         state.isAuthenticated = true;
-        persistAuthState(state);
       })
       .addCase(loginThunk.rejected, (state, action) => {
         state.loading = false;

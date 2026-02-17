@@ -4,7 +4,7 @@ const { ApiError } = require("../../utils/apiError");
 function withDownloadUrl(doc) {
   return {
     ...doc,
-    downloadUrl: `/api/docs/${doc.id}/download`,
+    downloadUrl: `/api/admin/docs/${doc.id}/download`,
   };
 }
 
@@ -14,6 +14,20 @@ async function getStudentDetail(req, res) {
   const student = await prisma.student.findUnique({
     where: { id },
     include: {
+      enrollments: {
+        where: { isActive: true },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        include: {
+          classroom: {
+            select: {
+              id: true,
+              name: true,
+              academicYear: true,
+            },
+          },
+        },
+      },
       user: {
         select: {
           id: true,
@@ -49,6 +63,12 @@ async function getTeacherDetail(req, res) {
   const teacher = await prisma.teacher.findUnique({
     where: { id },
     include: {
+      subject: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
       user: {
         select: {
           id: true,
