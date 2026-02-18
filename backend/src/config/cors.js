@@ -16,6 +16,7 @@ function buildCorsOptions() {
   const allowedOrigins = new Set(getAllowedOrigins());
   return {
     credentials: true,
+    exposedHeaders: ["Content-Disposition", "Content-Type"],
     origin(origin, callback) {
       // Allow non-browser clients and same-origin server tools
       if (!origin) return callback(null, true);

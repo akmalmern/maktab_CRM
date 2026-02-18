@@ -1,0 +1,22 @@
+import { useNavigate } from 'react-router-dom';
+import { Button, Card } from '../../components/ui';
+
+export default function TeacherHomePage() {
+  const navigate = useNavigate();
+
+  return (
+    <Card title="Teacher panel" subtitle="Bu bo'limda o'qituvchi o'z dars jadvali va studentlar ro'yxatini ko'radi.">
+      <div className="flex gap-2">
+        <Button variant="indigo" onClick={() => navigate('/teacher/jadval')}>
+          Mening dars jadvalim
+        </Button>
+        <Button variant="secondary" onClick={() => navigate('/teacher/davomat')}>
+          Davomat jurnali
+        </Button>
+        <Button variant="secondary" onClick={() => navigate('/teacher/baholar')}>
+          Baholar
+        </Button>
+      </div>
+    </Card>
+  );
+}

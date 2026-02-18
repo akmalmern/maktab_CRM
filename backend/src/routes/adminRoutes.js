@@ -8,6 +8,9 @@ const people = require("../controllers/admin/peopleController");
 const subjects = require("../controllers/admin/subjectController");
 const classrooms = require("../controllers/admin/classroomController");
 const jadval = require("../controllers/admin/jadvalController");
+const attendance = require("../controllers/admin/attendanceController");
+const grades = require("../controllers/admin/gradeController");
+const finance = require("../controllers/admin/financeController");
 const {
   createTeacherSchema,
   createStudentSchema,
@@ -25,6 +28,16 @@ const {
   listDarsJadvaliQuerySchema,
   idParamSchema,
 } = require("../validators/jadvalSchemas");
+const { adminHisobotQuerySchema } = require("../validators/attendanceSchemas");
+const { listBaholarQuerySchema } = require("../validators/gradeSchemas");
+const {
+  financeSettingsSchema,
+  financeStudentsQuerySchema,
+  studentIdParamSchema,
+  tolovIdParamSchema,
+  createPaymentSchema,
+  financeExportQuerySchema,
+} = require("../validators/financeSchemas");
 const SubjectIdParamSchema = z.object({ id: z.string().cuid() });
 const ClassroomIdParamSchema = z.object({ id: z.string().cuid() });
 
@@ -161,6 +174,92 @@ router.delete(
   requireRole("ADMIN"),
   validate({ params: idParamSchema }),
   asyncHandler(jadval.deleteDarsJadvali),
+);
+
+router.get(
+  "/davomat/hisobot",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ query: adminHisobotQuerySchema }),
+  asyncHandler(attendance.getAttendanceReport),
+);
+router.get(
+  "/davomat/hisobot/export/pdf",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ query: adminHisobotQuerySchema }),
+  asyncHandler(attendance.exportAttendanceReportPdf),
+);
+router.get(
+  "/davomat/hisobot/export/xlsx",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ query: adminHisobotQuerySchema }),
+  asyncHandler(attendance.exportAttendanceReportXlsx),
+);
+
+router.get(
+  "/baholar",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ query: listBaholarQuerySchema }),
+  asyncHandler(grades.getAdminBaholar),
+);
+
+router.get(
+  "/moliya/settings",
+  requireAuth,
+  requireRole("ADMIN"),
+  asyncHandler(finance.getFinanceSettings),
+);
+router.patch(
+  "/moliya/settings",
+  requireAuth,
+  requireRole("ADMIN"),
+  validateBody(financeSettingsSchema),
+  asyncHandler(finance.upsertFinanceSettings),
+);
+router.get(
+  "/moliya/students",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ query: financeStudentsQuerySchema }),
+  asyncHandler(finance.getFinanceStudents),
+);
+router.get(
+  "/moliya/students/export/xlsx",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ query: financeExportQuerySchema }),
+  asyncHandler(finance.exportDebtorsXlsx),
+);
+router.get(
+  "/moliya/students/export/pdf",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ query: financeExportQuerySchema }),
+  asyncHandler(finance.exportDebtorsPdf),
+);
+router.get(
+  "/moliya/students/:studentId",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: studentIdParamSchema }),
+  asyncHandler(finance.getStudentFinanceDetail),
+);
+router.post(
+  "/moliya/students/:studentId/tolov",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: studentIdParamSchema, body: createPaymentSchema }),
+  asyncHandler(finance.createStudentPayment),
+);
+router.delete(
+  "/moliya/tolov/:tolovId",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: tolovIdParamSchema }),
+  asyncHandler(finance.revertPayment),
 );
 
 module.exports = router;

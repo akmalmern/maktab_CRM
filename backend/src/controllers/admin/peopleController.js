@@ -10,6 +10,7 @@ const {
   parseIntSafe,
   buildSearchWhere,
 } = require("./helpers");
+const { buildPaidMonthMap, buildDebtInfo } = require("../../services/financeDebtService");
 
 async function createTeacher(req, res) {
   const { firstName, lastName, birthDate, phone, subjectId, yashashManzili } =
@@ -270,6 +271,34 @@ async function getStudents(req, res) {
       }),
       prisma.student.count({ where }),
     ]);
+  }
+
+  const settings = await prisma.moliyaSozlama.findUnique({ where: { key: "MAIN" } });
+  const oylikSumma = settings?.oylikSumma || 300000;
+  const today = new Date();
+  const studentIds = items.map((row) => row.id);
+  const qoplamalar = studentIds.length
+    ? await prisma.tolovQoplama.findMany({
+        where: { studentId: { in: studentIds } },
+        select: { studentId: true, yil: true, oy: true },
+      })
+    : [];
+
+  const paidMap = buildPaidMonthMap(qoplamalar);
+
+  for (const item of items) {
+    const startDate = item.enrollments?.[0]?.startDate || item.createdAt;
+    const paidSet = paidMap.get(item.id) || new Set();
+    const debtInfo = buildDebtInfo({
+      startDate,
+      paidMonthSet: paidSet,
+      oylikSumma,
+      now: today,
+    });
+    item.tolovHolati = debtInfo.holat;
+    item.qarzOylarSoni = debtInfo.qarzOylarSoni;
+    item.jamiQarzSumma = debtInfo.jamiQarzSumma;
+    item.jamiOylarSoni = debtInfo.dueMonthsCount;
   }
 
   res.json({

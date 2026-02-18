@@ -30,6 +30,31 @@ enum HaftaKuni {
   SHANBA
 }
 
+enum DavomatHolati {
+  KELDI
+  KECHIKDI
+  SABABLI
+  SABABSIZ
+}
+
+enum BahoTuri {
+  JORIY
+  NAZORAT
+  ORALIQ
+  YAKUNIY
+}
+
+enum TolovTuri {
+  OYLIK
+  YILLIK
+  IXTIYORIY
+}
+
+enum TolovTranzaksiyaHolati {
+  AKTIV
+  BEKOR_QILINGAN
+}
+
 model User {
   id   String   @id @default(cuid())
   role UserRole
@@ -45,6 +70,8 @@ model User {
   admin   Admin?
   teacher Teacher?
   student Student?
+  adminTolovTranzaksiyalari TolovTranzaksiya[] @relation("AdminTolovTranzaksiyalari")
+  bekorQilganTolovTranzaksiyalari TolovTranzaksiya[] @relation("BekorQilganTolovTranzaksiyalari")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -89,6 +116,8 @@ model Teacher {
 
   documents FileDocument[]
   darsJadvallari DarsJadvali[]
+  belgilaganDavomatlar Davomat[] @relation("TeacherBelgilaganDavomat")
+  qoyganBaholar Baho[] @relation("TeacherQoyganBaholar")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -114,6 +143,10 @@ model Student {
 
   documents FileDocument[]
   enrollments Enrollment[]
+  davomatlar Davomat[]
+  baholar Baho[]
+  tolovTranzaksiyalari TolovTranzaksiya[]
+  tolovQoplamalari TolovQoplama[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -226,14 +259,129 @@ model DarsJadvali {
   oqituvchi  Teacher    @relation(fields: [oqituvchiId], references: [id], onDelete: Restrict)
   fan        Subject    @relation(fields: [fanId], references: [id], onDelete: Restrict)
   vaqtOraliq VaqtOraliq @relation(fields: [vaqtOraliqId], references: [id], onDelete: Restrict)
+  davomatlar Davomat[]
+  baholar    Baho[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([sinfId])
   @@index([oqituvchiId])
+  @@index([oqituvchiId, sinfId, haftaKuni])
   @@index([fanId])
   @@index([vaqtOraliqId])
   @@unique([sinfId, haftaKuni, vaqtOraliqId, oquvYili])
   @@unique([oqituvchiId, haftaKuni, vaqtOraliqId, oquvYili])
+}
+
+model Davomat {
+  id String @id @default(cuid())
+
+  darsJadvaliId String
+  studentId String
+  belgilaganTeacherId String
+
+  sana DateTime
+  holat DavomatHolati
+  izoh String?
+
+  darsJadvali DarsJadvali @relation(fields: [darsJadvaliId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  belgilaganTeacher Teacher @relation("TeacherBelgilaganDavomat", fields: [belgilaganTeacherId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sana])
+  @@index([holat, sana])
+  @@index([studentId, sana])
+  @@index([belgilaganTeacherId, sana])
+  @@index([darsJadvaliId, sana])
+  @@unique([darsJadvaliId, studentId, sana])
+}
+
+model Baho {
+  id String @id @default(cuid())
+
+  darsJadvaliId String
+  studentId String
+  teacherId String
+  sana DateTime
+
+  turi BahoTuri
+  ball Int
+  maxBall Int
+  izoh String?
+
+  darsJadvali DarsJadvali @relation(fields: [darsJadvaliId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacher Teacher @relation("TeacherQoyganBaholar", fields: [teacherId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sana])
+  @@index([studentId, sana])
+  @@index([teacherId, sana])
+  @@index([darsJadvaliId, sana])
+  @@unique([darsJadvaliId, studentId, sana, turi])
+}
+
+model MoliyaSozlama {
+  id String @id @default(cuid())
+  key String @unique @default("MAIN")
+
+  oylikSumma Int
+  yillikSumma Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TolovTranzaksiya {
+  id String @id @default(cuid())
+
+  studentId String
+  adminUserId String
+
+  turi TolovTuri
+  holat TolovTranzaksiyaHolati @default(AKTIV)
+  summa Int
+  tolovSana DateTime @default(now())
+  izoh String?
+  qoplanganOylar Json?
+  bekorSana DateTime?
+  bekorIzoh String?
+  bekorQilganAdminUserId String?
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  adminUser User @relation("AdminTolovTranzaksiyalari", fields: [adminUserId], references: [id], onDelete: Restrict)
+  bekorQilganAdminUser User? @relation("BekorQilganTolovTranzaksiyalari", fields: [bekorQilganAdminUserId], references: [id], onDelete: Restrict)
+  qoplamalar TolovQoplama[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId, tolovSana])
+  @@index([adminUserId, tolovSana])
+  @@index([holat, tolovSana])
+  @@index([bekorQilganAdminUserId, bekorSana])
+}
+
+model TolovQoplama {
+  id String @id @default(cuid())
+
+  studentId String
+  tranzaksiyaId String
+  yil Int
+  oy Int
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  tranzaksiya TolovTranzaksiya @relation(fields: [tranzaksiyaId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([studentId, yil, oy])
+  @@index([tranzaksiyaId])
+  @@unique([studentId, yil, oy])
 }

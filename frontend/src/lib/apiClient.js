@@ -2,10 +2,12 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 const REFRESH_TIMEOUT_MS = 10000;
+const REQUEST_TIMEOUT_MS = 15000;
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
+  timeout: REQUEST_TIMEOUT_MS,
 });
 
 const refreshClient = axios.create({
@@ -34,6 +36,8 @@ function normalizeAxiosError(error) {
     'Noma`lum xatolik';
 
   const normalized = new Error(message);
+  normalized.cause = error;
+  normalized.stack = error?.stack || normalized.stack;
   normalized.status = error?.response?.status ?? null;
   normalized.payload = error?.response?.data ?? null;
   normalized.isNormalizedApiError = true;
@@ -152,6 +156,10 @@ export function setupApiInterceptors({
       api.interceptors.response.eject(responseInterceptorId);
       responseInterceptorId = null;
     }
+
+    tokenGetter = null;
+    refreshSuccessHandler = null;
+    authFailHandler = null;
   };
 }
 
@@ -162,7 +170,6 @@ export async function apiRequest({
   query,
   isFormData = false,
   headers,
-  token,
   signal,
 }) {
   try {
@@ -170,10 +177,6 @@ export async function apiRequest({
       ...(isFormData ? {} : body ? { 'Content-Type': 'application/json' } : {}),
       ...(headers || {}),
     };
-
-    if (token && !finalHeaders.Authorization) {
-      finalHeaders.Authorization = `Bearer ${token}`;
-    }
 
     const response = await api.request({
       url: path,
@@ -185,6 +188,52 @@ export async function apiRequest({
     });
 
     return response.data;
+  } catch (error) {
+    throw normalizeAxiosError(error);
+  }
+}
+
+export async function apiDownload({
+  path,
+  method = 'GET',
+  body,
+  query,
+  headers,
+  signal,
+}) {
+  function parseFileName(contentDisposition) {
+    if (!contentDisposition) return '';
+    const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match?.[1]) {
+      try {
+        return decodeURIComponent(utf8Match[1]).replace(/[/\\?%*:|"<>]/g, '_');
+      } catch {
+        return utf8Match[1];
+      }
+    }
+    const simpleMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
+    return simpleMatch?.[1] || '';
+  }
+
+  try {
+    const response = await api.request({
+      url: path,
+      method,
+      params: query,
+      data: body,
+      headers: headers || {},
+      signal,
+      responseType: 'blob',
+    });
+
+    const contentDisposition = response.headers?.['content-disposition'] || '';
+    const fileName = parseFileName(contentDisposition);
+
+    return {
+      blob: response.data,
+      fileName: fileName || null,
+      contentType: response.headers?.['content-type'] || 'application/octet-stream',
+    };
   } catch (error) {
     throw normalizeAxiosError(error);
   }

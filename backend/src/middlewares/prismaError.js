@@ -82,6 +82,7 @@ function mapPrismaError(err) {
     if (err.code === "P2002") {
       const target = err.meta?.target; // ["username"] yoki ["firstName","lastName","birthDate"]
       const targetStr = normalizeTarget(target);
+      const targetLower = targetStr.toLowerCase();
 
       // ✅ Student duplicate (firstName+lastName+birthDate unique)
       if (
@@ -110,6 +111,23 @@ function mapPrismaError(err) {
           409,
           "PHONE_TAKEN",
           "Bu telefon raqam tizimda mavjud",
+          { target },
+        );
+      }
+
+      if (
+        (targetLower.includes("tolovqoplama") &&
+          targetLower.includes("studentid") &&
+          targetLower.includes("yil") &&
+          targetLower.includes("oy")) ||
+        (targetStr.includes("studentId") &&
+          targetStr.includes("yil") &&
+          targetStr.includes("oy"))
+      ) {
+        return new ApiError(
+          409,
+          "PAYMENT_MONTH_CONFLICT",
+          "Tanlangan oylar bo'yicha to'lov allaqachon mavjud. Sahifani yangilang.",
           { target },
         );
       }

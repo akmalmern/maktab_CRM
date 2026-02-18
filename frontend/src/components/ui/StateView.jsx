@@ -13,10 +13,30 @@ const defaults = {
     title: 'Xatolik yuz berdi',
     description: "So'rov bajarilmadi. Qayta urinib ko'ring.",
   },
+  skeleton: {
+    title: 'Yuklanmoqda',
+    description: "Ma'lumotlar tayyorlanmoqda...",
+  },
 };
 
 export default function StateView({ type = 'empty', title, description, className }) {
   const content = defaults[type] || defaults.empty;
+
+  if (type === 'skeleton') {
+    return (
+      <div className={cn('rounded-lg border border-slate-200 bg-white p-4', className)}>
+        <div className="animate-pulse space-y-3">
+          <div className="h-4 w-40 rounded bg-slate-200" />
+          <div className="h-3 w-56 rounded bg-slate-200" />
+          <div className="mt-3 space-y-2">
+            <div className="h-10 rounded bg-slate-100" />
+            <div className="h-10 rounded bg-slate-100" />
+            <div className="h-10 rounded bg-slate-100" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn('rounded-lg border border-slate-200 bg-white p-6 text-center', className)}>

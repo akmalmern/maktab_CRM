@@ -59,14 +59,20 @@ const menuByRole = {
     { to: '/admin/students', label: 'Students', icon: 'M4 19.5V17a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v2.5M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z' },
     { to: '/admin/sinflar', label: 'Sinflar Boshqaruvi', icon: 'M3 7.5 12 3l9 4.5M5 10v8h14v-8M9 21h6' },
     { to: '/admin/dars-jadval', label: 'Dars Jadvali', icon: 'M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z' },
+    { to: '/admin/davomat', label: 'Davomat', icon: 'M9 11.5 11.5 14 15 10.5M4 5h16v14H4zM8 3v4M16 3v4' },
+    { to: '/admin/moliya', label: 'Moliya', icon: 'M3 7h18M6 4h12v6H6V4Zm-2 8h16a2 2 0 0 1 2 2v6H2v-6a2 2 0 0 1 2-2Zm6 3h4' },
   ],
   TEACHER: [
     { to: '/teacher', label: 'Bosh sahifa', icon: 'M3 12h8V3H3v9Zm0 9h8v-7H3v7Zm10 0h8v-9h-8v9Zm0-11h8V3h-8v7Z' },
     { to: '/teacher/jadval', label: 'Mening Jadvalim', icon: 'M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z' },
+    { to: '/teacher/davomat', label: 'Davomat', icon: 'M9 11.5 11.5 14 15 10.5M4 5h16v14H4zM8 3v4M16 3v4' },
+    { to: '/teacher/baholar', label: 'Baholar', icon: 'M12 3v18M3 12h18' },
   ],
   STUDENT: [
     { to: '/student', label: 'Bosh sahifa', icon: 'M3 12h8V3H3v9Zm0 9h8v-7H3v7Zm10 0h8v-9h-8v9Zm0-11h8V3h-8v7Z' },
     { to: '/student/jadval', label: 'Mening Jadvalim', icon: 'M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z' },
+    { to: '/student/davomat', label: 'Mening Davomatim', icon: 'M9 11.5 11.5 14 15 10.5M4 5h16v14H4zM8 3v4M16 3v4' },
+    { to: '/student/baholar', label: 'Mening Baholarim', icon: 'M12 3v18M3 12h18' },
   ],
 };
 
@@ -88,6 +94,9 @@ export default function AppLayout() {
       students: 'Students',
       sinflar: 'Sinflar Boshqaruvi',
       'dars-jadval': 'Dars Jadvali',
+      davomat: 'Davomat',
+      moliya: 'Moliya',
+      baholar: 'Baholar',
       jadval: 'Jadval',
       login: 'Login',
     }),

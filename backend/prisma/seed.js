@@ -6,8 +6,13 @@ const bcrypt = require("bcrypt");
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "admin123";
 const DEFAULT_PASSWORD = "12345678";
-const TEACHER_COUNT = 30;
 const DEFAULT_ACADEMIC_YEAR = "2025-2026";
+
+const STUDENT_COUNT = 500;
+const STUDENTS_PER_CLASSROOM = 30;
+const TEACHERS_PER_SUBJECT = 3;
+const ATTENDANCE_BATCH_SIZE = 5000;
+const GRADE_BATCH_SIZE = 5000;
 
 const SCHOOL_SUBJECTS = [
   "Ona tili va adabiyot",
@@ -36,54 +41,6 @@ const SCHOOL_SUBJECTS = [
   "Astronomiya",
 ];
 
-const TEACHER_ASSIGNMENTS = [
-  { firstName: "Akmal", lastName: "Karimov", subjectName: "Matematika" },
-  { firstName: "Dilshod", lastName: "Rasulov", subjectName: "Algebra" },
-  { firstName: "Aziza", lastName: "Toshpulatova", subjectName: "Geometriya" },
-  { firstName: "Nodira", lastName: "Usmonova", subjectName: "Ingliz tili" },
-  { firstName: "Sherzod", lastName: "Aliyev", subjectName: "Rus tili" },
-  { firstName: "Shaxnoza", lastName: "Mamadaliyeva", subjectName: "Ona tili va adabiyot" },
-  { firstName: "Bekzod", lastName: "Yuldashev", subjectName: "O'zbek tili" },
-  { firstName: "Muhammad", lastName: "Saidov", subjectName: "Informatika" },
-  { firstName: "Ulugbek", lastName: "Kadirov", subjectName: "Fizika" },
-  { firstName: "Gulbahor", lastName: "Ergasheva", subjectName: "Kimyo" },
-  { firstName: "Madina", lastName: "Qobilova", subjectName: "Biologiya" },
-  { firstName: "Sardor", lastName: "Normatov", subjectName: "Geografiya" },
-  { firstName: "Jasur", lastName: "Berdiev", subjectName: "O'zbekiston tarixi" },
-  { firstName: "Laylo", lastName: "Abdullayeva", subjectName: "Jahon tarixi" },
-  { firstName: "Shahzod", lastName: "Rahimov", subjectName: "Tarbiya" },
-  { firstName: "Malika", lastName: "Islomova", subjectName: "Huquq" },
-  { firstName: "Diyor", lastName: "Nematov", subjectName: "Iqtisodiyot asoslari" },
-  { firstName: "Ozoda", lastName: "Sodiqova", subjectName: "Texnologiya" },
-  { firstName: "Komil", lastName: "Murodov", subjectName: "Chizmachilik" },
-  { firstName: "Zilola", lastName: "Hamidova", subjectName: "Tasviriy san'at" },
-  { firstName: "Temur", lastName: "Xudoyberdiyev", subjectName: "Musiqa" },
-  { firstName: "Suhrob", lastName: "Qodirov", subjectName: "Jismoniy tarbiya" },
-  { firstName: "Javohir", lastName: "Eshonqulov", subjectName: "CHQBT" },
-  { firstName: "Feruza", lastName: "Ruzmetova", subjectName: "Astronomiya" },
-  { firstName: "Asilbek", lastName: "Tursunov", subjectName: "Matematika" },
-  { firstName: "Rayhona", lastName: "Karimova", subjectName: "Ingliz tili" },
-  { firstName: "Oybek", lastName: "Sobirov", subjectName: "Fizika" },
-  { firstName: "Nilufar", lastName: "Raxmonova", subjectName: "Kimyo" },
-  { firstName: "Ibrohim", lastName: "Yusupov", subjectName: "Biologiya" },
-  { firstName: "Sitora", lastName: "Gafurova", subjectName: "Informatika" },
-];
-
-const DEFAULT_CLASSROOMS = [
-  "5-A",
-  "5-B",
-  "6-A",
-  "6-B",
-  "7-A",
-  "7-B",
-  "8-A",
-  "8-B",
-  "9-A",
-  "9-B",
-  "10-A",
-  "11-A",
-];
-
 const DEFAULT_VAQT_ORALIQLARI = [
   { nomi: "1-para", boshlanishVaqti: "08:30", tugashVaqti: "09:15", tartib: 1 },
   { nomi: "2-para", boshlanishVaqti: "09:25", tugashVaqti: "10:10", tartib: 2 },
@@ -93,13 +50,137 @@ const DEFAULT_VAQT_ORALIQLARI = [
   { nomi: "6-para", boshlanishVaqti: "13:05", tugashVaqti: "13:50", tartib: 6 },
 ];
 
+const HAFTA_KUNLARI = [
+  "DUSHANBA",
+  "SESHANBA",
+  "CHORSHANBA",
+  "PAYSHANBA",
+  "JUMA",
+  "SHANBA",
+];
+
+const HAFTA_KUNI_BY_JS_DAY = {
+  1: "DUSHANBA",
+  2: "SESHANBA",
+  3: "CHORSHANBA",
+  4: "PAYSHANBA",
+  5: "JUMA",
+  6: "SHANBA",
+};
+
+const TEACHER_FIRST_NAMES = [
+  "Akmal", "Dilshod", "Aziza", "Nodira", "Sherzod", "Shaxnoza", "Bekzod",
+  "Muhammad", "Ulugbek", "Gulbahor", "Madina", "Sardor", "Jasur", "Laylo",
+  "Shahzod", "Malika", "Diyor", "Ozoda", "Komil", "Zilola", "Temur",
+  "Suhrob", "Javohir", "Feruza", "Asilbek", "Rayhona", "Oybek", "Nilufar",
+  "Ibrohim", "Sitora", "Kamron", "Durdona", "Rustam", "Mavluda", "Bobur",
+  "Mohira", "Sanjar", "Munisa", "Abbos", "Dildora",
+];
+
+const TEACHER_LAST_NAMES = [
+  "Karimov", "Rasulov", "Toshpulatova", "Usmonova", "Aliyev", "Mamadaliyeva",
+  "Yuldashev", "Saidov", "Qodirov", "Ergasheva", "Qobilova", "Normatov",
+  "Berdiev", "Abdullayeva", "Rahimov", "Islomova", "Nematov", "Sodiqova",
+  "Murodov", "Hamidova", "Xudoyberdiyev", "Eshonqulov", "Ruzmetova",
+  "Tursunov", "Karimova", "Sobirov", "Raxmonova", "Yusupov", "Gafurova",
+  "Shukurov", "Oripova", "Tojiboyev", "Sharipova", "Rafiqov", "Yoqubova",
+];
+
 function pad(num, size = 3) {
   return String(num).padStart(size, "0");
 }
 
 function buildBirthDate(yearOffset) {
-  // 1990-01-01 dan boshlab stabillik uchun deterministik sana.
-  return new Date(1990 + yearOffset, yearOffset % 12, (yearOffset % 27) + 1);
+  return new Date(1989 + yearOffset, yearOffset % 12, (yearOffset % 27) + 1);
+}
+
+function toUtcDateOnly(date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function addDaysUtc(date, days) {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function startOfCurrentYearUtc(baseDate) {
+  return new Date(Date.UTC(baseDate.getUTCFullYear(), 0, 1));
+}
+
+function randomDavomatHolati() {
+  const r = Math.random();
+  if (r < 0.78) return "KELDI";
+  if (r < 0.86) return "KECHIKDI";
+  if (r < 0.93) return "SABABLI";
+  return "SABABSIZ";
+}
+
+function randomBall(maxBall) {
+  if (maxBall <= 5) {
+    const r = Math.random();
+    if (r < 0.1) return 2;
+    if (r < 0.3) return 3;
+    if (r < 0.75) return 4;
+    return 5;
+  }
+
+  // 40..100 oralig'i ko'proq real natija beradi
+  return 40 + Math.floor(Math.random() * 61);
+}
+
+function shouldCreateNazorat(day) {
+  const date = day.getUTCDate();
+  const weekDay = day.getUTCDay(); // 3 => CHORSHANBA
+  return weekDay === 3 && date >= 10 && date <= 16;
+}
+
+function shouldCreateOraliq(day) {
+  const date = day.getUTCDate();
+  const weekDay = day.getUTCDay(); // 4 => PAYSHANBA
+  return weekDay === 4 && date >= 24 && date <= 28;
+}
+
+function buildClassroomNames(requiredCount) {
+  const grades = [5, 6, 7, 8, 9, 10, 11];
+  const letters = ["A", "B", "C", "D"];
+  const names = [];
+
+  // Avval barcha sinflarning A/B paralellarini to'ldiramiz (10-A, 11-A ham kiradi),
+  // keyin kerak bo'lsa C/D lar qo'shiladi.
+  for (const letter of letters) {
+    for (const grade of grades) {
+      names.push(`${grade}-${letter}`);
+      if (names.length >= requiredCount) return names;
+    }
+  }
+  return names;
+}
+
+function buildAllClassroomNames() {
+  return buildClassroomNames(Number.MAX_SAFE_INTEGER);
+}
+
+async function ensureAdmin() {
+  const hash = await bcrypt.hash(ADMIN_PASSWORD, 10);
+  const exists = await prisma.user.findUnique({ where: { username: ADMIN_USERNAME } });
+
+  if (exists) {
+    console.log("Admin already exists");
+    return;
+  }
+
+  const user = await prisma.user.create({
+    data: { role: "ADMIN", username: ADMIN_USERNAME, password: hash },
+  });
+
+  await prisma.admin.create({
+    data: {
+      userId: user.id,
+      firstName: "Super",
+      lastName: "Admin",
+    },
+  });
+
+  console.log("Admin created:", { username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 }
 
 async function ensureDefaultSubjects() {
@@ -118,9 +199,10 @@ async function ensureDefaultSubjects() {
 }
 
 async function ensureDefaultClassrooms() {
+  const names = buildAllClassroomNames();
   const classrooms = [];
 
-  for (const name of DEFAULT_CLASSROOMS) {
+  for (const name of names) {
     const classroom = await prisma.classroom.upsert({
       where: {
         name_academicYear: {
@@ -158,43 +240,29 @@ async function ensureDefaultVaqtOraliqlari() {
   }
 }
 
-async function ensureAdmin() {
-  const hash = await bcrypt.hash(ADMIN_PASSWORD, 10);
-  const exists = await prisma.user.findUnique({ where: { username: ADMIN_USERNAME } });
+async function seedTeachers(subjectIds) {
+  const hash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
+  const teacherPlan = [];
 
-  if (exists) {
-    console.log("Admin already exists");
-    return;
+  for (let sIdx = 0; sIdx < SCHOOL_SUBJECTS.length; sIdx += 1) {
+    const subjectName = SCHOOL_SUBJECTS[sIdx];
+    for (let i = 1; i <= TEACHERS_PER_SUBJECT; i += 1) {
+      const ix = sIdx * TEACHERS_PER_SUBJECT + (i - 1);
+      teacherPlan.push({
+        subjectName,
+        firstName: TEACHER_FIRST_NAMES[ix % TEACHER_FIRST_NAMES.length],
+        lastName: TEACHER_LAST_NAMES[ix % TEACHER_LAST_NAMES.length],
+      });
+    }
   }
 
-  const user = await prisma.user.create({
-    data: { role: "ADMIN", username: ADMIN_USERNAME, password: hash },
-  });
-
-  await prisma.admin.create({
-    data: {
-      userId: user.id,
-      firstName: "Super",
-      lastName: "Admin",
-    },
-  });
-
-  console.log("Admin created:", { username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
-}
-
-async function seedTeachers(count, subjectIds) {
-  const hash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
   let created = 0;
-  let skipped = 0;
+  let updated = 0;
 
-  for (let i = 1; i <= count; i += 1) {
+  for (let i = 1; i <= teacherPlan.length; i += 1) {
     const username = `teacher${pad(i)}`;
-    const assignment = TEACHER_ASSIGNMENTS[(i - 1) % TEACHER_ASSIGNMENTS.length];
-    const subjectId = subjectIds[assignment.subjectName];
-
-    if (!subjectId) {
-      throw new Error(`Subject topilmadi: ${assignment.subjectName}`);
-    }
+    const row = teacherPlan[i - 1];
+    const subjectId = subjectIds[row.subjectName];
 
     const existingUser = await prisma.user.findUnique({
       where: { username },
@@ -202,14 +270,12 @@ async function seedTeachers(count, subjectIds) {
     });
 
     if (existingUser) {
-      skipped += 1;
-      // User bor, ammo teacher profil yo'q bo'lsa, profilni to'ldiramiz.
       if (!existingUser.teacher) {
         await prisma.teacher.create({
           data: {
             userId: existingUser.id,
-            firstName: assignment.firstName,
-            lastName: assignment.lastName,
+            firstName: row.firstName,
+            lastName: row.lastName,
             birthDate: buildBirthDate(i % 20),
             yashashManzili: "Toshkent shahri",
             subjectId,
@@ -219,13 +285,19 @@ async function seedTeachers(count, subjectIds) {
         await prisma.teacher.update({
           where: { id: existingUser.teacher.id },
           data: {
-            firstName: assignment.firstName,
-            lastName: assignment.lastName,
+            firstName: row.firstName,
+            lastName: row.lastName,
+            birthDate: buildBirthDate(i % 20),
             yashashManzili: "Toshkent shahri",
             subjectId,
           },
         });
       }
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: { phone: `+9989001${pad(i, 4)}` },
+      });
+      updated += 1;
       continue;
     }
 
@@ -234,14 +306,15 @@ async function seedTeachers(count, subjectIds) {
         role: "TEACHER",
         username,
         password: hash,
+        phone: `+9989001${pad(i, 4)}`,
       },
     });
 
     await prisma.teacher.create({
       data: {
         userId: user.id,
-        firstName: assignment.firstName,
-        lastName: assignment.lastName,
+        firstName: row.firstName,
+        lastName: row.lastName,
         birthDate: buildBirthDate(i % 20),
         yashashManzili: "Toshkent shahri",
         subjectId,
@@ -251,16 +324,17 @@ async function seedTeachers(count, subjectIds) {
     created += 1;
   }
 
-  return { created, skipped };
+  return { created, updated, total: teacherPlan.length };
 }
 
 async function seedStudents(count, classrooms) {
   const hash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
   let created = 0;
-  let skipped = 0;
+  let updated = 0;
 
   for (let i = 1; i <= count; i += 1) {
     const username = `student${pad(i)}`;
+    // Barcha sinflarda student bo'lishi uchun round-robin taqsimlaymiz.
     const classroom = classrooms[(i - 1) % classrooms.length];
 
     const existingUser = await prisma.user.findUnique({
@@ -269,7 +343,7 @@ async function seedStudents(count, classrooms) {
     });
 
     if (existingUser) {
-      skipped += 1;
+      let studentId = existingUser.student?.id;
       if (!existingUser.student) {
         const student = await prisma.student.create({
           data: {
@@ -278,30 +352,41 @@ async function seedStudents(count, classrooms) {
             lastName: "User",
             birthDate: buildBirthDate(i % 15),
             yashashManzili: "Farg'ona viloyati",
-            parentPhone: `+9989000${pad(i, 4)}`,
+            parentPhone: `+9989300${pad(i, 4)}`,
           },
         });
-
-        await prisma.enrollment.create({
-          data: {
-            studentId: student.id,
-            classroomId: classroom.id,
-          },
-        });
+        studentId = student.id;
       } else {
-        const activeEnrollment = await prisma.enrollment.findFirst({
-          where: { studentId: existingUser.student.id, isActive: true },
-          select: { id: true },
+        await prisma.student.update({
+          where: { id: existingUser.student.id },
+          data: {
+            firstName: `Student${pad(i)}`,
+            lastName: "User",
+            birthDate: buildBirthDate(i % 15),
+            yashashManzili: "Farg'ona viloyati",
+            parentPhone: `+9989300${pad(i, 4)}`,
+          },
         });
-        if (!activeEnrollment) {
-          await prisma.enrollment.create({
-            data: {
-              studentId: existingUser.student.id,
-              classroomId: classroom.id,
-            },
-          });
-        }
       }
+
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: { phone: `+9989100${pad(i, 4)}` },
+      });
+
+      await prisma.enrollment.updateMany({
+        where: { studentId, isActive: true },
+        data: { isActive: false, endDate: new Date() },
+      });
+
+      await prisma.enrollment.create({
+        data: {
+          studentId,
+          classroomId: classroom.id,
+        },
+      });
+
+      updated += 1;
       continue;
     }
 
@@ -310,6 +395,7 @@ async function seedStudents(count, classrooms) {
         role: "STUDENT",
         username,
         password: hash,
+        phone: `+9989100${pad(i, 4)}`,
       },
     });
 
@@ -320,7 +406,7 @@ async function seedStudents(count, classrooms) {
         lastName: "User",
         birthDate: buildBirthDate(i % 15),
         yashashManzili: "Farg'ona viloyati",
-        parentPhone: `+9989000${pad(i, 4)}`,
+        parentPhone: `+9989300${pad(i, 4)}`,
       },
     });
 
@@ -334,23 +420,324 @@ async function seedStudents(count, classrooms) {
     created += 1;
   }
 
-  return { created, skipped };
+  return { created, updated, total: count };
 }
+
+async function seedSchedule(classrooms, subjectIds) {
+  const subjects = await prisma.subject.findMany({
+    where: { id: { in: Object.values(subjectIds) } },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  const timeSlots = await prisma.vaqtOraliq.findMany({ orderBy: { tartib: "asc" } });
+  const teachers = await prisma.teacher.findMany({
+    where: { subjectId: { not: null } },
+    select: { id: true, subjectId: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const teachersBySubject = new Map();
+  for (const t of teachers) {
+    if (!teachersBySubject.has(t.subjectId)) teachersBySubject.set(t.subjectId, []);
+    teachersBySubject.get(t.subjectId).push(t.id);
+  }
+
+  // Unique index (oqituvchiId, haftaKuni, vaqtOraliqId, oquvYili) bilan
+  // to'qnashmaslik uchun shu o'quv yilidagi barcha jadval yozuvlarini tozalaymiz.
+  await prisma.darsJadvali.deleteMany({
+    where: { oquvYili: DEFAULT_ACADEMIC_YEAR },
+  });
+
+  const teacherBusy = new Map(); // key: DUSHANBA__slotId -> Set(teacherId)
+  const rows = [];
+
+  for (let cIdx = 0; cIdx < classrooms.length; cIdx += 1) {
+    const classroom = classrooms[cIdx];
+
+    for (let dIdx = 0; dIdx < HAFTA_KUNLARI.length; dIdx += 1) {
+      const day = HAFTA_KUNLARI[dIdx];
+
+      for (let sIdx = 0; sIdx < timeSlots.length; sIdx += 1) {
+        const slot = timeSlots[sIdx];
+        const subject = subjects[(cIdx + dIdx + sIdx) % subjects.length];
+        const candidates = teachersBySubject.get(subject.id) || [];
+
+        if (!candidates.length) continue;
+
+        const busyKey = `${day}__${slot.id}`;
+        if (!teacherBusy.has(busyKey)) teacherBusy.set(busyKey, new Set());
+        const busySet = teacherBusy.get(busyKey);
+
+        let selectedTeacherId = null;
+        for (let i = 0; i < candidates.length; i += 1) {
+          const candidate = candidates[(cIdx + dIdx + sIdx + i) % candidates.length];
+          if (!busySet.has(candidate)) {
+            selectedTeacherId = candidate;
+            break;
+          }
+        }
+
+        if (!selectedTeacherId) continue;
+        busySet.add(selectedTeacherId);
+
+        rows.push({
+          sinfId: classroom.id,
+          oqituvchiId: selectedTeacherId,
+          fanId: subject.id,
+          haftaKuni: day,
+          vaqtOraliqId: slot.id,
+          oquvYili: DEFAULT_ACADEMIC_YEAR,
+        });
+      }
+    }
+  }
+
+  if (rows.length) {
+    await prisma.darsJadvali.createMany({ data: rows });
+  }
+
+  return { created: rows.length };
+}
+
+async function seedAttendanceAndGradesHistory() {
+  const today = toUtcDateOnly(new Date());
+  const startDate = startOfCurrentYearUtc(today);
+
+  const darslar = await prisma.darsJadvali.findMany({
+    where: { oquvYili: DEFAULT_ACADEMIC_YEAR },
+    select: { id: true, sinfId: true, oqituvchiId: true, haftaKuni: true },
+  });
+
+  if (!darslar.length) {
+    return { deleted: 0, created: 0, startDate, endDate: today };
+  }
+
+  const sinfIds = [...new Set(darslar.map((d) => d.sinfId))];
+  const enrollments = await prisma.enrollment.findMany({
+    where: { isActive: true, classroomId: { in: sinfIds } },
+    select: { classroomId: true, studentId: true },
+  });
+
+  const studentsByClassroom = new Map();
+  for (const row of enrollments) {
+    if (!studentsByClassroom.has(row.classroomId)) studentsByClassroom.set(row.classroomId, []);
+    studentsByClassroom.get(row.classroomId).push(row.studentId);
+  }
+
+  const darslarByDay = new Map();
+  for (const dars of darslar) {
+    if (!darslarByDay.has(dars.haftaKuni)) darslarByDay.set(dars.haftaKuni, []);
+    darslarByDay.get(dars.haftaKuni).push(dars);
+  }
+
+  const [deletedDavomat, deletedBaholar] = await Promise.all([
+    prisma.davomat.deleteMany({
+      where: { sana: { gte: startDate, lte: today } },
+    }),
+    prisma.baho.deleteMany({
+      where: { sana: { gte: startDate, lte: today } },
+    }),
+  ]);
+
+  let createdDavomat = 0;
+  let createdBaholar = 0;
+  let davomatBatch = [];
+  let bahoBatch = [];
+
+  async function flushDavomatBatch() {
+    if (!davomatBatch.length) return;
+    await prisma.davomat.createMany({ data: davomatBatch });
+    createdDavomat += davomatBatch.length;
+    davomatBatch = [];
+  }
+
+  async function flushBahoBatch() {
+    if (!bahoBatch.length) return;
+    await prisma.baho.createMany({ data: bahoBatch });
+    createdBaholar += bahoBatch.length;
+    bahoBatch = [];
+  }
+
+  for (let day = startDate; day <= today; day = addDaysUtc(day, 1)) {
+    const haftaKuni = HAFTA_KUNI_BY_JS_DAY[day.getUTCDay()];
+    if (!haftaKuni) continue; // Yakshanba yo'q
+
+    const darslarShuKuni = darslarByDay.get(haftaKuni) || [];
+    if (!darslarShuKuni.length) continue;
+
+    const isNazoratDay = shouldCreateNazorat(day);
+    const isOraliqDay = shouldCreateOraliq(day);
+
+    for (const dars of darslarShuKuni) {
+      const studentIds = studentsByClassroom.get(dars.sinfId) || [];
+      if (!studentIds.length) continue;
+
+      for (const studentId of studentIds) {
+        const holat = randomDavomatHolati();
+        davomatBatch.push({
+          darsJadvaliId: dars.id,
+          studentId,
+          belgilaganTeacherId: dars.oqituvchiId,
+          sana: day,
+          holat,
+          izoh: holat === "SABABLI" ? "Seed: sababli yo'q" : null,
+        });
+
+        const present = holat === "KELDI" || holat === "KECHIKDI";
+        if (present) {
+          // JORIY: deyarli har darsda bo'ladi
+          if (Math.random() < 0.7) {
+            bahoBatch.push({
+              darsJadvaliId: dars.id,
+              studentId,
+              teacherId: dars.oqituvchiId,
+              sana: day,
+              turi: "JORIY",
+              ball: randomBall(5),
+              maxBall: 5,
+              izoh: null,
+            });
+          }
+
+          // NAZORAT: oy o'rtalarida, ayrim darslarda
+          if (isNazoratDay && Math.random() < 0.45) {
+            bahoBatch.push({
+              darsJadvaliId: dars.id,
+              studentId,
+              teacherId: dars.oqituvchiId,
+              sana: day,
+              turi: "NAZORAT",
+              ball: randomBall(100),
+              maxBall: 100,
+              izoh: "Seed: nazorat bahosi",
+            });
+          }
+
+          // ORALIQ: oy oxirida, ayrim darslarda
+          if (isOraliqDay && Math.random() < 0.35) {
+            bahoBatch.push({
+              darsJadvaliId: dars.id,
+              studentId,
+              teacherId: dars.oqituvchiId,
+              sana: day,
+              turi: "ORALIQ",
+              ball: randomBall(100),
+              maxBall: 100,
+              izoh: "Seed: oraliq bahosi",
+            });
+          }
+        }
+
+        if (davomatBatch.length >= ATTENDANCE_BATCH_SIZE) {
+          await flushDavomatBatch();
+        }
+        if (bahoBatch.length >= GRADE_BATCH_SIZE) {
+          await flushBahoBatch();
+        }
+      }
+    }
+  }
+
+  await flushDavomatBatch();
+  await flushBahoBatch();
+
+  return {
+    deletedDavomat: deletedDavomat.count,
+    deletedBaholar: deletedBaholar.count,
+    createdDavomat,
+    createdBaholar,
+    startDate,
+    endDate: today,
+  };
+}
+
+async function seedAttendanceHistory(months = 0) {
+  // Eski nom bilan chaqirilgan joylar bo'lsa moslik uchun qoldirildi.
+  if (months) {
+    // no-op
+  }
+  return seedAttendanceAndGradesHistory();
+}
+
+/* old implementation removed
+  const deleted = await prisma.davomat.deleteMany({
+    where: { sana: { gte: startDate, lte: today } },
+  });
+
+  let created = 0;
+  let batch = [];
+
+  async function flushBatch() {
+    if (!batch.length) return;
+    await prisma.davomat.createMany({ data: batch });
+    created += batch.length;
+    batch = [];
+  }
+
+  for (let day = startDate; day <= today; day = addDaysUtc(day, 1)) {
+    const haftaKuni = HAFTA_KUNI_BY_JS_DAY[day.getUTCDay()];
+    if (!haftaKuni) continue; // Yakshanba yo'q
+
+    const darslarShuKuni = darslarByDay.get(haftaKuni) || [];
+    if (!darslarShuKuni.length) continue;
+
+    for (const dars of darslarShuKuni) {
+      const studentIds = studentsByClassroom.get(dars.sinfId) || [];
+      if (!studentIds.length) continue;
+
+      for (const studentId of studentIds) {
+        const holat = randomDavomatHolati();
+        batch.push({
+          darsJadvaliId: dars.id,
+          studentId,
+          belgilaganTeacherId: dars.oqituvchiId,
+          sana: day,
+          holat,
+          izoh: holat === "SABABLI" ? "Seed: sababli yo'q" : null,
+        });
+
+        if (batch.length >= ATTENDANCE_BATCH_SIZE) {
+          await flushBatch();
+        }
+      }
+    }
+  }
+
+  await flushBatch();
+
+  return {
+    deleted: deleted.count,
+    created,
+    startDate,
+    endDate: today,
+  };
+}
+*/
 
 async function main() {
   await ensureAdmin();
+
   const subjectIds = await ensureDefaultSubjects();
   const classrooms = await ensureDefaultClassrooms();
   await ensureDefaultVaqtOraliqlari();
 
-  const teacherResult = await seedTeachers(TEACHER_COUNT, subjectIds);
-  const studentResult = await seedStudents(200, classrooms);
+  const teacherResult = await seedTeachers(subjectIds);
+  const studentResult = await seedStudents(STUDENT_COUNT, classrooms);
+  const scheduleResult = await seedSchedule(classrooms, subjectIds);
+  const historyResult = await seedAttendanceAndGradesHistory();
 
   console.log("Seed completed");
   console.log(`Subjects => total: ${Object.keys(subjectIds).length}`);
   console.log(`Classrooms => total: ${classrooms.length}`);
-  console.log(`Teachers => created: ${teacherResult.created}, skipped: ${teacherResult.skipped}`);
-  console.log(`Students => created: ${studentResult.created}, skipped: ${studentResult.skipped}`);
+  console.log(`Teachers => target: ${teacherResult.total}, created: ${teacherResult.created}, updated: ${teacherResult.updated}`);
+  console.log(`Students => target: ${studentResult.total}, created: ${studentResult.created}, updated: ${studentResult.updated}`);
+  console.log(`Schedule lessons => created: ${scheduleResult.created}`);
+  console.log(
+    `Attendance (Yanvar -> bugun) => deleted: ${historyResult.deletedDavomat}, created: ${historyResult.createdDavomat}, range: ${historyResult.startDate.toISOString().slice(0, 10)}..${historyResult.endDate.toISOString().slice(0, 10)}`,
+  );
+  console.log(
+    `Grades (JORIY/NAZORAT/ORALIQ) => deleted: ${historyResult.deletedBaholar}, created: ${historyResult.createdBaholar}`,
+  );
   console.log(`Default password for teacher/student: ${DEFAULT_PASSWORD}`);
 }
 

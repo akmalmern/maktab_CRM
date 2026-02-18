@@ -185,12 +185,14 @@ async function createDarsJadvali(req, res) {
   }
 
   if (oqituvchiKonflikt) {
+    const oqituvchiFio = `${oqituvchi.firstName} ${oqituvchi.lastName}`.trim();
+    const konfliktSinf = oqituvchiKonflikt.sinf?.name || "Boshqa";
     throw new ApiError(
       409,
       "OQITUVCHI_VAQT_BAND",
-      "Boshqa o'qituvchining darsi bor shu vaqtga",
+      `${oqituvchiFio} uchun ${haftaKuni} ${vaqtOraliq.boshlanishVaqti} da ${konfliktSinf} Sinfda dars bor`,
       {
-        oqituvchi: `${oqituvchi.firstName} ${oqituvchi.lastName}`,
+        oqituvchi: oqituvchiFio,
         sinf: oqituvchiKonflikt.sinf?.name,
         fan: oqituvchiKonflikt.fan?.name,
       },
@@ -318,11 +320,16 @@ async function updateDarsJadvali(req, res) {
     );
   }
   if (oqituvchiKonflikt) {
+    const oqituvchiFio = `${oqituvchi.firstName} ${oqituvchi.lastName}`.trim();
+    const konfliktSinf = oqituvchiKonflikt.sinf?.name || "Boshqa";
     throw new ApiError(
       409,
       "OQITUVCHI_VAQT_BAND",
-      "Boshqa o'qituvchining darsi bor shu vaqtga",
-      { sinf: oqituvchiKonflikt.sinf?.name },
+      `${oqituvchiFio} uchun ${next.haftaKuni} ${vaqtOraliq.boshlanishVaqti} da ${konfliktSinf} Sinfda dars bor`,
+      {
+        oqituvchi: oqituvchiFio,
+        sinf: oqituvchiKonflikt.sinf?.name,
+      },
     );
   }
 
