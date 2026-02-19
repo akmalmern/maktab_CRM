@@ -28,7 +28,12 @@ function SidebarContent({ role, menuItems, onLogout, onNavigate }) {
           <NavLink
             key={item.to}
             to={item.to}
-            end={item.to === '/admin' || item.to === '/teacher' || item.to === '/student'}
+            end={
+              item.to === '/admin' ||
+              item.to === '/teacher' ||
+              item.to === '/student' ||
+              item.to === '/manager'
+            }
             onClick={onNavigate}
             className={({ isActive }) =>
               `flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 ${
@@ -74,6 +79,10 @@ const menuByRole = {
     { to: '/student/davomat', label: 'Mening Davomatim', icon: 'M9 11.5 11.5 14 15 10.5M4 5h16v14H4zM8 3v4M16 3v4' },
     { to: '/student/baholar', label: 'Mening Baholarim', icon: 'M12 3v18M3 12h18' },
   ],
+  MANAGER: [
+    { to: '/manager', label: 'Bosh sahifa', icon: 'M3 12h8V3H3v9Zm0 9h8v-7H3v7Zm10 0h8v-9h-8v9Zm0-11h8V3h-8v7Z' },
+    { to: '/manager/qarzdorlar', label: "Qarzdorlar", icon: 'M3 7h18M6 4h12v6H6V4Zm-2 8h16a2 2 0 0 1 2 2v6H2v-6a2 2 0 0 1 2-2Zm6 3h4' },
+  ],
 };
 
 export default function AppLayout() {
@@ -89,6 +98,7 @@ export default function AppLayout() {
       admin: 'Admin',
       teacher: "O'qituvchi",
       student: "O'quvchi",
+      manager: 'Menejer',
       teachers: 'Teachers',
       fanlar: 'Fanlar Boshqaruvi',
       students: 'Students',
@@ -98,6 +108,7 @@ export default function AppLayout() {
       moliya: 'Moliya',
       baholar: 'Baholar',
       jadval: 'Jadval',
+      qarzdorlar: "Qarzdorlar",
       login: 'Login',
     }),
     [],

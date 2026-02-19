@@ -1,6 +1,9 @@
 const prisma = require("../../prisma");
 const { ApiError } = require("../../utils/apiError");
-const { parseSanaOrToday, buildRangeByType } = require("../../utils/attendancePeriod");
+const {
+  parseSanaOrToday,
+  buildRangeByType,
+} = require("../../utils/attendancePeriod");
 
 const HAFTA_KUNLARI = [
   "DUSHANBA",
@@ -58,11 +61,12 @@ function ensureDateMatchesLessonDay(sana, darsHaftaKuni) {
 }
 
 function findStudentPrimaryBaho(baholar, studentId) {
-  const studentBaholari = baholar.filter((item) => item.studentId === studentId);
+  const studentBaholari = baholar.filter(
+    (item) => item.studentId === studentId,
+  );
   if (!studentBaholari.length) return null;
   return (
-    studentBaholari.find((item) => item.turi === "JORIY") ||
-    studentBaholari[0]
+    studentBaholari.find((item) => item.turi === "JORIY") || studentBaholari[0]
   );
 }
 
@@ -77,7 +81,12 @@ async function getTeacherDarslar(req, res) {
   const { sana } = parseSanaOrToday(req.query.sana);
   const haftaKuni = haftaKuniFromDate(sana);
   if (!haftaKuni) {
-    return res.json({ ok: true, sana: sana.toISOString().slice(0, 10), haftaKuni: null, darslar: [] });
+    return res.json({
+      ok: true,
+      sana: sana.toISOString().slice(0, 10),
+      haftaKuni: null,
+      darslar: [],
+    });
   }
 
   const teacher = await getTeacherByUserId(req.user.sub);
@@ -103,7 +112,15 @@ async function getTeacherDarslar(req, res) {
         },
       },
       fan: { select: { id: true, name: true } },
-      vaqtOraliq: { select: { id: true, nomi: true, boshlanishVaqti: true, tugashVaqti: true, tartib: true } },
+      vaqtOraliq: {
+        select: {
+          id: true,
+          nomi: true,
+          boshlanishVaqti: true,
+          tugashVaqti: true,
+          tartib: true,
+        },
+      },
       davomatlar: {
         where: {
           sana: {
@@ -121,7 +138,11 @@ async function getTeacherDarslar(req, res) {
     const jami = item.sinf.enrollments.length;
     return {
       id: item.id,
-      sinf: { id: item.sinf.id, name: item.sinf.name, academicYear: item.sinf.academicYear },
+      sinf: {
+        id: item.sinf.id,
+        name: item.sinf.name,
+        academicYear: item.sinf.academicYear,
+      },
       fan: item.fan,
       vaqtOraliq: item.vaqtOraliq,
       jamiStudent: jami,
@@ -174,7 +195,14 @@ async function getDarsDavomati(req, res) {
         },
       },
       fan: { select: { id: true, name: true } },
-      vaqtOraliq: { select: { id: true, nomi: true, boshlanishVaqti: true, tugashVaqti: true } },
+      vaqtOraliq: {
+        select: {
+          id: true,
+          nomi: true,
+          boshlanishVaqti: true,
+          tugashVaqti: true,
+        },
+      },
       davomatlar: {
         where: {
           sana: {
@@ -209,11 +237,17 @@ async function getDarsDavomati(req, res) {
   });
 
   if (!dars) {
-    throw new ApiError(404, "DARS_TOPILMADI", "Bu dars sizga tegishli emas yoki topilmadi");
+    throw new ApiError(
+      404,
+      "DARS_TOPILMADI",
+      "Bu dars sizga tegishli emas yoki topilmadi",
+    );
   }
   ensureDateMatchesLessonDay(sana, dars.haftaKuni);
 
-  const davomatMap = new Map(dars.davomatlar.map((item) => [item.studentId, item]));
+  const davomatMap = new Map(
+    dars.davomatlar.map((item) => [item.studentId, item]),
+  );
   const students = dars.sinf.enrollments.map((enrollment) => {
     const mark = davomatMap.get(enrollment.studentId);
     const baho = findStudentPrimaryBaho(dars.baholar, enrollment.studentId);
@@ -239,7 +273,11 @@ async function getDarsDavomati(req, res) {
       id: dars.id,
       haftaKuni: dars.haftaKuni,
       fan: dars.fan,
-      sinf: { id: dars.sinf.id, name: dars.sinf.name, academicYear: dars.sinf.academicYear },
+      sinf: {
+        id: dars.sinf.id,
+        name: dars.sinf.name,
+        academicYear: dars.sinf.academicYear,
+      },
       vaqtOraliq: dars.vaqtOraliq,
     },
     students,
@@ -267,13 +305,22 @@ async function saveDarsDavomati(req, res) {
   });
 
   if (!dars) {
-    throw new ApiError(404, "DARS_TOPILMADI", "Bu dars sizga tegishli emas yoki topilmadi");
+    throw new ApiError(
+      404,
+      "DARS_TOPILMADI",
+      "Bu dars sizga tegishli emas yoki topilmadi",
+    );
   }
   ensureDateMatchesLessonDay(sana, dars.haftaKuni);
 
-  const darsBoshlanishSana = createDarsDateTimeUTC(sana, dars.vaqtOraliq?.boshlanishVaqti);
+  const darsBoshlanishSana = createDarsDateTimeUTC(
+    sana,
+    dars.vaqtOraliq?.boshlanishVaqti,
+  );
   if (darsBoshlanishSana) {
-    const tahrirMuddatOxiri = new Date(darsBoshlanishSana.getTime() + 24 * 60 * 60 * 1000);
+    const tahrirMuddatOxiri = new Date(
+      darsBoshlanishSana.getTime() + 24 * 60 * 60 * 1000,
+    );
     if (new Date() > tahrirMuddatOxiri) {
       throw new ApiError(
         403,
@@ -287,9 +334,13 @@ async function saveDarsDavomati(req, res) {
     where: { classroomId: dars.sinfId, isActive: true },
     select: { studentId: true },
   });
-  const activeStudentIds = new Set(activeEnrollments.map((item) => item.studentId));
+  const activeStudentIds = new Set(
+    activeEnrollments.map((item) => item.studentId),
+  );
 
-  const invalidStudent = davomatlar.find((item) => !activeStudentIds.has(item.studentId));
+  const invalidStudent = davomatlar.find(
+    (item) => !activeStudentIds.has(item.studentId),
+  );
   if (invalidStudent) {
     throw new ApiError(
       400,
@@ -298,8 +349,7 @@ async function saveDarsDavomati(req, res) {
     );
   }
 
-  const ops = davomatlar.map((item) =>
-  {
+  const ops = davomatlar.map((item) => {
     const queries = [
       prisma.davomat.upsert({
         where: {
@@ -361,8 +411,7 @@ async function saveDarsDavomati(req, res) {
     }
 
     return queries;
-  },
-  );
+  });
 
   await prisma.$transaction(ops.flat());
 

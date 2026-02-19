@@ -22,6 +22,8 @@ import TeacherAttendancePage from '../pages/teacher/TeacherAttendancePage';
 import TeacherGradesPage from '../pages/teacher/TeacherGradesPage';
 import TeacherHomePage from '../pages/teacher/TeacherHomePage';
 import TeacherSchedulePage from '../pages/teacher/TeacherSchedulePage';
+import ManagerHomePage from '../pages/manager/ManagerHomePage';
+import ManagerDebtorsPage from '../pages/manager/ManagerDebtorsPage';
 
 export const router = createBrowserRouter([
   {
@@ -69,6 +71,14 @@ export const router = createBrowserRouter([
               { path: '/student/jadval', element: <StudentSchedulePage /> },
               { path: '/student/davomat', element: <StudentAttendancePage /> },
               { path: '/student/baholar', element: <StudentGradesPage /> },
+            ],
+          },
+
+          {
+            element: <RoleRoute roles={['MANAGER']} />,
+            children: [
+              { path: '/manager', element: <ManagerHomePage /> },
+              { path: '/manager/qarzdorlar', element: <ManagerDebtorsPage /> },
             ],
           },
 

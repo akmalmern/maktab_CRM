@@ -71,7 +71,14 @@ async function getMyBaholar(req, res) {
   const where = {
     studentId: student.id,
     ...(req.query.bahoTuri ? { turi: req.query.bahoTuri } : {}),
-    ...(sanaFrom || sanaTo ? { sana: { ...(sanaFrom ? { gte: sanaFrom } : {}), ...(sanaTo ? { lte: sanaTo } : {}) } } : {}),
+    ...(sanaFrom || sanaTo
+      ? {
+          sana: {
+            ...(sanaFrom ? { gte: sanaFrom } : {}),
+            ...(sanaTo ? { lte: sanaTo } : {}),
+          },
+        }
+      : {}),
     darsJadvali: {
       ...(req.query.subjectId ? { fanId: req.query.subjectId } : {}),
     },
@@ -95,7 +102,10 @@ async function getMyBaholar(req, res) {
       orderBy: [{ sana: "desc" }, { createdAt: "desc" }],
     }),
     prisma.baho.count({ where }),
-    prisma.baho.findMany({ where, select: { turi: true, ball: true, maxBall: true } }),
+    prisma.baho.findMany({
+      where,
+      select: { turi: true, ball: true, maxBall: true },
+    }),
   ]);
 
   res.json({
@@ -119,7 +129,9 @@ async function getMyBaholar(req, res) {
       vaqt: row.darsJadvali?.vaqtOraliq
         ? `${row.darsJadvali.vaqtOraliq.nomi} (${row.darsJadvali.vaqtOraliq.boshlanishVaqti})`
         : "-",
-      oqituvchi: row.teacher ? `${row.teacher.firstName} ${row.teacher.lastName}` : "-",
+      oqituvchi: row.teacher
+        ? `${row.teacher.firstName} ${row.teacher.lastName}`
+        : "-",
     })),
   });
 }
@@ -133,7 +145,9 @@ async function getMyClassBaholar(req, res) {
         where: { isActive: true },
         take: 1,
         orderBy: { createdAt: "desc" },
-        include: { classroom: { select: { id: true, name: true, academicYear: true } } },
+        include: {
+          classroom: { select: { id: true, name: true, academicYear: true } },
+        },
       },
     },
   });
@@ -143,7 +157,11 @@ async function getMyClassBaholar(req, res) {
 
   const classroom = student.enrollments?.[0]?.classroom;
   if (!classroom) {
-    throw new ApiError(404, "SINF_TOPILMADI", "Sizga biriktirilgan aktiv sinf topilmadi");
+    throw new ApiError(
+      404,
+      "SINF_TOPILMADI",
+      "Sizga biriktirilgan aktiv sinf topilmadi",
+    );
   }
 
   const page = parseIntSafe(req.query.page, 1);
@@ -156,7 +174,14 @@ async function getMyClassBaholar(req, res) {
 
   const where = {
     ...(req.query.bahoTuri ? { turi: req.query.bahoTuri } : {}),
-    ...(sanaFrom || sanaTo ? { sana: { ...(sanaFrom ? { gte: sanaFrom } : {}), ...(sanaTo ? { lte: sanaTo } : {}) } } : {}),
+    ...(sanaFrom || sanaTo
+      ? {
+          sana: {
+            ...(sanaFrom ? { gte: sanaFrom } : {}),
+            ...(sanaTo ? { lte: sanaTo } : {}),
+          },
+        }
+      : {}),
     darsJadvali: {
       sinfId: classroom.id,
       ...(req.query.subjectId ? { fanId: req.query.subjectId } : {}),
@@ -181,7 +206,10 @@ async function getMyClassBaholar(req, res) {
       orderBy: [{ sana: "desc" }, { createdAt: "desc" }],
     }),
     prisma.baho.count({ where }),
-    prisma.baho.findMany({ where, select: { turi: true, ball: true, maxBall: true } }),
+    prisma.baho.findMany({
+      where,
+      select: { turi: true, ball: true, maxBall: true },
+    }),
   ]);
 
   res.json({
@@ -199,12 +227,16 @@ async function getMyClassBaholar(req, res) {
       ball: row.ball,
       maxBall: row.maxBall,
       izoh: row.izoh || "",
-      student: row.student ? `${row.student.firstName} ${row.student.lastName}` : "-",
+      student: row.student
+        ? `${row.student.firstName} ${row.student.lastName}`
+        : "-",
       fan: row.darsJadvali?.fan?.name || "-",
       vaqt: row.darsJadvali?.vaqtOraliq
         ? `${row.darsJadvali.vaqtOraliq.nomi} (${row.darsJadvali.vaqtOraliq.boshlanishVaqti})`
         : "-",
-      oqituvchi: row.teacher ? `${row.teacher.firstName} ${row.teacher.lastName}` : "-",
+      oqituvchi: row.teacher
+        ? `${row.teacher.firstName} ${row.teacher.lastName}`
+        : "-",
     })),
   });
 }

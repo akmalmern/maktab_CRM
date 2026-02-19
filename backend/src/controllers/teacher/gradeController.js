@@ -73,7 +73,14 @@ async function getTeacherBaholari(req, res) {
   const where = {
     teacherId: teacher.id,
     ...(req.query.bahoTuri ? { turi: req.query.bahoTuri } : {}),
-    ...(sanaFrom || sanaTo ? { sana: { ...(sanaFrom ? { gte: sanaFrom } : {}), ...(sanaTo ? { lte: sanaTo } : {}) } } : {}),
+    ...(sanaFrom || sanaTo
+      ? {
+          sana: {
+            ...(sanaFrom ? { gte: sanaFrom } : {}),
+            ...(sanaTo ? { lte: sanaTo } : {}),
+          },
+        }
+      : {}),
     darsJadvali: {
       ...(req.query.subjectId ? { fanId: req.query.subjectId } : {}),
       ...(req.query.classroomId ? { sinfId: req.query.classroomId } : {}),
@@ -93,7 +100,9 @@ async function getTeacherBaholari(req, res) {
             id: true,
             sinf: { select: { id: true, name: true, academicYear: true } },
             fan: { select: { id: true, name: true } },
-            vaqtOraliq: { select: { id: true, nomi: true, boshlanishVaqti: true } },
+            vaqtOraliq: {
+              select: { id: true, nomi: true, boshlanishVaqti: true },
+            },
           },
         },
       },
@@ -120,7 +129,9 @@ async function getTeacherBaholari(req, res) {
       ball: row.ball,
       maxBall: row.maxBall,
       izoh: row.izoh || "",
-      student: row.student ? `${row.student.firstName} ${row.student.lastName}` : "-",
+      student: row.student
+        ? `${row.student.firstName} ${row.student.lastName}`
+        : "-",
       fan: row.darsJadvali?.fan?.name || "-",
       sinf: row.darsJadvali?.sinf
         ? `${row.darsJadvali.sinf.name} (${row.darsJadvali.sinf.academicYear})`

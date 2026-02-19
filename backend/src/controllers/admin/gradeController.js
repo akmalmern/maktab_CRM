@@ -59,7 +59,14 @@ async function getAdminBaholar(req, res) {
     ...(req.query.bahoTuri ? { turi: req.query.bahoTuri } : {}),
     ...(req.query.studentId ? { studentId: req.query.studentId } : {}),
     ...(req.query.teacherId ? { teacherId: req.query.teacherId } : {}),
-    ...(sanaFrom || sanaTo ? { sana: { ...(sanaFrom ? { gte: sanaFrom } : {}), ...(sanaTo ? { lte: sanaTo } : {}) } } : {}),
+    ...(sanaFrom || sanaTo
+      ? {
+          sana: {
+            ...(sanaFrom ? { gte: sanaFrom } : {}),
+            ...(sanaTo ? { lte: sanaTo } : {}),
+          },
+        }
+      : {}),
     darsJadvali: {
       ...(req.query.subjectId ? { fanId: req.query.subjectId } : {}),
       ...(req.query.classroomId ? { sinfId: req.query.classroomId } : {}),
@@ -84,7 +91,10 @@ async function getAdminBaholar(req, res) {
       orderBy: [{ sana: "desc" }, { createdAt: "desc" }],
     }),
     prisma.baho.count({ where }),
-    prisma.baho.findMany({ where, select: { turi: true, ball: true, maxBall: true } }),
+    prisma.baho.findMany({
+      where,
+      select: { turi: true, ball: true, maxBall: true },
+    }),
   ]);
 
   res.json({
@@ -101,8 +111,12 @@ async function getAdminBaholar(req, res) {
       ball: row.ball,
       maxBall: row.maxBall,
       izoh: row.izoh || "",
-      student: row.student ? `${row.student.firstName} ${row.student.lastName}` : "-",
-      oqituvchi: row.teacher ? `${row.teacher.firstName} ${row.teacher.lastName}` : "-",
+      student: row.student
+        ? `${row.student.firstName} ${row.student.lastName}`
+        : "-",
+      oqituvchi: row.teacher
+        ? `${row.teacher.firstName} ${row.teacher.lastName}`
+        : "-",
       fan: row.darsJadvali?.fan?.name || "-",
       sinf: row.darsJadvali?.sinf
         ? `${row.darsJadvali.sinf.name} (${row.darsJadvali.sinf.academicYear})`

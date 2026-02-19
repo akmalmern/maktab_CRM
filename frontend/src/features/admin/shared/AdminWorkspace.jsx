@@ -16,12 +16,15 @@ import {
 } from './sections';
 import {
   createClassroomThunk,
+  previewPromoteClassroomThunk,
+  promoteClassroomThunk,
+  previewAnnualClassPromotionThunk,
+  runAnnualClassPromotionThunk,
   createDarsJadvaliThunk,
   createStudentThunk,
   createSubjectThunk,
   createTeacherThunk,
   createVaqtOraliqThunk,
-  deleteClassroomThunk,
   deleteDarsJadvaliThunk,
   deleteSubjectThunk,
   deleteStudentThunk,
@@ -38,7 +41,8 @@ import {
   fetchFinanceStudentsThunk,
   fetchFinanceStudentDetailThunk,
   createFinancePaymentThunk,
-  revertFinancePaymentThunk,
+  createFinanceImtiyozThunk,
+  deactivateFinanceImtiyozThunk,
   updateFinanceSettingsThunk,
   updateDarsJadvaliThunk,
 } from './index';
@@ -75,6 +79,9 @@ export default function AdminWorkspace({ section }) {
     limit: 20,
     status: 'ALL',
     classroomId: 'all',
+    debtMonth: 'ALL',
+    debtTargetMonth: '',
+    cashflowMonth: '',
   });
   const [debouncedFinanceSearch, setDebouncedFinanceSearch] = useState('');
   const [exporting, setExporting] = useState('');
@@ -169,6 +176,9 @@ export default function AdminWorkspace({ section }) {
       page: financeQuery.page,
       limit: financeQuery.limit,
       status: financeQuery.status,
+      debtMonth: financeQuery.debtMonth,
+      debtTargetMonth: financeQuery.debtTargetMonth || undefined,
+      cashflowMonth: financeQuery.cashflowMonth || undefined,
       search: debouncedFinanceSearch,
       classroomId: financeQuery.classroomId === 'all' ? undefined : financeQuery.classroomId,
     }));
@@ -179,6 +189,9 @@ export default function AdminWorkspace({ section }) {
     financeQuery.limit,
     financeQuery.status,
     financeQuery.classroomId,
+    financeQuery.debtMonth,
+    financeQuery.debtTargetMonth,
+    financeQuery.cashflowMonth,
     debouncedFinanceSearch,
   ]);
 
@@ -307,19 +320,40 @@ export default function AdminWorkspace({ section }) {
     return false;
   }
 
-  async function handleDeleteClassroom(id) {
-    const ok = await askConfirm('Sinfni o`chirmoqchimisiz?', "Sinfni o'chirish");
-    if (!ok) return false;
-
-    const result = await dispatch(deleteClassroomThunk(id));
-    if (deleteClassroomThunk.fulfilled.match(result)) {
-      toast.success('Sinf o`chirildi');
-      dispatch(fetchClassroomsThunk());
-      return true;
+  async function handlePreviewPromoteClassroom(sourceClassroomId, targetClassroomId) {
+    const result = await dispatch(previewPromoteClassroomThunk({ sourceClassroomId, targetClassroomId }));
+    if (previewPromoteClassroomThunk.fulfilled.match(result)) {
+      return { ok: true, data: result.payload };
     }
+    return { ok: false, message: result.payload || "Ko'chirish preview olinmadi" };
+  }
 
-    toast.error(result.payload || 'Sinf o`chirilmadi');
-    return false;
+  async function handlePromoteClassroom(sourceClassroomId, targetClassroomId) {
+    const result = await dispatch(promoteClassroomThunk({ sourceClassroomId, targetClassroomId }));
+    if (promoteClassroomThunk.fulfilled.match(result)) {
+      toast.success(result.payload?.message || "Sinf muvaffaqiyatli ko'chirildi");
+      dispatch(fetchClassroomsThunk());
+      return { ok: true, data: result.payload };
+    }
+    return { ok: false, message: result.payload || "Sinfni ko'chirib bo'lmadi" };
+  }
+
+  async function handlePreviewAnnualClassPromotion() {
+    const result = await dispatch(previewAnnualClassPromotionThunk());
+    if (previewAnnualClassPromotionThunk.fulfilled.match(result)) {
+      return { ok: true, data: result.payload };
+    }
+    return { ok: false, message: result.payload || "Yillik o'tkazish preview olinmadi" };
+  }
+
+  async function handleRunAnnualClassPromotion(payload = {}) {
+    const result = await dispatch(runAnnualClassPromotionThunk(payload));
+    if (runAnnualClassPromotionThunk.fulfilled.match(result)) {
+      toast.success(result.payload?.message || "Yillik sinf o'tkazish bajarildi");
+      dispatch(fetchClassroomsThunk());
+      return { ok: true, data: result.payload };
+    }
+    return { ok: false, message: result.payload || "Yillik sinf o'tkazish bajarilmadi" };
   }
 
   async function handleCreateVaqtOraliq(payload) {
@@ -428,10 +462,12 @@ export default function AdminWorkspace({ section }) {
   async function handleSaveFinanceSettings(payload) {
     const result = await dispatch(updateFinanceSettingsThunk(payload));
     if (updateFinanceSettingsThunk.fulfilled.match(result)) {
-      toast.success("Moliya sozlamalari saqlandi");
+      toast.success("Tarif rejalandi");
+      dispatch(fetchFinanceSettingsThunk());
       return true;
     }
-    toast.error(result.payload || "Moliya sozlamalari saqlanmadi");
+    toast.error(result.payload || "Tarif saqlanmadi");
+    dispatch(fetchFinanceSettingsThunk());
     return false;
   }
 
@@ -452,13 +488,23 @@ export default function AdminWorkspace({ section }) {
     return false;
   }
 
-  async function handleRevertFinancePayment(tolovId) {
-    const result = await dispatch(revertFinancePaymentThunk(tolovId));
-    if (revertFinancePaymentThunk.fulfilled.match(result)) {
-      toast.success("To'lov bekor qilindi");
+  async function handleCreateFinanceImtiyoz(studentId, payload) {
+    const result = await dispatch(createFinanceImtiyozThunk({ studentId, payload }));
+    if (createFinanceImtiyozThunk.fulfilled.match(result)) {
+      toast.success("Imtiyoz saqlandi");
       return true;
     }
-    toast.error(result.payload || "To'lovni bekor qilib bo'lmadi");
+    toast.error(result.payload || "Imtiyoz saqlanmadi");
+    return false;
+  }
+
+  async function handleDeactivateFinanceImtiyoz(imtiyozId, payload) {
+    const result = await dispatch(deactivateFinanceImtiyozThunk({ imtiyozId, payload }));
+    if (deactivateFinanceImtiyozThunk.fulfilled.match(result)) {
+      toast.success("Imtiyoz bekor qilindi");
+      return true;
+    }
+    toast.error(result.payload || "Imtiyoz bekor qilinmadi");
     return false;
   }
 
@@ -517,7 +563,10 @@ export default function AdminWorkspace({ section }) {
           loading={classrooms.loading}
           actionLoading={actionLoading}
           onCreateClassroom={handleCreateClassroom}
-          onDeleteClassroom={handleDeleteClassroom}
+          onPreviewPromoteClassroom={handlePreviewPromoteClassroom}
+          onPromoteClassroom={handlePromoteClassroom}
+          onPreviewAnnualClassPromotion={handlePreviewAnnualClassPromotion}
+          onRunAnnualClassPromotion={handleRunAnnualClassPromotion}
           onOpenStudentDetail={(id) => navigate(`/admin/students/${id}`)}
           onDeleteStudent={handleDeleteStudent}
         />
@@ -556,7 +605,9 @@ export default function AdminWorkspace({ section }) {
         <FinanceSection
           classrooms={classrooms.items}
           settings={finance.settings}
+          settingsMeta={finance.settingsMeta}
           studentsState={finance.students}
+          studentsSummary={finance.students.summary}
           detailState={finance.detail}
           query={financeQuery}
           actionLoading={actionLoading}
@@ -564,14 +615,17 @@ export default function AdminWorkspace({ section }) {
           onRefresh={() =>
             dispatch(fetchFinanceStudentsThunk({
               ...financeQuery,
+              debtTargetMonth: financeQuery.debtTargetMonth || undefined,
+              cashflowMonth: financeQuery.cashflowMonth || undefined,
               classroomId: financeQuery.classroomId === 'all' ? undefined : financeQuery.classroomId,
             }))
           }
           onSaveSettings={handleSaveFinanceSettings}
           onOpenDetail={handleOpenFinanceDetail}
           onCreatePayment={handleCreateFinancePayment}
+          onCreateImtiyoz={handleCreateFinanceImtiyoz}
+          onDeactivateImtiyoz={handleDeactivateFinanceImtiyoz}
           onExportDebtors={handleExportFinanceDebtors}
-          onRevertPayment={handleRevertFinancePayment}
           exporting={exporting}
         />
       )}

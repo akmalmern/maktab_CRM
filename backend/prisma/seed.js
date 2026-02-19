@@ -5,6 +5,8 @@ const bcrypt = require("bcrypt");
 
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "admin123";
+const MANAGER_USERNAME = "manager";
+const MANAGER_PASSWORD = "manager123";
 const DEFAULT_PASSWORD = "12345678";
 const DEFAULT_ACADEMIC_YEAR = "2025-2026";
 
@@ -181,6 +183,22 @@ async function ensureAdmin() {
   });
 
   console.log("Admin created:", { username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+}
+
+async function ensureManager() {
+  const hash = await bcrypt.hash(MANAGER_PASSWORD, 10);
+  const exists = await prisma.user.findUnique({ where: { username: MANAGER_USERNAME } });
+
+  if (exists) {
+    console.log("Manager already exists");
+    return;
+  }
+
+  await prisma.user.create({
+    data: { role: "MANAGER", username: MANAGER_USERNAME, password: hash },
+  });
+
+  console.log("Manager created:", { username: MANAGER_USERNAME, password: MANAGER_PASSWORD });
 }
 
 async function ensureDefaultSubjects() {
@@ -716,6 +734,7 @@ async function seedAttendanceHistory(months = 0) {
 
 async function main() {
   await ensureAdmin();
+  await ensureManager();
 
   const subjectIds = await ensureDefaultSubjects();
   const classrooms = await ensureDefaultClassrooms();
@@ -739,6 +758,7 @@ async function main() {
     `Grades (JORIY/NAZORAT/ORALIQ) => deleted: ${historyResult.deletedBaholar}, created: ${historyResult.createdBaholar}`,
   );
   console.log(`Default password for teacher/student: ${DEFAULT_PASSWORD}`);
+  console.log(`Manager credentials: ${MANAGER_USERNAME} / ${MANAGER_PASSWORD}`);
 }
 
 main()

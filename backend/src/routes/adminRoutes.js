@@ -16,6 +16,8 @@ const {
   createStudentSchema,
   createSubjectSchema,
   createClassroomSchema,
+  promoteClassroomSchema,
+  annualClassPromotionSchema,
 } = require("../validators/adminCreateSchemas");
 const {
   listTeachersQuerySchema,
@@ -36,7 +38,12 @@ const {
   studentIdParamSchema,
   tolovIdParamSchema,
   createPaymentSchema,
+  createImtiyozSchema,
+  imtiyozIdParamSchema,
+  deactivateImtiyozSchema,
   financeExportQuerySchema,
+  financeTarifIdParamSchema,
+  financeTarifRollbackSchema,
 } = require("../validators/financeSchemas");
 const SubjectIdParamSchema = z.object({ id: z.string().cuid() });
 const ClassroomIdParamSchema = z.object({ id: z.string().cuid() });
@@ -95,6 +102,33 @@ router.post(
   requireRole("ADMIN"),
   validateBody(createClassroomSchema),
   asyncHandler(classrooms.createClassroom),
+);
+router.post(
+  "/classrooms/:id/promote-preview",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: ClassroomIdParamSchema, body: promoteClassroomSchema }),
+  asyncHandler(classrooms.previewPromoteClassroom),
+);
+router.post(
+  "/classrooms/:id/promote",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: ClassroomIdParamSchema, body: promoteClassroomSchema }),
+  asyncHandler(classrooms.promoteClassroom),
+);
+router.get(
+  "/classrooms/yillik-otkazish/preview",
+  requireAuth,
+  requireRole("ADMIN"),
+  asyncHandler(classrooms.previewAnnualClassPromotion),
+);
+router.post(
+  "/classrooms/yillik-otkazish",
+  requireAuth,
+  requireRole("ADMIN"),
+  validateBody(annualClassPromotionSchema),
+  asyncHandler(classrooms.runAnnualClassPromotion),
 );
 
 router.delete(
@@ -219,6 +253,13 @@ router.patch(
   validateBody(financeSettingsSchema),
   asyncHandler(finance.upsertFinanceSettings),
 );
+router.post(
+  "/moliya/tariflar/:tarifId/rollback",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: financeTarifIdParamSchema, body: financeTarifRollbackSchema }),
+  asyncHandler(finance.rollbackFinanceTarif),
+);
 router.get(
   "/moliya/students",
   requireAuth,
@@ -253,6 +294,20 @@ router.post(
   requireRole("ADMIN"),
   validate({ params: studentIdParamSchema, body: createPaymentSchema }),
   asyncHandler(finance.createStudentPayment),
+);
+router.post(
+  "/moliya/students/:studentId/imtiyoz",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: studentIdParamSchema, body: createImtiyozSchema }),
+  asyncHandler(finance.createStudentImtiyoz),
+);
+router.delete(
+  "/moliya/imtiyoz/:imtiyozId",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: imtiyozIdParamSchema, body: deactivateImtiyozSchema }),
+  asyncHandler(finance.deactivateStudentImtiyoz),
 );
 router.delete(
   "/moliya/tolov/:tolovId",

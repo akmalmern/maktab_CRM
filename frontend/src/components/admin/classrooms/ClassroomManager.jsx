@@ -6,7 +6,8 @@ export default function ClassroomManager({
   loading,
   actionLoading,
   onCreateClassroom,
-  onDeleteClassroom,
+  onPreviewAnnualClassPromotion,
+  onRunAnnualClassPromotion,
   onOpenStudentDetail,
   onDeleteStudent,
 }) {
@@ -14,6 +15,10 @@ export default function ClassroomManager({
   const [academicYear, setAcademicYear] = useState('2025-2026');
   const [localClassrooms, setLocalClassrooms] = useState(classrooms);
   const [openedClassroomId, setOpenedClassroomId] = useState(null);
+  const [annualModalOpen, setAnnualModalOpen] = useState(false);
+  const [annualPreview, setAnnualPreview] = useState(null);
+  const [annualLoading, setAnnualLoading] = useState(false);
+  const [annualError, setAnnualError] = useState('');
   const selectedClassroom = localClassrooms.find((item) => item.id === openedClassroomId) || null;
 
   useEffect(() => {
@@ -26,13 +31,42 @@ export default function ClassroomManager({
     if (ok) setName('');
   }
 
-  async function handleDeleteClassroomOptimistic(classroomId) {
-    const snapshot = localClassrooms;
-    setLocalClassrooms((prev) => prev.filter((item) => item.id !== classroomId));
-    if (openedClassroomId === classroomId) setOpenedClassroomId(null);
+  async function loadAnnualPreview() {
+    setAnnualLoading(true);
+    setAnnualError('');
+    const result = await onPreviewAnnualClassPromotion?.();
+    setAnnualLoading(false);
+    if (!result?.ok) {
+      setAnnualPreview(null);
+      setAnnualError(result?.message || "Yillik o'tkazish preview olinmadi");
+      return;
+    }
+    setAnnualPreview(result.data?.plan || null);
+  }
 
-    const ok = await onDeleteClassroom(classroomId);
-    if (!ok) setLocalClassrooms(snapshot);
+  async function openAnnualModal() {
+    setAnnualModalOpen(true);
+    await loadAnnualPreview();
+  }
+
+  async function handleRunAnnualPromotion() {
+    const yes = window.confirm(
+      `Yillik sinf yangilash bajarilsinmi? ${
+        annualPreview ? `Jami ${annualPreview.studentsToPromote || 0} o'quvchi sinfi yangilanadi.` : ''
+      }`,
+    );
+    if (!yes) return;
+
+    setAnnualLoading(true);
+    setAnnualError('');
+    const result = await onRunAnnualClassPromotion?.({ force: false });
+    setAnnualLoading(false);
+    if (!result?.ok) {
+      setAnnualError(result?.message || "Yillik o'tkazish bajarilmadi");
+      return;
+    }
+    await loadAnnualPreview();
+    setAnnualModalOpen(false);
   }
 
   const studentColumns = [
@@ -77,7 +111,14 @@ export default function ClassroomManager({
   return (
     <Card
       title="Sinflar boshqaruvi"
-      actions={<span className="text-sm text-slate-500">Jami: {localClassrooms.length}</span>}
+      actions={
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-slate-500">Jami: {localClassrooms.length}</span>
+          <Button size="sm" variant="indigo" onClick={openAnnualModal} disabled={annualLoading || actionLoading}>
+            Yillik avtomat o'tkazish
+          </Button>
+        </div>
+      }
     >
       <form onSubmit={handleSubmit} className="mb-4 grid grid-cols-1 gap-2 md:grid-cols-3">
         <Input
@@ -115,14 +156,6 @@ export default function ClassroomManager({
                 <Button size="sm" variant="secondary" onClick={() => setOpenedClassroomId(classroom.id)}>
                   Ko'rish
                 </Button>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  disabled={actionLoading}
-                  onClick={() => handleDeleteClassroomOptimistic(classroom.id)}
-                >
-                  O'chirish
-                </Button>
               </div>
             </div>
           ))}
@@ -152,6 +185,57 @@ export default function ClassroomManager({
           <StateView type="empty" description="Bu sinfda hozircha student yo'q." />
         )}
       </Modal>
+
+      <Modal
+        open={annualModalOpen}
+        onClose={() => setAnnualModalOpen(false)}
+        title="Yillik sinf yangilash (Sentyabr)"
+        subtitle="O'quvchilar ko'chirilmaydi: sinf nomi va o'quv yili avtomatik yangilanadi."
+      >
+        {annualLoading && <StateView type="loading" />}
+        {!annualLoading && annualError && <StateView type="error" description={annualError} />}
+        {!annualLoading && !annualError && annualPreview && (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+              <p>
+                <b>{annualPreview.sourceAcademicYear}</b> dan <b>{annualPreview.targetAcademicYear}</b> ga
+              </p>
+              <p className="mt-1">
+                Yangilanadigan sinflar: <b>{annualPreview.promoteCount}</b>, bitiruvchi sinflar:{' '}
+                <b>{annualPreview.graduateCount}</b>
+              </p>
+              <p className="mt-1">
+                O'quvchilar soni (yangilanadi): <b>{annualPreview.studentsToPromote}</b>
+              </p>
+              {!annualPreview.isSeptember && (
+                <p className="mt-1 text-amber-700">
+                  Hozir sentyabr emas. Bu manual ishga tushirish bo'ladi.
+                </p>
+              )}
+            </div>
+
+            {annualPreview.conflictCount > 0 && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                Conflict mavjud: {annualPreview.conflictCount} ta. Avval mavjud sinflarni tekshiring.
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={loadAnnualPreview} disabled={annualLoading}>
+                Preview yangilash
+              </Button>
+              <Button
+                variant="success"
+                onClick={handleRunAnnualPromotion}
+                disabled={annualLoading || annualPreview.conflictCount > 0 || annualPreview.promoteCount === 0}
+              >
+                Tasdiqlab avtomat o'tkazish
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </Card>
   );
 }
+

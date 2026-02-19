@@ -7,5 +7,6 @@ export default function RoleHomePage() {
   if (role === 'ADMIN') return <Navigate to="/admin" replace />;
   if (role === 'TEACHER') return <Navigate to="/teacher" replace />;
   if (role === 'STUDENT') return <Navigate to="/student" replace />;
+  if (role === 'MANAGER') return <Navigate to="/manager" replace />;
   return <Navigate to="/login" replace />;
 }

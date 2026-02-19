@@ -28,10 +28,7 @@ async function createVaqtOraliq(req, res) {
 
   const mavjud = await prisma.vaqtOraliq.findFirst({
     where: {
-      OR: [
-        { tartib },
-        { boshlanishVaqti, tugashVaqti },
-      ],
+      OR: [{ tartib }, { boshlanishVaqti, tugashVaqti }],
     },
     select: { id: true },
   });
@@ -139,7 +136,11 @@ async function createDarsJadvali(req, res) {
     throw new ApiError(404, "SINF_TOPILMADI", "Tanlangan sinf topilmadi");
   }
   if (!oqituvchi) {
-    throw new ApiError(404, "OQITUVCHI_TOPILMADI", "Tanlangan o'qituvchi topilmadi");
+    throw new ApiError(
+      404,
+      "OQITUVCHI_TOPILMADI",
+      "Tanlangan o'qituvchi topilmadi",
+    );
   }
   if (!fan) {
     throw new ApiError(404, "FAN_TOPILMADI", "Tanlangan fan topilmadi");
@@ -152,7 +153,11 @@ async function createDarsJadvali(req, res) {
     );
   }
   if (!vaqtOraliq) {
-    throw new ApiError(404, "VAQT_ORALIQ_TOPILMADI", "Tanlangan vaqt oralig'i topilmadi");
+    throw new ApiError(
+      404,
+      "VAQT_ORALIQ_TOPILMADI",
+      "Tanlangan vaqt oralig'i topilmadi",
+    );
   }
 
   const [sinfKonflikt, oqituvchiKonflikt] = await Promise.all([
@@ -179,7 +184,8 @@ async function createDarsJadvali(req, res) {
       `${sinf.name} sinf uchun ${haftaKuni} ${vaqtOraliq.boshlanishVaqti} da boshqa dars bor`,
       {
         mavjudFan: sinfKonflikt.fan?.name,
-        mavjudOqituvchi: `${sinfKonflikt.oqituvchi?.firstName || ""} ${sinfKonflikt.oqituvchi?.lastName || ""}`.trim(),
+        mavjudOqituvchi:
+          `${sinfKonflikt.oqituvchi?.firstName || ""} ${sinfKonflikt.oqituvchi?.lastName || ""}`.trim(),
       },
     );
   }
@@ -206,7 +212,13 @@ async function createDarsJadvali(req, res) {
       oqituvchi: { select: { id: true, firstName: true, lastName: true } },
       fan: { select: { id: true, name: true } },
       vaqtOraliq: {
-        select: { id: true, nomi: true, boshlanishVaqti: true, tugashVaqti: true, tartib: true },
+        select: {
+          id: true,
+          nomi: true,
+          boshlanishVaqti: true,
+          tugashVaqti: true,
+          tartib: true,
+        },
       },
     },
   });
@@ -273,7 +285,11 @@ async function updateDarsJadvali(req, res) {
     throw new ApiError(404, "SINF_TOPILMADI", "Tanlangan sinf topilmadi");
   }
   if (!oqituvchi) {
-    throw new ApiError(404, "OQITUVCHI_TOPILMADI", "Tanlangan o'qituvchi topilmadi");
+    throw new ApiError(
+      404,
+      "OQITUVCHI_TOPILMADI",
+      "Tanlangan o'qituvchi topilmadi",
+    );
   }
   if (!fan) {
     throw new ApiError(404, "FAN_TOPILMADI", "Tanlangan fan topilmadi");
@@ -286,7 +302,11 @@ async function updateDarsJadvali(req, res) {
     );
   }
   if (!vaqtOraliq) {
-    throw new ApiError(404, "VAQT_ORALIQ_TOPILMADI", "Tanlangan vaqt oralig'i topilmadi");
+    throw new ApiError(
+      404,
+      "VAQT_ORALIQ_TOPILMADI",
+      "Tanlangan vaqt oralig'i topilmadi",
+    );
   }
 
   const [sinfKonflikt, oqituvchiKonflikt] = await Promise.all([

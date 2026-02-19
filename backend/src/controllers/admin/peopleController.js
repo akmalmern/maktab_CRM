@@ -10,7 +10,11 @@ const {
   parseIntSafe,
   buildSearchWhere,
 } = require("./helpers");
-const { buildPaidMonthMap, buildDebtInfo } = require("../../services/financeDebtService");
+const {
+  buildPaidMonthMap,
+  buildImtiyozMonthMap,
+  buildDebtInfo,
+} = require("../../services/financeDebtService");
 
 async function createTeacher(req, res) {
   const { firstName, lastName, birthDate, phone, subjectId, yashashManzili } =
@@ -28,7 +32,11 @@ async function createTeacher(req, res) {
         select: { id: true },
       });
       if (existsByPhone) {
-        throw new ApiError(409, "PHONE_TAKEN", "Bu telefon raqam tizimda mavjud");
+        throw new ApiError(
+          409,
+          "PHONE_TAKEN",
+          "Bu telefon raqam tizimda mavjud",
+        );
       }
     }
 
@@ -97,7 +105,11 @@ async function createStudent(req, res) {
         select: { id: true },
       });
       if (existsByPhone) {
-        throw new ApiError(409, "PHONE_TAKEN", "Bu telefon raqam tizimda mavjud");
+        throw new ApiError(
+          409,
+          "PHONE_TAKEN",
+          "Bu telefon raqam tizimda mavjud",
+        );
       }
     }
 
@@ -106,7 +118,11 @@ async function createStudent(req, res) {
       select: { id: true, isArchived: true },
     });
     if (!classroom || classroom.isArchived) {
-      throw new ApiError(404, "CLASSROOM_NOT_FOUND", "Tanlangan sinf topilmadi");
+      throw new ApiError(
+        404,
+        "CLASSROOM_NOT_FOUND",
+        "Tanlangan sinf topilmadi",
+      );
     }
 
     const username = await pickFreeUsername(tx, base);
@@ -273,7 +289,9 @@ async function getStudents(req, res) {
     ]);
   }
 
-  const settings = await prisma.moliyaSozlama.findUnique({ where: { key: "MAIN" } });
+  const settings = await prisma.moliyaSozlama.findUnique({
+    where: { key: "MAIN" },
+  });
   const oylikSumma = settings?.oylikSumma || 300000;
   const today = new Date();
   const studentIds = items.map((row) => row.id);
@@ -283,16 +301,42 @@ async function getStudents(req, res) {
         select: { studentId: true, yil: true, oy: true },
       })
     : [];
+  const imtiyozlar = studentIds.length
+    ? await prisma.tolovImtiyozi.findMany({
+        where: { studentId: { in: studentIds } },
+        select: {
+          studentId: true,
+          turi: true,
+          qiymat: true,
+          boshlanishOy: true,
+          oylarSoni: true,
+          isActive: true,
+          bekorQilinganAt: true,
+          oylarSnapshot: true,
+        },
+      })
+    : [];
 
   const paidMap = buildPaidMonthMap(qoplamalar);
+  const imtiyozGrouped = new Map();
+  for (const row of imtiyozlar) {
+    if (!imtiyozGrouped.has(row.studentId))
+      imtiyozGrouped.set(row.studentId, []);
+    imtiyozGrouped.get(row.studentId).push(row);
+  }
 
   for (const item of items) {
     const startDate = item.enrollments?.[0]?.startDate || item.createdAt;
     const paidSet = paidMap.get(item.id) || new Set();
+    const imtiyozMonthMap = buildImtiyozMonthMap({
+      imtiyozlar: imtiyozGrouped.get(item.id) || [],
+      oylikSumma,
+    });
     const debtInfo = buildDebtInfo({
       startDate,
       paidMonthSet: paidSet,
       oylikSumma,
+      imtiyozMonthMap,
       now: today,
     });
     item.tolovHolati = debtInfo.holat;
@@ -323,7 +367,8 @@ async function deleteTeacher(req, res) {
       documents: { select: { filePath: true } },
     },
   });
-  if (!teacher) throw new ApiError(404, "TEACHER_NOT_FOUND", "Teacher topilmadi");
+  if (!teacher)
+    throw new ApiError(404, "TEACHER_NOT_FOUND", "Teacher topilmadi");
 
   await prisma.$transaction(async (tx) => {
     await tx.teacher.delete({ where: { id: teacher.id } });
@@ -347,7 +392,8 @@ async function deleteStudent(req, res) {
       documents: { select: { filePath: true } },
     },
   });
-  if (!student) throw new ApiError(404, "STUDENT_NOT_FOUND", "Student topilmadi");
+  if (!student)
+    throw new ApiError(404, "STUDENT_NOT_FOUND", "Student topilmadi");
 
   await prisma.$transaction(async (tx) => {
     await tx.student.delete({ where: { id: student.id } });

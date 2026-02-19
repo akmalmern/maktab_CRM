@@ -13,7 +13,7 @@ export default function LoginPage() {
   const [form, setForm] = useState({ username: '', password: '' });
 
   useEffect(() => {
-    if (isAuthenticated && role === 'ADMIN') {
+    if (isAuthenticated && role) {
       navigate('/', { replace: true });
     }
   }, [isAuthenticated, role, navigate]);

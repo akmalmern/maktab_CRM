@@ -1,45 +1,52 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { resolvePaymentPlan } = require("../src/services/financePaymentService");
+const {
+  resolvePaymentMonthCount,
+  resolvePaymentAmount,
+} = require("../src/services/financePaymentService");
 
-const settings = {
-  oylikSumma: 300000,
-  yillikSumma: 3000000,
-};
-
-test("resolvePaymentPlan computes default monthly amount", () => {
-  const plan = resolvePaymentPlan({
+test("resolvePaymentMonthCount computes monthly oylar soni", () => {
+  const oylarSoni = resolvePaymentMonthCount({
     turi: "OYLIK",
     oylarSoniRaw: 2,
-    summaRaw: undefined,
-    settings,
   });
-
-  assert.equal(plan.oylarSoni, 2);
-  assert.equal(plan.summa, 600000);
+  assert.equal(oylarSoni, 2);
 });
 
-test("resolvePaymentPlan rejects mismatched amount", () => {
+test("resolvePaymentMonthCount forces 12 for YILLIK", () => {
+  const oylarSoni = resolvePaymentMonthCount({
+    turi: "YILLIK",
+    oylarSoniRaw: undefined,
+  });
+  assert.equal(oylarSoni, 12);
+});
+
+test("resolvePaymentMonthCount rejects invalid YILLIK oylar soni", () => {
   assert.throws(
     () =>
-      resolvePaymentPlan({
-        turi: "OYLIK",
-        oylarSoniRaw: 2,
-        summaRaw: 500000,
-        settings,
+      resolvePaymentMonthCount({
+        turi: "YILLIK",
+        oylarSoniRaw: 6,
       }),
-    { code: "PAYMENT_AMOUNT_MISMATCH" },
+    { code: "YILLIK_MONTHS_INVALID" },
   );
 });
 
-test("resolvePaymentPlan infers IXTIYORIY months from summa", () => {
-  const plan = resolvePaymentPlan({
-    turi: "IXTIYORIY",
-    oylarSoniRaw: undefined,
-    summaRaw: 900000,
-    settings,
+test("resolvePaymentAmount returns expected summa when not provided", () => {
+  const amount = resolvePaymentAmount({
+    expectedSumma: 600000,
+    requestedSumma: null,
   });
+  assert.equal(amount, 600000);
+});
 
-  assert.equal(plan.oylarSoni, 3);
-  assert.equal(plan.summa, 900000);
+test("resolvePaymentAmount rejects mismatched summa", () => {
+  assert.throws(
+    () =>
+      resolvePaymentAmount({
+        expectedSumma: 600000,
+        requestedSumma: 500000,
+      }),
+    { code: "PAYMENT_AMOUNT_MISMATCH" },
+  );
 });

@@ -1,6 +1,9 @@
 const prisma = require("../../prisma");
 const { ApiError } = require("../../utils/apiError");
-const { parseSanaOrToday, buildRangeByType } = require("../../utils/attendancePeriod");
+const {
+  parseSanaOrToday,
+  buildRangeByType,
+} = require("../../utils/attendancePeriod");
 
 function toIsoDate(date) {
   return date.toISOString().slice(0, 10);
@@ -8,7 +11,9 @@ function toIsoDate(date) {
 
 function calcFoiz(records) {
   if (!records.length) return 0;
-  const present = records.filter((r) => r.holat === "KELDI" || r.holat === "KECHIKDI").length;
+  const present = records.filter(
+    (r) => r.holat === "KELDI" || r.holat === "KECHIKDI",
+  ).length;
   return Number(((present / records.length) * 100).toFixed(1));
 }
 
@@ -41,7 +46,9 @@ async function getMyAttendance(req, res) {
         where: { isActive: true },
         take: 1,
         orderBy: { createdAt: "desc" },
-        include: { classroom: { select: { id: true, name: true, academicYear: true } } },
+        include: {
+          classroom: { select: { id: true, name: true, academicYear: true } },
+        },
       },
     },
   });
@@ -66,7 +73,10 @@ async function getMyAttendance(req, res) {
         },
       },
     },
-    orderBy: [{ sana: "desc" }, { darsJadvali: { vaqtOraliq: { tartib: "asc" } } }],
+    orderBy: [
+      { sana: "desc" },
+      { darsJadvali: { vaqtOraliq: { tartib: "asc" } } },
+    ],
   });
 
   const baholar = await prisma.baho.findMany({
@@ -93,7 +103,8 @@ async function getMyAttendance(req, res) {
 
   const tarix = records.map((row) => ({
     ...(() => {
-      const relatedBaholar = bahoMap.get(`${row.darsJadvaliId}__${toIsoDate(row.sana)}`) || [];
+      const relatedBaholar =
+        bahoMap.get(`${row.darsJadvaliId}__${toIsoDate(row.sana)}`) || [];
       const baho = pickPrimaryBaho(relatedBaholar);
       return {
         bahoBall: baho?.ball ?? null,

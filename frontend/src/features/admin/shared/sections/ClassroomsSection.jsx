@@ -6,7 +6,10 @@ export default function ClassroomsSection({
   loading,
   actionLoading,
   onCreateClassroom,
-  onDeleteClassroom,
+  onPreviewPromoteClassroom,
+  onPromoteClassroom,
+  onPreviewAnnualClassPromotion,
+  onRunAnnualClassPromotion,
   onOpenStudentDetail,
   onDeleteStudent,
 }) {
@@ -23,7 +26,10 @@ export default function ClassroomsSection({
         loading={loading}
         actionLoading={actionLoading}
         onCreateClassroom={onCreateClassroom}
-        onDeleteClassroom={onDeleteClassroom}
+        onPreviewPromoteClassroom={onPreviewPromoteClassroom}
+        onPromoteClassroom={onPromoteClassroom}
+        onPreviewAnnualClassPromotion={onPreviewAnnualClassPromotion}
+        onRunAnnualClassPromotion={onRunAnnualClassPromotion}
         onOpenStudentDetail={onOpenStudentDetail}
         onDeleteStudent={onDeleteStudent}
       />

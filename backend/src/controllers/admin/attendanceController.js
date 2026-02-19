@@ -12,7 +12,9 @@ function toIsoDate(value) {
 
 function calcFoiz(records) {
   if (!records.length) return 0;
-  const present = records.filter((r) => r.holat === "KELDI" || r.holat === "KECHIKDI").length;
+  const present = records.filter(
+    (r) => r.holat === "KELDI" || r.holat === "KECHIKDI",
+  ).length;
   return Number(((present / records.length) * 100).toFixed(1));
 }
 
@@ -56,7 +58,10 @@ function buildBaseWhere({ classroomId, studentId }) {
 
 async function fetchSelectedRecords(baseWhere, selectedRange) {
   return prisma.davomat.findMany({
-    where: { ...baseWhere, sana: { gte: selectedRange.from, lt: selectedRange.to } },
+    where: {
+      ...baseWhere,
+      sana: { gte: selectedRange.from, lt: selectedRange.to },
+    },
     include: {
       student: { select: { id: true, firstName: true, lastName: true } },
       darsJadvali: {
@@ -73,7 +78,11 @@ async function fetchSelectedRecords(baseWhere, selectedRange) {
 
 function createSimplePdf(textLines) {
   const lines = textLines.slice(0, 44);
-  const escapePdfText = (input) => String(input).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+  const escapePdfText = (input) =>
+    String(input)
+      .replace(/\\/g, "\\\\")
+      .replace(/\(/g, "\\(")
+      .replace(/\)/g, "\\)");
 
   const contentLines = ["BT", "/F1 11 Tf", "36 806 Td"];
   lines.forEach((line, idx) => {
@@ -122,30 +131,51 @@ async function getAttendanceReport(req, res) {
 
   const baseWhere = buildBaseWhere({ classroomId, studentId });
 
-  const [kunlikRecords, haftalikRecords, oylikRecords, choraklikRecords, yillikRecords, selectedRecords] =
-    await Promise.all([
-      prisma.davomat.findMany({
-        where: { ...baseWhere, sana: { gte: ranges.kunlik.from, lt: ranges.kunlik.to } },
-        select: { holat: true },
-      }),
-      prisma.davomat.findMany({
-        where: { ...baseWhere, sana: { gte: ranges.haftalik.from, lt: ranges.haftalik.to } },
-        select: { holat: true },
-      }),
-      prisma.davomat.findMany({
-        where: { ...baseWhere, sana: { gte: ranges.oylik.from, lt: ranges.oylik.to } },
-        select: { holat: true },
-      }),
-      prisma.davomat.findMany({
-        where: { ...baseWhere, sana: { gte: ranges.choraklik.from, lt: ranges.choraklik.to } },
-        select: { holat: true },
-      }),
-      prisma.davomat.findMany({
-        where: { ...baseWhere, sana: { gte: ranges.yillik.from, lt: ranges.yillik.to } },
-        select: { holat: true },
-      }),
-      fetchSelectedRecords(baseWhere, selectedRange),
-    ]);
+  const [
+    kunlikRecords,
+    haftalikRecords,
+    oylikRecords,
+    choraklikRecords,
+    yillikRecords,
+    selectedRecords,
+  ] = await Promise.all([
+    prisma.davomat.findMany({
+      where: {
+        ...baseWhere,
+        sana: { gte: ranges.kunlik.from, lt: ranges.kunlik.to },
+      },
+      select: { holat: true },
+    }),
+    prisma.davomat.findMany({
+      where: {
+        ...baseWhere,
+        sana: { gte: ranges.haftalik.from, lt: ranges.haftalik.to },
+      },
+      select: { holat: true },
+    }),
+    prisma.davomat.findMany({
+      where: {
+        ...baseWhere,
+        sana: { gte: ranges.oylik.from, lt: ranges.oylik.to },
+      },
+      select: { holat: true },
+    }),
+    prisma.davomat.findMany({
+      where: {
+        ...baseWhere,
+        sana: { gte: ranges.choraklik.from, lt: ranges.choraklik.to },
+      },
+      select: { holat: true },
+    }),
+    prisma.davomat.findMany({
+      where: {
+        ...baseWhere,
+        sana: { gte: ranges.yillik.from, lt: ranges.yillik.to },
+      },
+      select: { holat: true },
+    }),
+    fetchSelectedRecords(baseWhere, selectedRange),
+  ]);
 
   const tarix = groupSessions(selectedRecords);
 
@@ -213,7 +243,11 @@ async function exportAttendanceReportXlsx(req, res) {
   try {
     XLSX = require("xlsx");
   } catch {
-    throw new ApiError(500, "XLSX_NOT_INSTALLED", "Excel export uchun 'xlsx' paketi o'rnatilmagan");
+    throw new ApiError(
+      500,
+      "XLSX_NOT_INSTALLED",
+      "Excel export uchun 'xlsx' paketi o'rnatilmagan",
+    );
   }
 
   const { sana } = parseSanaOrToday(req.query.sana);
@@ -238,14 +272,25 @@ async function exportAttendanceReportXlsx(req, res) {
   const infoRows = [
     { Kalit: "Period", Qiymat: selectedRange.type },
     { Kalit: "Boshlanish", Qiymat: toIsoDate(selectedRange.from) },
-    { Kalit: "Tugash", Qiymat: toIsoDate(new Date(selectedRange.to.getTime() - 1)) },
+    {
+      Kalit: "Tugash",
+      Qiymat: toIsoDate(new Date(selectedRange.to.getTime() - 1)),
+    },
     { Kalit: "Jami yozuvlar", Qiymat: selectedRecords.length },
     { Kalit: "Jami sessiyalar", Qiymat: tarix.length },
   ];
 
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(infoRows), "Hisobot");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(tarixRows), "DavomatTarixi");
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.json_to_sheet(infoRows),
+    "Hisobot",
+  );
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.json_to_sheet(tarixRows),
+    "DavomatTarixi",
+  );
 
   const fileBuffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
   const fileName = `davomat-hisobot-${selectedRange.type.toLowerCase()}-${toIsoDate(selectedRange.from)}.xlsx`;

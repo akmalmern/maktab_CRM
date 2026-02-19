@@ -4,9 +4,12 @@ export { fetchAttendanceReportThunk } from '../attendance';
 export {
   fetchFinanceSettingsThunk,
   updateFinanceSettingsThunk,
+  rollbackFinanceTarifThunk,
   fetchFinanceStudentsThunk,
   fetchFinanceStudentDetailThunk,
   createFinancePaymentThunk,
+  createFinanceImtiyozThunk,
+  deactivateFinanceImtiyozThunk,
   revertFinancePaymentThunk,
 } from '../finance';
 
@@ -29,6 +32,10 @@ export {
   fetchClassroomsThunk,
   createClassroomThunk,
   deleteClassroomThunk,
+  previewPromoteClassroomThunk,
+  promoteClassroomThunk,
+  previewAnnualClassPromotionThunk,
+  runAnnualClassPromotionThunk,
 } from '../classrooms';
 export {
   fetchVaqtOraliqlariThunk,

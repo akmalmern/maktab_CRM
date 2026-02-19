@@ -10,6 +10,7 @@ enum UserRole {
   ADMIN
   TEACHER
   STUDENT
+  MANAGER
 }
 
 enum DocumentKind {
@@ -55,6 +56,18 @@ enum TolovTranzaksiyaHolati {
   BEKOR_QILINGAN
 }
 
+enum MoliyaTarifHolati {
+  REJALANGAN
+  AKTIV
+  ARXIV
+}
+
+enum ImtiyozTuri {
+  FOIZ
+  SUMMA
+  TOLIQ_OZOD
+}
+
 model User {
   id   String   @id @default(cuid())
   role UserRole
@@ -72,6 +85,11 @@ model User {
   student Student?
   adminTolovTranzaksiyalari TolovTranzaksiya[] @relation("AdminTolovTranzaksiyalari")
   bekorQilganTolovTranzaksiyalari TolovTranzaksiya[] @relation("BekorQilganTolovTranzaksiyalari")
+  adminTolovImtiyozlari TolovImtiyozi[] @relation("AdminTolovImtiyozlari")
+  bekorQilinganTolovImtiyozlari TolovImtiyozi[] @relation("BekorQilinganTolovImtiyozlari")
+  yaratganMoliyaTariflari MoliyaTarifVersion[] @relation("YaratganMoliyaTariflari")
+  moliyaTarifAuditlari MoliyaTarifAudit[] @relation("MoliyaTarifAuditlari")
+  managerQarzdorIzohlari QarzdorIzoh[] @relation("ManagerQarzdorIzohlari")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -147,6 +165,8 @@ model Student {
   baholar Baho[]
   tolovTranzaksiyalari TolovTranzaksiya[]
   tolovQoplamalari TolovQoplama[]
+  tolovImtiyozlari TolovImtiyozi[]
+  qarzdorIzohlari QarzdorIzoh[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -333,9 +353,56 @@ model MoliyaSozlama {
 
   oylikSumma Int
   yillikSumma Int
+  faolTarifId String?
+  faolTarif MoliyaTarifVersion? @relation(fields: [faolTarifId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model MoliyaTarifVersion {
+  id String @id @default(cuid())
+
+  oylikSumma Int
+  yillikSumma Int
+
+  boshlanishSana DateTime
+  holat MoliyaTarifHolati @default(REJALANGAN)
+  izoh String?
+
+  yaratganAdminUserId String
+  yaratganAdminUser User @relation("YaratganMoliyaTariflari", fields: [yaratganAdminUserId], references: [id], onDelete: Restrict)
+
+  tolovTranzaksiyalari TolovTranzaksiya[]
+  auditlar MoliyaTarifAudit[]
+  faolSozlamalar MoliyaSozlama[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([holat, boshlanishSana])
+  @@index([yaratganAdminUserId, createdAt])
+}
+
+model MoliyaTarifAudit {
+  id String @id @default(cuid())
+
+  action String
+  oldValue Json?
+  newValue Json?
+  izoh String?
+
+  tarifVersionId String?
+  tarifVersion MoliyaTarifVersion? @relation(fields: [tarifVersionId], references: [id], onDelete: SetNull)
+
+  performedByUserId String
+  performedByUser User @relation("MoliyaTarifAuditlari", fields: [performedByUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action, createdAt])
+  @@index([performedByUserId, createdAt])
 }
 
 model TolovTranzaksiya {
@@ -350,6 +417,8 @@ model TolovTranzaksiya {
   tolovSana DateTime @default(now())
   izoh String?
   qoplanganOylar Json?
+  tarifSnapshot Json?
+  tarifVersionId String?
   bekorSana DateTime?
   bekorIzoh String?
   bekorQilganAdminUserId String?
@@ -357,6 +426,7 @@ model TolovTranzaksiya {
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
   adminUser User @relation("AdminTolovTranzaksiyalari", fields: [adminUserId], references: [id], onDelete: Restrict)
   bekorQilganAdminUser User? @relation("BekorQilganTolovTranzaksiyalari", fields: [bekorQilganAdminUserId], references: [id], onDelete: Restrict)
+  tarifVersion MoliyaTarifVersion? @relation(fields: [tarifVersionId], references: [id], onDelete: SetNull)
   qoplamalar TolovQoplama[]
 
   createdAt DateTime @default(now())
@@ -384,4 +454,53 @@ model TolovQoplama {
   @@index([studentId, yil, oy])
   @@index([tranzaksiyaId])
   @@unique([studentId, yil, oy])
+}
+
+model TolovImtiyozi {
+  id String @id @default(cuid())
+
+  studentId String
+  adminUserId String
+
+  turi ImtiyozTuri
+  qiymat Int?
+  boshlanishOy String
+  oylarSoni Int
+  oylarSnapshot Json?
+  sabab String
+  izoh String?
+  isActive Boolean @default(true)
+  bekorQilinganAt DateTime?
+  bekorQilinganAdminUserId String?
+  bekorQilishSababi String?
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  adminUser User @relation("AdminTolovImtiyozlari", fields: [adminUserId], references: [id], onDelete: Restrict)
+  bekorQilinganAdminUser User? @relation("BekorQilinganTolovImtiyozlari", fields: [bekorQilinganAdminUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId, isActive, createdAt])
+  @@index([adminUserId, createdAt])
+  @@index([bekorQilinganAdminUserId, bekorQilinganAt])
+}
+
+model QarzdorIzoh {
+  id String @id @default(cuid())
+
+  studentId String
+  managerUserId String
+
+  izoh String
+  promisedPayDate DateTime?
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  managerUser User @relation("ManagerQarzdorIzohlari", fields: [managerUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId, createdAt])
+  @@index([managerUserId, createdAt])
 }

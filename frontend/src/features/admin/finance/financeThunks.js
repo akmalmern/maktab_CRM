@@ -27,6 +27,21 @@ export const updateFinanceSettingsThunk = createAsyncThunk(
   },
 );
 
+export const rollbackFinanceTarifThunk = createAsyncThunk(
+  'admin/rollbackFinanceTarif',
+  async ({ tarifId, payload }, { rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: `/api/admin/moliya/tariflar/${tarifId}/rollback`,
+        method: 'POST',
+        body: payload,
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
 export const fetchFinanceStudentsThunk = createAsyncThunk(
   'admin/fetchFinanceStudents',
   async (params = {}, { rejectWithValue }) => {
@@ -59,6 +74,36 @@ export const createFinancePaymentThunk = createAsyncThunk(
       return await apiRequest({
         path: `/api/admin/moliya/students/${studentId}/tolov`,
         method: 'POST',
+        body: payload,
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const createFinanceImtiyozThunk = createAsyncThunk(
+  'admin/createFinanceImtiyoz',
+  async ({ studentId, payload }, { rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: `/api/admin/moliya/students/${studentId}/imtiyoz`,
+        method: 'POST',
+        body: payload,
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const deactivateFinanceImtiyozThunk = createAsyncThunk(
+  'admin/deactivateFinanceImtiyoz',
+  async ({ imtiyozId, payload }, { rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: `/api/admin/moliya/imtiyoz/${imtiyozId}`,
+        method: 'DELETE',
         body: payload,
       });
     } catch (error) {

@@ -12,7 +12,9 @@ async function getStudentHaftalikJadval(req, res) {
         where: { isActive: true },
         take: 1,
         orderBy: { createdAt: "desc" },
-        include: { classroom: { select: { id: true, name: true, academicYear: true } } },
+        include: {
+          classroom: { select: { id: true, name: true, academicYear: true } },
+        },
       },
     },
   });
@@ -23,7 +25,11 @@ async function getStudentHaftalikJadval(req, res) {
 
   const activeEnrollment = student.enrollments?.[0];
   if (!activeEnrollment?.classroom) {
-    throw new ApiError(404, "SINF_TOPILMADI", "Sizga biriktirilgan aktiv sinf topilmadi");
+    throw new ApiError(
+      404,
+      "SINF_TOPILMADI",
+      "Sizga biriktirilgan aktiv sinf topilmadi",
+    );
   }
 
   const sinfId = activeEnrollment.classroom.id;
@@ -71,4 +77,3 @@ async function getStudentHaftalikJadval(req, res) {
 }
 
 module.exports = { getStudentHaftalikJadval };
-

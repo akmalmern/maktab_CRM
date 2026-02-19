@@ -73,9 +73,23 @@ const createClassroomSchema = z
   })
   .strict();
 
+const promoteClassroomSchema = z
+  .object({
+    targetClassroomId: z.string().cuid("targetClassroomId noto'g'ri"),
+  })
+  .strict();
+
+const annualClassPromotionSchema = z
+  .object({
+    force: z.coerce.boolean().optional().default(false),
+  })
+  .strict();
+
 module.exports = {
   createTeacherSchema,
   createStudentSchema,
   createSubjectSchema,
   createClassroomSchema,
+  promoteClassroomSchema,
+  annualClassPromotionSchema,
 };

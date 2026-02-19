@@ -3,4 +3,8 @@ export {
   fetchClassroomsThunk,
   createClassroomThunk,
   deleteClassroomThunk,
+  previewPromoteClassroomThunk,
+  promoteClassroomThunk,
+  previewAnnualClassPromotionThunk,
+  runAnnualClassPromotionThunk,
 } from './classroomThunks';

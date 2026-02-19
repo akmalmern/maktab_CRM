@@ -1,5 +1,11 @@
 import { createSlice, isAnyOf } from '@reduxjs/toolkit';
-import { createClassroomThunk, deleteClassroomThunk } from '../classrooms/classroomThunks';
+import {
+  createClassroomThunk,
+  deleteClassroomThunk,
+  previewPromoteClassroomThunk,
+  promoteClassroomThunk,
+  runAnnualClassPromotionThunk,
+} from '../classrooms/classroomThunks';
 import {
   createFinancePaymentThunk,
   updateFinanceSettingsThunk,
@@ -34,6 +40,9 @@ const mutatingThunks = [
   deleteSubjectThunk,
   createClassroomThunk,
   deleteClassroomThunk,
+  previewPromoteClassroomThunk,
+  promoteClassroomThunk,
+  runAnnualClassPromotionThunk,
   createVaqtOraliqThunk,
   deleteVaqtOraliqThunk,
   createDarsJadvaliThunk,

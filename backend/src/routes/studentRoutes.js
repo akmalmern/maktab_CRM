@@ -5,8 +5,16 @@ const { validate } = require("../middlewares/validate");
 const attendance = require("../controllers/student/attendanceController");
 const schedule = require("../controllers/student/scheduleController");
 const grades = require("../controllers/student/gradeController");
+const profile = require("../controllers/student/profileController");
 const { davomatTarixQuerySchema } = require("../validators/attendanceSchemas");
 const { listBaholarQuerySchema } = require("../validators/gradeSchemas");
+
+router.get(
+  "/profil",
+  requireAuth,
+  requireRole("STUDENT"),
+  asyncHandler(profile.getMyProfile),
+);
 
 router.get(
   "/jadval",

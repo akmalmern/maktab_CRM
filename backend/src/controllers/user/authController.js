@@ -26,12 +26,20 @@ async function login(req, res) {
 
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user || !user.isActive) {
-    throw new ApiError(401, "INVALID_CREDENTIALS", "Login yoki parol noto'g'ri");
+    throw new ApiError(
+      401,
+      "INVALID_CREDENTIALS",
+      "Login yoki parol noto'g'ri",
+    );
   }
 
   const ok = await bcrypt.compare(password, user.password);
   if (!ok) {
-    throw new ApiError(401, "INVALID_CREDENTIALS", "Login yoki parol noto'g'ri");
+    throw new ApiError(
+      401,
+      "INVALID_CREDENTIALS",
+      "Login yoki parol noto'g'ri",
+    );
   }
 
   const accessToken = signAccessToken({ sub: user.id, role: user.role });

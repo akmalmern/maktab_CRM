@@ -2,67 +2,20 @@ const { ApiError } = require("../utils/apiError");
 
 const MAX_OYLAR_SONI = 36;
 
-function resolvePaymentPlan({ turi, oylarSoniRaw, summaRaw, settings }) {
-  const hasSumma = Number.isFinite(summaRaw);
-  const requestedMonths = Number.isFinite(oylarSoniRaw) ? oylarSoniRaw : null;
+function resolvePaymentMonthCount({ turi, oylarSoniRaw }) {
+  const requestedMonths = Number.isFinite(oylarSoniRaw)
+    ? oylarSoniRaw
+    : null;
 
   if (turi === "YILLIK") {
     if (requestedMonths !== null && requestedMonths !== 12) {
-      throw new ApiError(400, "YILLIK_MONTHS_INVALID", "Yillik to'lovda oylar soni 12 bo'lishi kerak");
-    }
-
-    const oylarSoni = 12;
-    const expectedSumma = settings.yillikSumma;
-    const summa = hasSumma ? summaRaw : expectedSumma;
-
-    if (summa !== expectedSumma) {
       throw new ApiError(
         400,
-        "PAYMENT_AMOUNT_MISMATCH",
-        `Yillik to'lov summasi ${expectedSumma} bo'lishi kerak`,
-        { expectedSumma, requestedSumma: summa },
+        "YILLIK_MONTHS_INVALID",
+        "Yillik to'lovda oylar soni 12 bo'lishi kerak",
       );
     }
-
-    return { oylarSoni, summa, expectedSumma };
-  }
-
-  if (turi === "IXTIYORIY") {
-    if (!hasSumma) {
-      throw new ApiError(400, "SUMMA_REQUIRED", "Ixtiyoriy to'lov uchun summa majburiy");
-    }
-
-    if (summaRaw % settings.oylikSumma !== 0) {
-      throw new ApiError(
-        400,
-        "IXTIYORIY_SUMMA_INVALID",
-        "Ixtiyoriy summa oylik summaning karralisi bo'lishi kerak",
-      );
-    }
-
-    const inferredMonths = summaRaw / settings.oylikSumma;
-    if (inferredMonths < 1 || inferredMonths > MAX_OYLAR_SONI) {
-      throw new ApiError(
-        400,
-        "IXTIYORIY_MONTHS_INVALID",
-        `Ixtiyoriy to'lov oylar soni 1 dan ${MAX_OYLAR_SONI} gacha bo'lishi kerak`,
-      );
-    }
-
-    if (requestedMonths !== null && requestedMonths !== inferredMonths) {
-      throw new ApiError(
-        400,
-        "IXTIYORIY_MONTHS_MISMATCH",
-        "Ixtiyoriy to'lovda oylar soni summa bilan mos kelmadi",
-        { expectedMonths: inferredMonths, requestedMonths },
-      );
-    }
-
-    return {
-      oylarSoni: inferredMonths,
-      summa: summaRaw,
-      expectedSumma: summaRaw,
-    };
+    return 12;
   }
 
   const oylarSoni = requestedMonths ?? 1;
@@ -73,22 +26,29 @@ function resolvePaymentPlan({ turi, oylarSoniRaw, summaRaw, settings }) {
       `Oylar soni 1 dan ${MAX_OYLAR_SONI} gacha bo'lishi kerak`,
     );
   }
+  return oylarSoni;
+}
 
-  const expectedSumma = settings.oylikSumma * oylarSoni;
-  const summa = hasSumma ? summaRaw : expectedSumma;
-  if (summa !== expectedSumma) {
+function resolvePaymentAmount({ expectedSumma, requestedSumma }) {
+  const hasRequestedSumma = Number.isFinite(requestedSumma);
+  const finalSumma = hasRequestedSumma ? Number(requestedSumma) : expectedSumma;
+
+  if (finalSumma !== expectedSumma) {
     throw new ApiError(
       400,
       "PAYMENT_AMOUNT_MISMATCH",
-      `Ushbu to'lov uchun summa ${expectedSumma} bo'lishi kerak`,
-      { expectedSumma, requestedSumma: summa },
+      `Tanlangan oylar uchun to'lov summasi ${expectedSumma} bo'lishi kerak`,
+      {
+        expectedSumma,
+        requestedSumma: finalSumma,
+      },
     );
   }
-
-  return { oylarSoni, summa, expectedSumma };
+  return finalSumma;
 }
 
 module.exports = {
   MAX_OYLAR_SONI,
-  resolvePaymentPlan,
+  resolvePaymentMonthCount,
+  resolvePaymentAmount,
 };

@@ -43,3 +43,61 @@ export const deleteClassroomThunk = createAsyncThunk(
     }
   },
 );
+
+export const previewPromoteClassroomThunk = createAsyncThunk(
+  'admin/previewPromoteClassroom',
+  async ({ sourceClassroomId, targetClassroomId }, { rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: `/api/admin/classrooms/${sourceClassroomId}/promote-preview`,
+        method: 'POST',
+        body: { targetClassroomId },
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const promoteClassroomThunk = createAsyncThunk(
+  'admin/promoteClassroom',
+  async ({ sourceClassroomId, targetClassroomId }, { rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: `/api/admin/classrooms/${sourceClassroomId}/promote`,
+        method: 'POST',
+        body: { targetClassroomId },
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const previewAnnualClassPromotionThunk = createAsyncThunk(
+  'admin/previewAnnualClassPromotion',
+  async (_, { rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: '/api/admin/classrooms/yillik-otkazish/preview',
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);
+
+export const runAnnualClassPromotionThunk = createAsyncThunk(
+  'admin/runAnnualClassPromotion',
+  async (payload = {}, { rejectWithValue }) => {
+    try {
+      return await apiRequest({
+        path: '/api/admin/classrooms/yillik-otkazish',
+        method: 'POST',
+        body: payload,
+      });
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
+    }
+  },
+);

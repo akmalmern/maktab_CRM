@@ -10,6 +10,7 @@ const avatarRoutes = require("./routes/avatarRoutes");
 const adminDetailRoutes = require("./routes/adminDetailRoutes");
 const teacherRoutes = require("./routes/teacherRoutes");
 const studentRoutes = require("./routes/studentRoutes");
+const managerRoutes = require("./routes/managerRoutes");
 const { buildCorsOptions } = require("./config/cors");
 
 const { notFound } = require("./middlewares/notFound");
@@ -27,6 +28,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/teacher", teacherRoutes);
 app.use("/api/student", studentRoutes);
+app.use("/api/manager", managerRoutes);
 app.use("/api/admin/docs", documentRoutes);
 app.use("/api/admin/avatars", avatarRoutes);
 app.use("/api/admin/details", adminDetailRoutes);
