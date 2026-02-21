@@ -75,7 +75,16 @@ const listStudentsQuerySchema = z
   })
   .strict();
 
+const listClassroomStudentsQuerySchema = z
+  .object({
+    page: pageSchema,
+    limit: limitSchema,
+    search: searchSchema,
+  })
+  .strict();
+
 module.exports = {
   listTeachersQuerySchema,
   listStudentsQuerySchema,
+  listClassroomStudentsQuerySchema,
 };

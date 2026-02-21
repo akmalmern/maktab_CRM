@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import AutoTranslate from '../../AutoTranslate';
 import { Button, Card, DataTable, Input, StateView } from '../../../components/ui';
 
 export default function SubjectManager({
@@ -37,7 +38,8 @@ export default function SubjectManager({
   ];
 
   return (
-    <Card title="Fanlar boshqaruvi" actions={<span className="text-sm text-slate-500">Jami: {subjects.length}</span>}>
+    <AutoTranslate>
+      <Card title="Fanlar boshqaruvi" actions={<span className="text-sm text-slate-500">Jami: {subjects.length}</span>}>
       <form onSubmit={handleSubmit} className="mb-4 flex flex-col gap-2 sm:flex-row">
         <Input
           type="text"
@@ -57,6 +59,7 @@ export default function SubjectManager({
       ) : (
         <StateView type="empty" description="Fanlar mavjud emas" />
       )}
-    </Card>
+      </Card>
+    </AutoTranslate>
   );
 }

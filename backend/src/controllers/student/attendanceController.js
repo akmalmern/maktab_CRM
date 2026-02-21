@@ -9,22 +9,25 @@ function toIsoDate(date) {
   return date.toISOString().slice(0, 10);
 }
 
-function calcFoiz(records) {
-  if (!records.length) return 0;
-  const present = records.filter(
-    (r) => r.holat === "KELDI" || r.holat === "KECHIKDI",
-  ).length;
-  return Number(((present / records.length) * 100).toFixed(1));
+function parseIntSafe(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function countByHolat(records) {
-  return records.reduce(
-    (acc, row) => {
-      acc[row.holat] += 1;
-      return acc;
-    },
-    { KELDI: 0, KECHIKDI: 0, SABABLI: 0, SABABSIZ: 0 },
-  );
+function normalizeHolatCounts(groupRows) {
+  const counts = { KELDI: 0, KECHIKDI: 0, SABABLI: 0, SABABSIZ: 0 };
+  for (const row of groupRows || []) {
+    if (row?.holat && counts[row.holat] !== undefined) {
+      counts[row.holat] = row._count?._all || 0;
+    }
+  }
+  return counts;
+}
+
+function calcFoizFromCounts(total, counts) {
+  if (!total) return 0;
+  const present = Number(counts.KELDI || 0) + Number(counts.KECHIKDI || 0);
+  return Number(((present / total) * 100).toFixed(1));
 }
 
 function pickPrimaryBaho(baholar) {
@@ -35,6 +38,9 @@ function pickPrimaryBaho(baholar) {
 async function getMyAttendance(req, res) {
   const { sana, sanaStr } = parseSanaOrToday(req.query.sana);
   const period = buildRangeByType(req.query.periodType, sana);
+  const page = parseIntSafe(req.query.page, 1);
+  const limit = Math.min(parseIntSafe(req.query.limit, 20), 100);
+  const skip = (page - 1) * limit;
 
   const student = await prisma.student.findUnique({
     where: { userId: req.user.sub },
@@ -57,42 +63,67 @@ async function getMyAttendance(req, res) {
     throw new ApiError(404, "STUDENT_TOPILMADI", "Student profili topilmadi");
   }
 
-  const records = await prisma.davomat.findMany({
-    where: {
-      studentId: student.id,
-      sana: { gte: period.from, lt: period.to },
-    },
-    include: {
-      darsJadvali: {
-        select: {
-          id: true,
-          fan: { select: { name: true } },
-          sinf: { select: { name: true, academicYear: true } },
-          vaqtOraliq: { select: { nomi: true, boshlanishVaqti: true } },
-          oqituvchi: { select: { firstName: true, lastName: true } },
+  const where = {
+    studentId: student.id,
+    ...(req.query.holat ? { holat: req.query.holat } : {}),
+    sana: { gte: period.from, lt: period.to },
+  };
+
+  const [total, records, groupedByHolat] = await prisma.$transaction([
+    prisma.davomat.count({ where }),
+    prisma.davomat.findMany({
+      where,
+      skip,
+      take: limit,
+      include: {
+        darsJadvali: {
+          select: {
+            id: true,
+            fan: { select: { name: true } },
+            sinf: { select: { name: true, academicYear: true } },
+            vaqtOraliq: { select: { nomi: true, boshlanishVaqti: true } },
+            oqituvchi: { select: { firstName: true, lastName: true } },
+          },
         },
       },
-    },
-    orderBy: [
-      { sana: "desc" },
-      { darsJadvali: { vaqtOraliq: { tartib: "asc" } } },
-    ],
-  });
+      orderBy: [
+        { sana: "desc" },
+        { darsJadvali: { vaqtOraliq: { tartib: "asc" } } },
+      ],
+    }),
+    prisma.davomat.groupBy({
+      where,
+      by: ["holat"],
+      _count: { _all: true },
+    }),
+  ]);
 
-  const baholar = await prisma.baho.findMany({
-    where: {
-      studentId: student.id,
-      sana: { gte: period.from, lt: period.to },
-    },
-    select: {
-      darsJadvaliId: true,
-      sana: true,
-      turi: true,
-      ball: true,
-      maxBall: true,
-      izoh: true,
-    },
-  });
+  let baholar = [];
+  if (records.length) {
+    const darsJadvaliIds = [...new Set(records.map((row) => row.darsJadvaliId))];
+    const sanaTimestamps = records.map((row) => row.sana.getTime());
+    const minSana = new Date(Math.min(...sanaTimestamps));
+    const maxSana = new Date(Math.max(...sanaTimestamps));
+
+    baholar = await prisma.baho.findMany({
+      where: {
+        studentId: student.id,
+        darsJadvaliId: { in: darsJadvaliIds },
+        sana: { gte: minSana, lte: maxSana },
+      },
+      select: {
+        darsJadvaliId: true,
+        sana: true,
+        turi: true,
+        ball: true,
+        maxBall: true,
+        izoh: true,
+      },
+    });
+  }
+
+  const holatlar = normalizeHolatCounts(groupedByHolat);
+  const foiz = calcFoizFromCounts(total, holatlar);
 
   const bahoMap = new Map();
   for (const item of baholar) {
@@ -133,6 +164,11 @@ async function getMyAttendance(req, res) {
     ok: true,
     sana: sanaStr,
     periodType: period.type,
+    holat: req.query.holat || null,
+    page,
+    limit,
+    total,
+    pages: Math.ceil(total / limit),
     period: {
       from: toIsoDate(period.from),
       to: toIsoDate(new Date(period.to.getTime() - 1)),
@@ -145,9 +181,9 @@ async function getMyAttendance(req, res) {
         : null,
     },
     statistika: {
-      jami: records.length,
-      foiz: calcFoiz(records),
-      holatlar: countByHolat(records),
+      jami: total,
+      foiz,
+      holatlar,
     },
     tarix,
   });

@@ -121,7 +121,7 @@ async function resetTeacherPassword(req, res) {
 
   res.json({
     ok: true,
-    message: "Parol muvaffaqiyatli yangilandi",
+    message: req.t("messages.PASSWORD_RESET_SUCCESS"),
     user: { username: teacher.user.username },
   });
 }
@@ -146,7 +146,7 @@ async function resetStudentPassword(req, res) {
 
   res.json({
     ok: true,
-    message: "Parol muvaffaqiyatli yangilandi",
+    message: req.t("messages.PASSWORD_RESET_SUCCESS"),
     user: { username: student.user.username },
   });
 }

@@ -132,6 +132,18 @@ function mapPrismaError(err) {
         );
       }
 
+      if (
+        targetLower.includes("enrollment_studentid_active_unique") ||
+        (targetStr.includes("studentId") && targetStr.includes("isActive"))
+      ) {
+        return new ApiError(
+          409,
+          "ACTIVE_ENROLLMENT_CONFLICT",
+          "Student allaqachon boshqa sinfda aktiv holatda biriktirilgan",
+          { target },
+        );
+      }
+
       // default unique
       return new ApiError(
         409,

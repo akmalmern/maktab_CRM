@@ -1,4 +1,5 @@
 import { CreatePersonPanel, PersonTable } from '../../../../components/admin';
+import AutoTranslate from '../../../../components/AutoTranslate';
 
 export default function StudentsSection({
   actionLoading,
@@ -13,7 +14,8 @@ export default function StudentsSection({
   onOpenDetail,
 }) {
   return (
-    <>
+    <AutoTranslate>
+      <>
       <CreatePersonPanel
         loading={actionLoading}
         subjects={subjects}
@@ -48,6 +50,7 @@ export default function StudentsSection({
         onDelete={onDeleteStudent}
         onOpenDetail={onOpenDetail}
       />
-    </>
+      </>
+    </AutoTranslate>
   );
 }

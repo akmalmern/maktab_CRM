@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import { translateText } from '../../lib/i18nHelpers';
 import { cn } from './utils';
 
 const defaults = {
@@ -20,6 +22,7 @@ const defaults = {
 };
 
 export default function StateView({ type = 'empty', title, description, className }) {
+  const { t } = useTranslation();
   const content = defaults[type] || defaults.empty;
 
   if (type === 'skeleton') {
@@ -40,8 +43,12 @@ export default function StateView({ type = 'empty', title, description, classNam
 
   return (
     <div className={cn('rounded-lg border border-slate-200 bg-white p-6 text-center', className)}>
-      <p className="text-base font-semibold text-slate-800">{title || content.title}</p>
-      <p className="mt-1 text-sm text-slate-500">{description || content.description}</p>
+      <p className="text-base font-semibold text-slate-800">
+        {translateText(t, title || content.title)}
+      </p>
+      <p className="mt-1 text-sm text-slate-500">
+        {translateText(t, description || content.description)}
+      </p>
     </div>
   );
 }

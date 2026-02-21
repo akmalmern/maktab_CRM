@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
@@ -57,6 +58,7 @@ const DEFAULT_LIST_QUERY = {
 const FINANCE_SEARCH_DEBOUNCE_MS = 350;
 
 export default function AdminWorkspace({ section }) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const confirmResolverRef = useRef(null);
@@ -205,7 +207,7 @@ export default function AdminWorkspace({ section }) {
     [],
   );
 
-  function askConfirm(message, title = 'Tasdiqlash') {
+  function askConfirm(message, title = t('Tasdiqlash')) {
     return new Promise((resolve) => {
       confirmResolverRef.current = resolve;
       setConfirmState({ open: true, title, message });
@@ -221,31 +223,31 @@ export default function AdminWorkspace({ section }) {
   }
 
   async function handleDeleteTeacher(id) {
-    const ok = await askConfirm('Teacher ni o`chirmoqchimisiz?', "Teacherni o'chirish");
+    const ok = await askConfirm(t('Teacher ni o`chirmoqchimisiz?'), t("Teacherni o'chirish"));
     if (!ok) return;
 
     const result = await dispatch(deleteTeacherThunk(id));
     if (deleteTeacherThunk.fulfilled.match(result)) {
-      toast.success('Teacher o`chirildi');
+      toast.success(t('Teacher o`chirildi'));
       dispatch(fetchTeachersThunk(teacherQueryForRequest));
       return;
     }
-    toast.error(result.payload || 'Teacher o`chirilmadi');
+    toast.error(result.payload || t('Teacher o`chirilmadi'));
   }
 
   async function handleDeleteStudent(id) {
-    const ok = await askConfirm('Student ni o`chirmoqchimisiz?', "Studentni o'chirish");
+    const ok = await askConfirm(t('Student ni o`chirmoqchimisiz?'), t("Studentni o'chirish"));
     if (!ok) return false;
 
     const result = await dispatch(deleteStudentThunk(id));
     if (deleteStudentThunk.fulfilled.match(result)) {
-      toast.success('Student o`chirildi');
+      toast.success(t('Student o`chirildi'));
       dispatch(fetchStudentsThunk(studentQueryForRequest));
       dispatch(fetchClassroomsThunk());
       return true;
     }
 
-    toast.error(result.payload || 'Student o`chirilmadi');
+    toast.error(result.payload || t('Student o`chirilmadi'));
     return false;
   }
 
@@ -253,7 +255,7 @@ export default function AdminWorkspace({ section }) {
     const result = await dispatch(createTeacherThunk(form));
     if (createTeacherThunk.fulfilled.match(result)) {
       const teacherId = result.payload?.teacherId;
-      toast.success('Teacher muvaffaqiyatli yaratildi');
+      toast.success(t('Teacher muvaffaqiyatli yaratildi'));
       if (teacherId) {
         navigate(`/admin/teachers/${teacherId}`);
       } else {
@@ -262,7 +264,7 @@ export default function AdminWorkspace({ section }) {
       return true;
     }
 
-    toast.error(result.payload || 'Teacher yaratilmadi');
+    toast.error(result.payload || t('Teacher yaratilmadi'));
     return false;
   }
 
@@ -270,7 +272,7 @@ export default function AdminWorkspace({ section }) {
     const result = await dispatch(createStudentThunk(form));
     if (createStudentThunk.fulfilled.match(result)) {
       const studentId = result.payload?.studentId;
-      toast.success('Student muvaffaqiyatli yaratildi');
+      toast.success(t('Student muvaffaqiyatli yaratildi'));
       if (studentId) {
         navigate(`/admin/students/${studentId}`);
       } else {
@@ -279,44 +281,44 @@ export default function AdminWorkspace({ section }) {
       return true;
     }
 
-    toast.error(result.payload || 'Student yaratilmadi');
+    toast.error(result.payload || t('Student yaratilmadi'));
     return false;
   }
 
   async function handleCreateSubject(name) {
     const result = await dispatch(createSubjectThunk({ name }));
     if (createSubjectThunk.fulfilled.match(result)) {
-      toast.success('Fan qo`shildi');
+      toast.success(t('Fan qo`shildi'));
       dispatch(fetchSubjectsThunk());
       return true;
     }
 
-    toast.error(result.payload || 'Fan qo`shilmadi');
+    toast.error(result.payload || t('Fan qo`shilmadi'));
     return false;
   }
 
   async function handleDeleteSubject(id) {
-    const ok = await askConfirm('Fanni o`chirmoqchimisiz?', "Fanni o'chirish");
+    const ok = await askConfirm(t('Fanni o`chirmoqchimisiz?'), t("Fanni o'chirish"));
     if (!ok) return;
 
     const result = await dispatch(deleteSubjectThunk(id));
     if (deleteSubjectThunk.fulfilled.match(result)) {
-      toast.success('Fan o`chirildi');
+      toast.success(t('Fan o`chirildi'));
       dispatch(fetchSubjectsThunk());
       return;
     }
-    toast.error(result.payload || 'Fan o`chirilmadi');
+    toast.error(result.payload || t('Fan o`chirilmadi'));
   }
 
   async function handleCreateClassroom(payload) {
     const result = await dispatch(createClassroomThunk(payload));
     if (createClassroomThunk.fulfilled.match(result)) {
-      toast.success('Sinf qo`shildi');
+      toast.success(t('Sinf qo`shildi'));
       dispatch(fetchClassroomsThunk());
       return true;
     }
 
-    toast.error(result.payload || 'Sinf qo`shilmadi');
+    toast.error(result.payload || t('Sinf qo`shilmadi'));
     return false;
   }
 
@@ -331,11 +333,11 @@ export default function AdminWorkspace({ section }) {
   async function handlePromoteClassroom(sourceClassroomId, targetClassroomId) {
     const result = await dispatch(promoteClassroomThunk({ sourceClassroomId, targetClassroomId }));
     if (promoteClassroomThunk.fulfilled.match(result)) {
-      toast.success(result.payload?.message || "Sinf muvaffaqiyatli ko'chirildi");
+      toast.success(result.payload?.message || t("Sinf muvaffaqiyatli ko'chirildi"));
       dispatch(fetchClassroomsThunk());
       return { ok: true, data: result.payload };
     }
-    return { ok: false, message: result.payload || "Sinfni ko'chirib bo'lmadi" };
+    return { ok: false, message: result.payload || t("Sinfni ko'chirib bo'lmadi") };
   }
 
   async function handlePreviewAnnualClassPromotion() {
@@ -349,47 +351,47 @@ export default function AdminWorkspace({ section }) {
   async function handleRunAnnualClassPromotion(payload = {}) {
     const result = await dispatch(runAnnualClassPromotionThunk(payload));
     if (runAnnualClassPromotionThunk.fulfilled.match(result)) {
-      toast.success(result.payload?.message || "Yillik sinf o'tkazish bajarildi");
+      toast.success(result.payload?.message || t("Yillik sinf o'tkazish bajarildi"));
       dispatch(fetchClassroomsThunk());
       return { ok: true, data: result.payload };
     }
-    return { ok: false, message: result.payload || "Yillik sinf o'tkazish bajarilmadi" };
+    return { ok: false, message: result.payload || t("Yillik sinf o'tkazish bajarilmadi") };
   }
 
   async function handleCreateVaqtOraliq(payload) {
     const result = await dispatch(createVaqtOraliqThunk(payload));
     if (createVaqtOraliqThunk.fulfilled.match(result)) {
-      toast.success('Vaqt oralig`i qo`shildi');
+      toast.success(t('Vaqt oralig`i qo`shildi'));
       dispatch(fetchVaqtOraliqlariThunk());
       return true;
     }
 
-    toast.error(result.payload || 'Vaqt oralig`i qo`shilmadi');
+    toast.error(result.payload || t('Vaqt oralig`i qo`shilmadi'));
     return false;
   }
 
   async function handleDeleteVaqtOraliq(id) {
-    const ok = await askConfirm("Vaqt oralig`ini o`chirmoqchimisiz?", "Vaqt oralig'ini o'chirish");
+    const ok = await askConfirm(t("Vaqt oralig`ini o`chirmoqchimisiz?"), t("Vaqt oralig'ini o'chirish"));
     if (!ok) return;
 
     const result = await dispatch(deleteVaqtOraliqThunk(id));
     if (deleteVaqtOraliqThunk.fulfilled.match(result)) {
-      toast.success('Vaqt oralig`i o`chirildi');
+      toast.success(t('Vaqt oralig`i o`chirildi'));
       dispatch(fetchVaqtOraliqlariThunk());
       return;
     }
-    toast.error(result.payload || 'Vaqt oralig`i o`chirilmadi');
+    toast.error(result.payload || t('Vaqt oralig`i o`chirilmadi'));
   }
 
   async function handleCreateDars(payload) {
     const result = await dispatch(createDarsJadvaliThunk(payload));
     if (createDarsJadvaliThunk.fulfilled.match(result)) {
-      toast.success('Dars jadvalga qo`shildi');
+      toast.success(t('Dars jadvalga qo`shildi'));
       dispatch(fetchDarsJadvaliThunk());
       return { ok: true };
     }
 
-    const message = result.payload || 'Dars qo`shilmadi';
+    const message = result.payload || t('Dars qo`shilmadi');
     const isConflict = /conflict|to'qnash|to`qnash|shu vaqtda|band|mavjud/i.test(message);
     if (!isConflict) toast.error(message);
     else toast.warning(message);
@@ -397,27 +399,27 @@ export default function AdminWorkspace({ section }) {
   }
 
   async function handleDeleteDars(id) {
-    const ok = await askConfirm('Darsni jadvaldan o`chirmoqchimisiz?', "Darsni o'chirish");
+    const ok = await askConfirm(t('Darsni jadvaldan o`chirmoqchimisiz?'), t("Darsni o'chirish"));
     if (!ok) return;
 
     const result = await dispatch(deleteDarsJadvaliThunk(id));
     if (deleteDarsJadvaliThunk.fulfilled.match(result)) {
-      toast.success('Dars jadvaldan o`chirildi');
+      toast.success(t('Dars jadvaldan o`chirildi'));
       dispatch(fetchDarsJadvaliThunk());
       return;
     }
-    toast.error(result.payload || 'Dars o`chirilmadi');
+    toast.error(result.payload || t('Dars o`chirilmadi'));
   }
 
   async function handleMoveDars(id, payload) {
     const result = await dispatch(updateDarsJadvaliThunk({ id, payload }));
     if (updateDarsJadvaliThunk.fulfilled.match(result)) {
       dispatch(fetchDarsJadvaliThunk());
-      toast.success("Dars muvaffaqiyatli ko'chirildi");
+      toast.success(t("Dars muvaffaqiyatli ko'chirildi"));
       return { ok: true };
     }
 
-    const message = result.payload || 'Dars ko`chirilmadi';
+    const message = result.payload || t('Dars ko`chirilmadi');
     const isConflict = /conflict|to'qnash|to`qnash|shu vaqtda|band|mavjud/i.test(message);
     if (!isConflict) toast.error(message);
     else toast.warning(message);
@@ -427,7 +429,7 @@ export default function AdminWorkspace({ section }) {
   async function handleFetchAttendanceReport(params) {
     const result = await dispatch(fetchAttendanceReportThunk(params));
     if (fetchAttendanceReportThunk.rejected.match(result)) {
-      toast.error(result.payload || 'Davomat hisoboti olinmadi');
+      toast.error(result.payload || t('Davomat hisoboti olinmadi'));
     }
   }
 
@@ -451,7 +453,7 @@ export default function AdminWorkspace({ section }) {
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(url);
-      toast.success(`${safeFormat.toUpperCase()} fayl yuklab olindi`);
+      toast.success(t('{{format}} fayl yuklab olindi', { format: safeFormat.toUpperCase() }));
     } catch (error) {
       toast.error(getErrorMessage(error));
     } finally {
@@ -462,11 +464,11 @@ export default function AdminWorkspace({ section }) {
   async function handleSaveFinanceSettings(payload) {
     const result = await dispatch(updateFinanceSettingsThunk(payload));
     if (updateFinanceSettingsThunk.fulfilled.match(result)) {
-      toast.success("Tarif rejalandi");
+      toast.success(t('Tarif rejalandi'));
       dispatch(fetchFinanceSettingsThunk());
       return true;
     }
-    toast.error(result.payload || "Tarif saqlanmadi");
+    toast.error(result.payload || t('Tarif saqlanmadi'));
     dispatch(fetchFinanceSettingsThunk());
     return false;
   }
@@ -474,37 +476,37 @@ export default function AdminWorkspace({ section }) {
   async function handleOpenFinanceDetail(studentId) {
     const result = await dispatch(fetchFinanceStudentDetailThunk(studentId));
     if (fetchFinanceStudentDetailThunk.rejected.match(result)) {
-      toast.error(result.payload || "Student to'lov ma'lumotlari olinmadi");
+      toast.error(result.payload || t("Student to'lov ma'lumotlari olinmadi"));
     }
   }
 
   async function handleCreateFinancePayment(studentId, payload) {
     const result = await dispatch(createFinancePaymentThunk({ studentId, payload }));
     if (createFinancePaymentThunk.fulfilled.match(result)) {
-      toast.success("To'lov saqlandi");
+      toast.success(t("To'lov saqlandi"));
       return true;
     }
-    toast.error(result.payload || "To'lov saqlanmadi");
+    toast.error(result.payload || t("To'lov saqlanmadi"));
     return false;
   }
 
   async function handleCreateFinanceImtiyoz(studentId, payload) {
     const result = await dispatch(createFinanceImtiyozThunk({ studentId, payload }));
     if (createFinanceImtiyozThunk.fulfilled.match(result)) {
-      toast.success("Imtiyoz saqlandi");
+      toast.success(t("Imtiyoz saqlandi"));
       return true;
     }
-    toast.error(result.payload || "Imtiyoz saqlanmadi");
+    toast.error(result.payload || t("Imtiyoz saqlanmadi"));
     return false;
   }
 
   async function handleDeactivateFinanceImtiyoz(imtiyozId, payload) {
     const result = await dispatch(deactivateFinanceImtiyozThunk({ imtiyozId, payload }));
     if (deactivateFinanceImtiyozThunk.fulfilled.match(result)) {
-      toast.success("Imtiyoz bekor qilindi");
+      toast.success(t("Imtiyoz bekor qilindi"));
       return true;
     }
-    toast.error(result.payload || "Imtiyoz bekor qilinmadi");
+    toast.error(result.payload || t("Imtiyoz bekor qilinmadi"));
     return false;
   }
 
@@ -528,7 +530,7 @@ export default function AdminWorkspace({ section }) {
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(url);
-      toast.success(`${safeFormat.toUpperCase()} fayl yuklab olindi`);
+      toast.success(t('{{format}} fayl yuklab olindi', { format: safeFormat.toUpperCase() }));
     } catch (error) {
       toast.error(getErrorMessage(error));
     } finally {
@@ -538,11 +540,11 @@ export default function AdminWorkspace({ section }) {
 
   const headerStats = useMemo(
     () => [
-      { label: 'Teacherlar', value: teachers.total || 0 },
-      { label: 'Studentlar', value: students.total || 0 },
-      { label: 'Sinflar', value: classrooms.items.length || 0 },
+      { label: t('Teacherlar'), value: teachers.total || 0 },
+      { label: t('Studentlar'), value: students.total || 0 },
+      { label: t('Sinflar'), value: classrooms.items.length || 0 },
     ],
-    [teachers.total, students.total, classrooms.items.length],
+    [teachers.total, students.total, classrooms.items.length, t],
   );
 
   return (

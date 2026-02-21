@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import AutoTranslate from '../../AutoTranslate';
 import { Button, Card, DataTable, Input, Select, StateView } from '../../../components/ui';
 
 function todayStr() {
@@ -71,7 +72,8 @@ export default function AttendanceReports({
   }
 
   return (
-    <div className="space-y-4">
+    <AutoTranslate>
+      <div className="space-y-4">
       <Card title="Davomat bo'limi">
         <div className="flex flex-wrap gap-2">
           {activeView === 'report' ? (
@@ -170,6 +172,7 @@ export default function AttendanceReports({
           )}
         </>
       )}
-    </div>
+      </div>
+    </AutoTranslate>
   );
 }

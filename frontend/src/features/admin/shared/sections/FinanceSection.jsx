@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import AutoTranslate from '../../../../components/AutoTranslate';
 import { Button, Card, Input, Modal, Select, StateView, Textarea } from '../../../../components/ui';
 
 function sumFormat(value) {
@@ -387,7 +388,8 @@ export default function FinanceSection({
   }
 
   return (
-    <div className="space-y-4">
+    <AutoTranslate>
+      <div className="space-y-4">
       <Card
         title="Moliya bo'limi"
         actions={
@@ -983,6 +985,7 @@ export default function FinanceSection({
           </div>
         )}
       </Modal>
-    </div>
+      </div>
+    </AutoTranslate>
   );
 }

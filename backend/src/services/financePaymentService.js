@@ -1,4 +1,5 @@
 const { ApiError } = require("../utils/apiError");
+const { buildMonthRange } = require("./financeDebtService");
 
 const MAX_OYLAR_SONI = 36;
 
@@ -47,8 +48,38 @@ function resolvePaymentAmount({ expectedSumma, requestedSumma }) {
   return finalSumma;
 }
 
+function resolvePaymentPlan({
+  turi,
+  startMonth,
+  oylarSoniRaw,
+  monthAmountByKey = new Map(),
+  defaultMonthAmount,
+}) {
+  const oylarSoni = resolvePaymentMonthCount({
+    turi,
+    oylarSoniRaw,
+  });
+  const months = buildMonthRange(startMonth, oylarSoni);
+  const monthPlans = months.map((m) => {
+    const key = `${m.yil}-${String(m.oy).padStart(2, "0")}`;
+    return {
+      key,
+      yil: m.yil,
+      oy: m.oy,
+      oySumma: Number(
+        monthAmountByKey.has(key)
+          ? monthAmountByKey.get(key)
+          : defaultMonthAmount,
+      ),
+    };
+  });
+
+  return { oylarSoni, monthPlans };
+}
+
 module.exports = {
   MAX_OYLAR_SONI,
   resolvePaymentMonthCount,
   resolvePaymentAmount,
+  resolvePaymentPlan,
 };

@@ -1,4 +1,6 @@
 import { forwardRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import { translateNode } from '../../lib/i18nHelpers';
 import { cn } from './utils';
 
 const variantClasses = {
@@ -19,6 +21,8 @@ const Button = forwardRef(function Button(
   { children, className, variant = 'primary', size = 'md', type = 'button', ...props },
   ref,
 ) {
+  const { t } = useTranslation();
+
   return (
     <button
       ref={ref}
@@ -31,7 +35,7 @@ const Button = forwardRef(function Button(
       )}
       {...props}
     >
-      {children}
+      {translateNode(t, children)}
     </button>
   );
 });

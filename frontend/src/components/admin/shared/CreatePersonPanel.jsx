@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button, Card, Input, Select, Tabs } from '../../../components/ui';
 
 export default function CreatePersonPanel({
@@ -9,6 +10,7 @@ export default function CreatePersonPanel({
   onCreateStudent,
   mode = 'both',
 }) {
+  const { t } = useTranslation();
   const [createTab, setCreateTab] = useState(mode === 'student' ? 'student' : 'teacher');
   const [teacherForm, setTeacherForm] = useState({
     firstName: '',
@@ -65,15 +67,15 @@ export default function CreatePersonPanel({
 
   return (
     <Card
-      title="Qo'shish"
+      title={t("Qo'shish")}
       actions={
         mode === 'both' ? (
           <Tabs
             value={createTab}
             onChange={setCreateTab}
             items={[
-              { value: 'teacher', label: 'Add Teacher' },
-              { value: 'student', label: 'Add Student' },
+              { value: 'teacher', label: t('Add Teacher') },
+              { value: 'student', label: t('Add Student') },
             ]}
           />
         ) : null
@@ -86,14 +88,14 @@ export default function CreatePersonPanel({
             required
             value={teacherForm.firstName}
             onChange={(event) => setTeacherForm((prev) => ({ ...prev, firstName: event.target.value }))}
-            placeholder="Ism"
+            placeholder={t('Ism')}
           />
           <Input
             type="text"
             required
             value={teacherForm.lastName}
             onChange={(event) => setTeacherForm((prev) => ({ ...prev, lastName: event.target.value }))}
-            placeholder="Familiya"
+            placeholder={t('Familiya')}
           />
           <Input
             type="date"
@@ -106,7 +108,7 @@ export default function CreatePersonPanel({
             required
             value={teacherForm.yashashManzili}
             onChange={(event) => setTeacherForm((prev) => ({ ...prev, yashashManzili: event.target.value }))}
-            placeholder="Yashash manzili"
+            placeholder={t('Yashash manzili')}
             className="md:col-span-2"
           />
           <Input
@@ -114,7 +116,7 @@ export default function CreatePersonPanel({
             required
             value={teacherForm.phone}
             onChange={(event) => setTeacherForm((prev) => ({ ...prev, phone: event.target.value }))}
-            placeholder="Telefon"
+            placeholder={t('Telefon')}
           />
           <Select
             required
@@ -122,10 +124,10 @@ export default function CreatePersonPanel({
             onChange={(event) => setTeacherForm((prev) => ({ ...prev, subjectId: event.target.value }))}
             className="md:col-span-2"
           >
-            {!subjects.length && <option value="">Avval fan qo'shing</option>}
+            {!subjects.length && <option value="">{t("Avval fan qo'shing")}</option>}
             {subjects.map((subject) => (
               <option key={subject.id} value={subject.id}>
-                {subject.name}
+                {t(subject.name, { defaultValue: subject.name })}
               </option>
             ))}
           </Select>
@@ -136,7 +138,7 @@ export default function CreatePersonPanel({
               disabled={loading || !subjects.length}
               className="w-full"
             >
-              {loading ? 'Saqlanmoqda...' : 'Teacher yaratish'}
+              {loading ? t('Saqlanmoqda...') : t('Teacher yaratish')}
             </Button>
           </div>
         </form>
@@ -147,14 +149,14 @@ export default function CreatePersonPanel({
             required
             value={studentForm.firstName}
             onChange={(event) => setStudentForm((prev) => ({ ...prev, firstName: event.target.value }))}
-            placeholder="Ism"
+            placeholder={t('Ism')}
           />
           <Input
             type="text"
             required
             value={studentForm.lastName}
             onChange={(event) => setStudentForm((prev) => ({ ...prev, lastName: event.target.value }))}
-            placeholder="Familiya"
+            placeholder={t('Familiya')}
           />
           <Input
             type="date"
@@ -167,7 +169,7 @@ export default function CreatePersonPanel({
             required
             value={studentForm.yashashManzili}
             onChange={(event) => setStudentForm((prev) => ({ ...prev, yashashManzili: event.target.value }))}
-            placeholder="Yashash manzili"
+            placeholder={t('Yashash manzili')}
             className="md:col-span-2"
           />
           <Select
@@ -176,7 +178,7 @@ export default function CreatePersonPanel({
             onChange={(event) => setStudentForm((prev) => ({ ...prev, classroomId: event.target.value }))}
             className="md:col-span-1"
           >
-            {!classrooms.length && <option value="">Avval sinf qo'shing</option>}
+            {!classrooms.length && <option value="">{t("Avval sinf qo'shing")}</option>}
             {classrooms.map((classroom) => (
               <option key={classroom.id} value={classroom.id}>
                 {classroom.name} ({classroom.academicYear})
@@ -188,14 +190,14 @@ export default function CreatePersonPanel({
             required
             value={studentForm.phone}
             onChange={(event) => setStudentForm((prev) => ({ ...prev, phone: event.target.value }))}
-            placeholder="Telefon"
+            placeholder={t('Telefon')}
           />
           <Input
             type="text"
             required
             value={studentForm.parentPhone}
             onChange={(event) => setStudentForm((prev) => ({ ...prev, parentPhone: event.target.value }))}
-            placeholder="Ota-ona telefoni"
+            placeholder={t('Ota-ona telefoni')}
             className="md:col-span-2"
           />
           <div className="md:col-span-1">
@@ -205,7 +207,7 @@ export default function CreatePersonPanel({
               disabled={loading || !classrooms.length}
               className="w-full"
             >
-              {loading ? 'Saqlanmoqda...' : 'Student yaratish'}
+              {loading ? t('Saqlanmoqda...') : t('Student yaratish')}
             </Button>
           </div>
         </form>

@@ -14,15 +14,19 @@ async function getTeacherHaftalikJadval(req, res) {
     throw new ApiError(404, "OQITUVCHI_TOPILMADI", "Teacher topilmadi");
   }
 
-  const oquvYili =
-    req.query.oquvYili?.trim() ||
-    (await prisma.darsJadvali
-      .findFirst({
-        where: { oqituvchiId: teacher.id },
-        orderBy: { createdAt: "desc" },
-        select: { oquvYili: true },
-      })
-      .then((row) => row?.oquvYili || ""));
+  const requestedYear = req.query.oquvYili?.trim();
+  const oquvYiliRows = await prisma.darsJadvali.findMany({
+    where: { oqituvchiId: teacher.id },
+    select: { oquvYili: true },
+    distinct: ["oquvYili"],
+    orderBy: { oquvYili: "desc" },
+  });
+  const oquvYillar = [
+    ...new Set(
+      oquvYiliRows.map((row) => row.oquvYili?.trim()).filter(Boolean),
+    ),
+  ];
+  const oquvYili = requestedYear || oquvYillar[0] || "";
 
   const darslar = await prisma.darsJadvali.findMany({
     where: {
@@ -49,6 +53,7 @@ async function getTeacherHaftalikJadval(req, res) {
     ok: true,
     teacher,
     oquvYili,
+    oquvYillar,
     darslar,
   });
 }

@@ -1,7 +1,10 @@
 import { useEffect, useId, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import { translateText } from '../../lib/i18nHelpers';
 import Button from './Button';
 
 export default function Modal({ open, title, subtitle, onClose, children, maxWidth = 'max-w-3xl' }) {
+  const { t } = useTranslation();
   const titleId = useId();
   const subtitleId = useId();
   const panelRef = useRef(null);
@@ -57,16 +60,16 @@ export default function Modal({ open, title, subtitle, onClose, children, maxWid
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <div>
             <h3 id={titleId} className="text-lg font-bold text-slate-900">
-              {title}
+              {translateText(t, title)}
             </h3>
             {subtitle && (
               <p id={subtitleId} className="text-sm text-slate-500">
-                {subtitle}
+                {translateText(t, subtitle)}
               </p>
             )}
           </div>
           <Button ref={closeButtonRef} variant="secondary" size="sm" onClick={onClose}>
-            Yopish
+            {t('Yopish')}
           </Button>
         </div>
         <div className="max-h-[60vh] overflow-auto p-4">{children}</div>

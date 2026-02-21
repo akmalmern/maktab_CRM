@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { Button, Card, Input, StateView } from '../../components/ui';
+import { Button, Card, Select, StateView } from '../../components/ui';
 import { apiRequest, getErrorMessage } from '../../lib/apiClient';
+import { getLocalDateInputValue } from '../../lib/dateUtils';
 
 const HAFTA_KUNLARI = ['DUSHANBA', 'SESHANBA', 'CHORSHANBA', 'PAYSHANBA', 'JUMA', 'SHANBA'];
 const KUN_LABEL = {
@@ -39,12 +41,14 @@ function sanaFromHaftaKuni(haftaKuni) {
   const index = HAFTA_KUNLARI.indexOf(haftaKuni);
   const target = new Date(monday);
   target.setDate(monday.getDate() + Math.max(index, 0));
-  return target.toISOString().slice(0, 10);
+  return getLocalDateInputValue(target);
 }
 
 export default function TeacherSchedulePage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [oquvYili, setOquvYili] = useState('');
+  const [oquvYillar, setOquvYillar] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [darslar, setDarslar] = useState([]);
@@ -58,12 +62,14 @@ export default function TeacherSchedulePage() {
         query: nextYear ? { oquvYili: nextYear } : {},
       });
       setDarslar(data.darslar || []);
+      setOquvYillar(data.oquvYillar || []);
       setOquvYili(data.oquvYili || nextYear || '');
     } catch (e) {
       const message = getErrorMessage(e);
       setError(message);
       toast.error(message);
       setDarslar([]);
+      setOquvYillar([]);
     } finally {
       setLoading(false);
     }
@@ -98,22 +104,30 @@ export default function TeacherSchedulePage() {
 
   return (
     <div className="space-y-4">
-      <Card title="Mening haftalik jadvalim">
+      <Card title={t('Mening haftalik jadvalim')}>
         <form
           onSubmit={(event) => {
             event.preventDefault();
             loadSchedule(oquvYili);
           }}
-          className="grid grid-cols-1 gap-2 md:grid-cols-[220px_auto]"
+          className="grid grid-cols-1 gap-2 md:grid-cols-[260px_auto]"
         >
-          <Input
-            type="text"
+          <Select
             value={oquvYili}
             onChange={(event) => setOquvYili(event.target.value)}
-            placeholder="Masalan: 2025-2026"
-          />
+          >
+            {oquvYillar.length ? (
+              oquvYillar.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))
+            ) : (
+              <option value={oquvYili || ''}>{oquvYili || t("O'quv yili topilmadi")}</option>
+            )}
+          </Select>
           <Button type="submit" variant="indigo">
-            Jadvalni yangilash
+            {t('Jadvalni yangilash')}
           </Button>
         </form>
       </Card>
@@ -122,13 +136,13 @@ export default function TeacherSchedulePage() {
       {!loading && error && <StateView type="error" description={error} />}
 
       {!loading && !error && (
-        <Card title="Haftalik grid ko'rinishi">
+        <Card title={t("Haftalik grid ko'rinishi")}>
           {vaqtlar.length ? (
             <div className="overflow-x-auto rounded-lg border border-slate-200">
               <table className="w-full min-w-[980px] table-fixed text-xs">
                 <thead className="bg-slate-900 text-white">
                   <tr>
-                    <th className="px-2 py-2 text-left">Vaqt</th>
+                    <th className="px-2 py-2 text-left">{t('Vaqt')}</th>
                     {HAFTA_KUNLARI.map((kun) => (
                       <th key={kun} className="px-2 py-2 text-left">
                         {KUN_LABEL[kun]}
@@ -161,12 +175,12 @@ export default function TeacherSchedulePage() {
                                   className="mt-2"
                                   onClick={() => handleGoAttendance(dars)}
                                 >
-                                  Davomatga o'tish
+                                  {t("Davomatga o'tish")}
                                 </Button>
                               </div>
                             ) : (
                               <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-400">
-                                Bo'sh slot
+                                {t("Bo'sh slot")}
                               </div>
                             )}
                           </td>
@@ -178,7 +192,7 @@ export default function TeacherSchedulePage() {
               </table>
             </div>
           ) : (
-            <StateView type="empty" description="Jadvalda dars topilmadi" />
+            <StateView type="empty" description={t('Jadvalda dars topilmadi')} />
           )}
         </Card>
       )}

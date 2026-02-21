@@ -26,6 +26,19 @@ const haftaKuniEnum = z.enum([
   "SHANBA",
 ]);
 
+const academicYearRegex = /^\d{4}\s*-\s*\d{4}$/;
+const academicYearSchema = z
+  .string()
+  .trim()
+  .regex(academicYearRegex, "oquvYili formati 2025-2026 bo'lishi kerak")
+  .transform((value) => value.replace(/\s+/g, ""))
+  .refine((value) => {
+    const [startRaw, endRaw] = value.split("-");
+    const start = Number.parseInt(startRaw, 10);
+    const end = Number.parseInt(endRaw, 10);
+    return Number.isFinite(start) && Number.isFinite(end) && end === start + 1;
+  }, "oquvYili noto'g'ri: ikkinchi yil birinchisidan 1 ga katta bo'lishi kerak");
+
 const createDarsJadvaliSchema = z
   .object({
     sinfId: z.string().cuid("sinfId noto'g'ri"),
@@ -57,6 +70,12 @@ const listDarsJadvaliQuerySchema = z.object({
   oquvYili: z.string().trim().min(1).optional(),
 });
 
+const studentJadvalQuerySchema = z
+  .object({
+    oquvYili: academicYearSchema.optional(),
+  })
+  .strict();
+
 const idParamSchema = z.object({
   id: z.string().cuid(),
 });
@@ -66,5 +85,6 @@ module.exports = {
   createDarsJadvaliSchema,
   updateDarsJadvaliSchema,
   listDarsJadvaliQuerySchema,
+  studentJadvalQuerySchema,
   idParamSchema,
 };

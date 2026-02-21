@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import { translateText } from '../../lib/i18nHelpers';
 import { cn } from './utils';
 
 export default function DataTable({
@@ -8,6 +10,8 @@ export default function DataTable({
   stickyHeader = false,
   maxHeightClassName = '',
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className={cn('overflow-auto rounded-lg border border-slate-200', maxHeightClassName)}>
       <table className="min-w-full text-sm">
@@ -22,7 +26,7 @@ export default function DataTable({
                   column.headerClassName || '',
                 )}
               >
-                {column.header}
+                {translateText(t, column.header)}
               </th>
             ))}
           </tr>
@@ -41,7 +45,7 @@ export default function DataTable({
           ) : (
             <tr>
               <td className="px-3 py-4 text-center text-slate-500" colSpan={columns.length}>
-                {emptyText}
+                {translateText(t, emptyText)}
               </td>
             </tr>
           )}

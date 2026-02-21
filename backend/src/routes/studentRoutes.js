@@ -8,6 +8,7 @@ const grades = require("../controllers/student/gradeController");
 const profile = require("../controllers/student/profileController");
 const { davomatTarixQuerySchema } = require("../validators/attendanceSchemas");
 const { listBaholarQuerySchema } = require("../validators/gradeSchemas");
+const { studentJadvalQuerySchema } = require("../validators/jadvalSchemas");
 
 router.get(
   "/profil",
@@ -20,6 +21,7 @@ router.get(
   "/jadval",
   requireAuth,
   requireRole("STUDENT"),
+  validate({ query: studentJadvalQuerySchema }),
   asyncHandler(schedule.getStudentHaftalikJadval),
 );
 

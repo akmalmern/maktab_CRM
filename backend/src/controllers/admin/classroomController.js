@@ -1,6 +1,6 @@
 const prisma = require("../../prisma");
 const { ApiError } = require("../../utils/apiError");
-const { cleanOptional } = require("./helpers");
+const { cleanOptional, parseIntSafe } = require("./helpers");
 const {
   buildAnnualPromotionPlan,
   applyAnnualPromotion,
@@ -10,37 +10,32 @@ async function getClassrooms(_req, res) {
   const classrooms = await prisma.classroom.findMany({
     where: { isArchived: false },
     orderBy: [{ academicYear: "desc" }, { name: "asc" }],
-    include: {
-      enrollments: {
-        where: { isActive: true },
-        include: {
-          student: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              user: {
-                select: {
-                  username: true,
-                  phone: true,
-                },
-              },
-            },
-          },
-        },
-      },
+    select: {
+      id: true,
+      name: true,
+      academicYear: true,
+      isArchived: true,
+      createdAt: true,
+      updatedAt: true,
     },
   });
 
-  const items = classrooms.map((classroom) => {
-    const students = classroom.enrollments
-      .map((enrollment) => enrollment.student)
-      .sort((a, b) => {
-        const byFirst = a.firstName.localeCompare(b.firstName, "uz");
-        if (byFirst !== 0) return byFirst;
-        return a.lastName.localeCompare(b.lastName, "uz");
-      });
+  const classroomIds = classrooms.map((row) => row.id);
+  const counts = classroomIds.length
+    ? await prisma.enrollment.groupBy({
+        by: ["classroomId"],
+        where: {
+          classroomId: { in: classroomIds },
+          isActive: true,
+        },
+        _count: { _all: true },
+      })
+    : [];
+  const countMap = new Map(
+    counts.map((row) => [row.classroomId, row._count?._all || 0]),
+  );
 
+  const items = classrooms.map((classroom) => {
     return {
       id: classroom.id,
       name: classroom.name,
@@ -48,12 +43,86 @@ async function getClassrooms(_req, res) {
       isArchived: classroom.isArchived,
       createdAt: classroom.createdAt,
       updatedAt: classroom.updatedAt,
-      studentCount: students.length,
-      students,
+      studentCount: countMap.get(classroom.id) || 0,
     };
   });
 
   res.json({ ok: true, classrooms: items });
+}
+
+async function getClassroomStudents(req, res) {
+  const { id } = req.params;
+  const page = parseIntSafe(req.query.page, 1);
+  const limit = Math.min(parseIntSafe(req.query.limit, 20), 100);
+  const skip = (page - 1) * limit;
+  const search = cleanOptional(req.query.search);
+
+  const classroom = await prisma.classroom.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      academicYear: true,
+      isArchived: true,
+    },
+  });
+  if (!classroom || classroom.isArchived) {
+    throw new ApiError(404, "CLASSROOM_NOT_FOUND", "Sinf topilmadi");
+  }
+
+  const where = {
+    enrollments: {
+      some: {
+        classroomId: id,
+        isActive: true,
+      },
+    },
+    ...(search
+      ? {
+          OR: [
+            { firstName: { contains: search, mode: "insensitive" } },
+            { lastName: { contains: search, mode: "insensitive" } },
+            { user: { username: { contains: search, mode: "insensitive" } } },
+            { user: { phone: { contains: search, mode: "insensitive" } } },
+          ],
+        }
+      : {}),
+  };
+
+  const [students, total] = await prisma.$transaction([
+    prisma.student.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        user: {
+          select: {
+            username: true,
+            phone: true,
+          },
+        },
+      },
+    }),
+    prisma.student.count({ where }),
+  ]);
+
+  res.json({
+    ok: true,
+    classroom: {
+      id: classroom.id,
+      name: classroom.name,
+      academicYear: classroom.academicYear,
+    },
+    page,
+    limit,
+    total,
+    pages: Math.ceil(total / limit),
+    students,
+  });
 }
 
 async function createClassroom(req, res) {
@@ -260,6 +329,18 @@ async function promoteClassroom(req, res) {
       data: { isActive: false, endDate: now },
     });
 
+    // Safety: bitta studentga bir vaqtning o'zida faqat bitta aktiv enrollment qoldiramiz.
+    await tx.enrollment.updateMany({
+      where: {
+        studentId: { in: uniqueStudents },
+        isActive: true,
+      },
+      data: {
+        isActive: false,
+        endDate: now,
+      },
+    });
+
     const created = await tx.enrollment.createMany({
       data: uniqueStudents.map((studentId) => ({
         studentId,
@@ -267,6 +348,7 @@ async function promoteClassroom(req, res) {
         startDate: now,
         isActive: true,
       })),
+      skipDuplicates: true,
     });
 
     return { movedCount: created.count };
@@ -279,8 +361,8 @@ async function promoteClassroom(req, res) {
     targetClassroom,
     message:
       result.movedCount > 0
-        ? `${result.movedCount} ta student muvaffaqiyatli ko'chirildi`
-        : "Ko'chirish uchun faol student topilmadi",
+        ? req.t("messages.CLASSROOM_PROMOTED", result.movedCount)
+        : req.t("messages.CLASSROOM_PROMOTION_EMPTY"),
   });
 }
 
@@ -335,13 +417,18 @@ async function runAnnualClassPromotion(req, res) {
       conflictCount: result.plan.conflicts.length,
     },
     message: result.skipped
-      ? result.reason || "Yillik sinf o'tkazish o'tkazib yuborildi"
-      : `${result.applied.promoted} ta sinf yangilandi, ${result.applied.graduated} ta sinf bitiruvchi sifatida arxivlandi`,
+      ? result.reason || req.t("messages.ANNUAL_PROMOTION_SKIPPED")
+      : req.t(
+          "messages.ANNUAL_PROMOTION_DONE",
+          result.applied.promoted,
+          result.applied.graduated,
+        ),
   });
 }
 
 module.exports = {
   getClassrooms,
+  getClassroomStudents,
   createClassroom,
   deleteClassroom,
   previewPromoteClassroom,

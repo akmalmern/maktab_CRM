@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import AutoTranslate from '../../AutoTranslate';
 import { Badge, Button, Card, DataTable, Input, Modal, StateView } from '../../../components/ui';
+import { apiRequest, getErrorMessage } from '../../../lib/apiClient';
 
 export default function ClassroomManager({
   classrooms,
@@ -11,6 +14,7 @@ export default function ClassroomManager({
   onOpenStudentDetail,
   onDeleteStudent,
 }) {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [academicYear, setAcademicYear] = useState('2025-2026');
   const [localClassrooms, setLocalClassrooms] = useState(classrooms);
@@ -19,6 +23,13 @@ export default function ClassroomManager({
   const [annualPreview, setAnnualPreview] = useState(null);
   const [annualLoading, setAnnualLoading] = useState(false);
   const [annualError, setAnnualError] = useState('');
+  const [studentRows, setStudentRows] = useState([]);
+  const [studentPage, setStudentPage] = useState(1);
+  const [studentPages, setStudentPages] = useState(1);
+  const [studentTotal, setStudentTotal] = useState(0);
+  const [studentSearch, setStudentSearch] = useState('');
+  const [studentLoading, setStudentLoading] = useState(false);
+  const [studentError, setStudentError] = useState('');
   const selectedClassroom = localClassrooms.find((item) => item.id === openedClassroomId) || null;
 
   useEffect(() => {
@@ -35,10 +46,10 @@ export default function ClassroomManager({
     setAnnualLoading(true);
     setAnnualError('');
     const result = await onPreviewAnnualClassPromotion?.();
-    setAnnualLoading(false);
+      setAnnualLoading(false);
     if (!result?.ok) {
       setAnnualPreview(null);
-      setAnnualError(result?.message || "Yillik o'tkazish preview olinmadi");
+      setAnnualError(result?.message || t("Yillik o'tkazish preview olinmadi"));
       return;
     }
     setAnnualPreview(result.data?.plan || null);
@@ -51,8 +62,8 @@ export default function ClassroomManager({
 
   async function handleRunAnnualPromotion() {
     const yes = window.confirm(
-      `Yillik sinf yangilash bajarilsinmi? ${
-        annualPreview ? `Jami ${annualPreview.studentsToPromote || 0} o'quvchi sinfi yangilanadi.` : ''
+      `${t("Yillik sinf yangilash bajarilsinmi?")} ${
+        annualPreview ? t("Jami {{count}} o'quvchi sinfi yangilanadi.", { count: annualPreview.studentsToPromote || 0 }) : ''
       }`,
     );
     if (!yes) return;
@@ -62,12 +73,56 @@ export default function ClassroomManager({
     const result = await onRunAnnualClassPromotion?.({ force: false });
     setAnnualLoading(false);
     if (!result?.ok) {
-      setAnnualError(result?.message || "Yillik o'tkazish bajarilmadi");
+      setAnnualError(result?.message || t("Yillik o'tkazish bajarilmadi"));
       return;
     }
     await loadAnnualPreview();
     setAnnualModalOpen(false);
   }
+
+  async function loadClassroomStudents({
+    classroomId,
+    page = 1,
+    search = '',
+  }) {
+    if (!classroomId) return;
+    setStudentLoading(true);
+    setStudentError('');
+    try {
+      const data = await apiRequest({
+        path: `/api/admin/classrooms/${classroomId}/students`,
+        query: {
+          page,
+          limit: 20,
+          search: search || undefined,
+        },
+      });
+      setStudentRows(data.students || []);
+      setStudentPage(data.page || 1);
+      setStudentPages(data.pages || 1);
+      setStudentTotal(data.total || 0);
+    } catch (error) {
+      setStudentRows([]);
+      setStudentError(getErrorMessage(error));
+    } finally {
+      setStudentLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!openedClassroomId) {
+      setStudentRows([]);
+      setStudentPage(1);
+      setStudentPages(1);
+      setStudentTotal(0);
+      setStudentSearch('');
+      setStudentError('');
+      return;
+    }
+
+    setStudentSearch('');
+    loadClassroomStudents({ classroomId: openedClassroomId, page: 1, search: '' });
+  }, [openedClassroomId]);
 
   const studentColumns = [
     {
@@ -98,7 +153,13 @@ export default function ClassroomManager({
             variant="danger"
             onClick={async () => {
               const ok = await onDeleteStudent(student.id);
-              if (ok) setOpenedClassroomId(null);
+              if (ok && selectedClassroom?.id) {
+                await loadClassroomStudents({
+                  classroomId: selectedClassroom.id,
+                  page: 1,
+                  search: studentSearch,
+                });
+              }
             }}
           >
             O'chirish
@@ -109,13 +170,14 @@ export default function ClassroomManager({
   ];
 
   return (
-    <Card
-      title="Sinflar boshqaruvi"
+    <AutoTranslate>
+      <Card
+      title={t('Sinflar boshqaruvi')}
       actions={
         <div className="flex items-center gap-2">
-          <span className="text-sm text-slate-500">Jami: {localClassrooms.length}</span>
+          <span className="text-sm text-slate-500">{t('Jami')}: {localClassrooms.length}</span>
           <Button size="sm" variant="indigo" onClick={openAnnualModal} disabled={annualLoading || actionLoading}>
-            Yillik avtomat o'tkazish
+            {t("Yillik avtomat o'tkazish")}
           </Button>
         </div>
       }
@@ -125,7 +187,7 @@ export default function ClassroomManager({
           type="text"
           value={name}
           onChange={(event) => setName(event.target.value)}
-          placeholder="Masalan: 6-A"
+          placeholder={t('Masalan: 6-A')}
         />
         <Input
           type="text"
@@ -149,12 +211,12 @@ export default function ClassroomManager({
                   <p className="text-lg font-bold text-slate-900">{classroom.name}</p>
                   <p className="text-sm text-slate-500">{classroom.academicYear}</p>
                 </div>
-                <Badge variant="info">{classroom.studentCount || 0} ta o'quvchi</Badge>
+                <Badge variant="info">{t("{{count}} ta o'quvchi", { count: classroom.studentCount || 0 })}</Badge>
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button size="sm" variant="secondary" onClick={() => setOpenedClassroomId(classroom.id)}>
-                  Ko'rish
+                  {t("Ko'rish")}
                 </Button>
               </div>
             </div>
@@ -170,27 +232,92 @@ export default function ClassroomManager({
         title={
           selectedClassroom
             ? `${selectedClassroom.name} (${selectedClassroom.academicYear})`
-            : "Sinf o'quvchilari"
+            : t("Sinf o'quvchilari")
         }
-        subtitle={selectedClassroom ? `O'quvchilar soni: ${selectedClassroom.studentCount || 0} ta` : null}
+        subtitle={selectedClassroom ? t("O'quvchilar soni: {{count}} ta", { count: selectedClassroom.studentCount || 0 }) : null}
       >
-        {selectedClassroom?.students?.length ? (
-          <DataTable
-            columns={studentColumns}
-            rows={selectedClassroom.students}
-            stickyHeader
-            maxHeightClassName="max-h-80"
-          />
-        ) : (
-          <StateView type="empty" description="Bu sinfda hozircha student yo'q." />
-        )}
+        <div className="space-y-3">
+          <form
+            className="flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!selectedClassroom?.id) return;
+              loadClassroomStudents({
+                classroomId: selectedClassroom.id,
+                page: 1,
+                search: studentSearch,
+              });
+            }}
+          >
+            <Input
+              type="text"
+              value={studentSearch}
+              onChange={(event) => setStudentSearch(event.target.value)}
+              placeholder="Ism, familiya, username yoki telefon"
+            />
+            <Button type="submit" variant="secondary" disabled={studentLoading}>
+              Qidirish
+            </Button>
+          </form>
+
+          {studentLoading ? <StateView type="loading" /> : null}
+          {!studentLoading && studentError ? <StateView type="error" description={studentError} /> : null}
+          {!studentLoading && !studentError && studentRows.length ? (
+            <>
+              <DataTable
+                columns={studentColumns}
+                rows={studentRows}
+                stickyHeader
+                maxHeightClassName="max-h-80"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500">
+                  {t('Jami')}: {studentTotal} {t('ta')} | {t('Sahifa')}: {studentPage} / {studentPages}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={studentLoading || studentPage <= 1}
+                    onClick={() =>
+                      loadClassroomStudents({
+                        classroomId: selectedClassroom.id,
+                        page: Math.max(1, studentPage - 1),
+                        search: studentSearch,
+                      })
+                    }
+                  >
+                    Oldingi
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={studentLoading || studentPage >= studentPages}
+                    onClick={() =>
+                      loadClassroomStudents({
+                        classroomId: selectedClassroom.id,
+                        page: Math.min(studentPages, studentPage + 1),
+                        search: studentSearch,
+                      })
+                    }
+                  >
+                    Keyingi
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : null}
+          {!studentLoading && !studentError && !studentRows.length ? (
+            <StateView type="empty" description="Bu sinfda hozircha student yo'q." />
+          ) : null}
+        </div>
       </Modal>
 
       <Modal
         open={annualModalOpen}
         onClose={() => setAnnualModalOpen(false)}
-        title="Yillik sinf yangilash (Sentyabr)"
-        subtitle="O'quvchilar ko'chirilmaydi: sinf nomi va o'quv yili avtomatik yangilanadi."
+        title={t("Yillik sinf yangilash (Sentyabr)")}
+        subtitle={t("Tarix saqlanadi: eski sinflar arxivlanadi, o'quvchilar yangi o'quv yilidagi sinflarga ko'chiriladi.")}
       >
         {annualLoading && <StateView type="loading" />}
         {!annualLoading && annualError && <StateView type="error" description={annualError} />}
@@ -205,37 +332,37 @@ export default function ClassroomManager({
                 <b>{annualPreview.graduateCount}</b>
               </p>
               <p className="mt-1">
-                O'quvchilar soni (yangilanadi): <b>{annualPreview.studentsToPromote}</b>
+                {t("O'quvchilar soni (yangilanadi):")} <b>{annualPreview.studentsToPromote}</b>
               </p>
               {!annualPreview.isSeptember && (
                 <p className="mt-1 text-amber-700">
-                  Hozir sentyabr emas. Bu manual ishga tushirish bo'ladi.
+                  {t("Hozir sentyabr emas. Bu manual ishga tushirish bo'ladi.")}
                 </p>
               )}
             </div>
 
             {annualPreview.conflictCount > 0 && (
               <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-                Conflict mavjud: {annualPreview.conflictCount} ta. Avval mavjud sinflarni tekshiring.
+                {t("Conflict mavjud: {{count}} ta. Avval mavjud sinflarni tekshiring.", { count: annualPreview.conflictCount })}
               </div>
             )}
 
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" onClick={loadAnnualPreview} disabled={annualLoading}>
-                Preview yangilash
+                {t("Preview yangilash")}
               </Button>
               <Button
                 variant="success"
                 onClick={handleRunAnnualPromotion}
                 disabled={annualLoading || annualPreview.conflictCount > 0 || annualPreview.promoteCount === 0}
               >
-                Tasdiqlab avtomat o'tkazish
+                {t("Tasdiqlab avtomat o'tkazish")}
               </Button>
             </div>
           </div>
         )}
       </Modal>
-    </Card>
+      </Card>
+    </AutoTranslate>
   );
 }
-

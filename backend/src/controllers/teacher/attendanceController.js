@@ -3,6 +3,7 @@ const { ApiError } = require("../../utils/apiError");
 const {
   parseSanaOrToday,
   buildRangeByType,
+  localTodayIsoDate,
 } = require("../../utils/attendancePeriod");
 
 const HAFTA_KUNLARI = [
@@ -13,6 +14,11 @@ const HAFTA_KUNLARI = [
   "JUMA",
   "SHANBA",
 ];
+
+function parseIntSafe(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 function haftaKuniFromDate(sana) {
   const jsDay = sana.getUTCDay(); // 0 yakshanba ... 6 shanba
@@ -80,24 +86,43 @@ async function getTeacherByUserId(userId) {
 async function getTeacherDarslar(req, res) {
   const { sana } = parseSanaOrToday(req.query.sana);
   const haftaKuni = haftaKuniFromDate(sana);
-  if (!haftaKuni) {
-    return res.json({
-      ok: true,
-      sana: sana.toISOString().slice(0, 10),
-      haftaKuni: null,
-      darslar: [],
-    });
-  }
+  const requestedOquvYili = req.query.oquvYili?.trim();
 
   const teacher = await getTeacherByUserId(req.user.sub);
   if (!teacher) {
     throw new ApiError(404, "OQITUVCHI_TOPILMADI", "Teacher topilmadi");
   }
 
+  const oquvYiliRows = await prisma.darsJadvali.findMany({
+    where: { oqituvchiId: teacher.id },
+    select: { oquvYili: true },
+    distinct: ["oquvYili"],
+    orderBy: { oquvYili: "desc" },
+  });
+  const oquvYillar = [
+    ...new Set(
+      oquvYiliRows.map((row) => row.oquvYili?.trim()).filter(Boolean),
+    ),
+  ];
+  const oquvYili = requestedOquvYili || oquvYillar[0] || "";
+
+  if (!haftaKuni) {
+    return res.json({
+      ok: true,
+      sana: sana.toISOString().slice(0, 10),
+      haftaKuni: null,
+      oquvYili,
+      oquvYillar,
+      teacher,
+      darslar: [],
+    });
+  }
+
   const darslar = await prisma.darsJadvali.findMany({
     where: {
       oqituvchiId: teacher.id,
       haftaKuni,
+      ...(oquvYili ? { oquvYili } : {}),
     },
     include: {
       sinf: {
@@ -154,6 +179,8 @@ async function getTeacherDarslar(req, res) {
     ok: true,
     sana: sana.toISOString().slice(0, 10),
     haftaKuni,
+    oquvYili,
+    oquvYillar,
     teacher,
     darslar: mapped,
   });
@@ -288,6 +315,14 @@ async function saveDarsDavomati(req, res) {
   const { darsId } = req.params;
   const { sana: sanaStr, davomatlar } = req.body;
   const { sana } = parseSanaOrToday(sanaStr);
+  const todayStr = localTodayIsoDate();
+  if (sanaStr > todayStr) {
+    throw new ApiError(
+      400,
+      "KELAJAK_SANA_MUMKIN_EMAS",
+      "Kelajak sana uchun davomat yoki baho saqlab bo'lmaydi",
+    );
+  }
 
   const teacher = await getTeacherByUserId(req.user.sub);
   if (!teacher) {
@@ -417,7 +452,7 @@ async function saveDarsDavomati(req, res) {
 
   res.json({
     ok: true,
-    message: "Davomat saqlandi",
+    message: req.t("messages.ATTENDANCE_SAVED"),
     sana: sana.toISOString().slice(0, 10),
     count: davomatlar.length,
   });
@@ -456,48 +491,142 @@ function groupTeacherSessions(records) {
 
 async function getTeacherAttendanceHistory(req, res) {
   const { sana, sanaStr } = parseSanaOrToday(req.query.sana);
-  const { classroomId } = req.query;
+  const { classroomId, holat } = req.query;
   const period = buildRangeByType(req.query.periodType, sana);
+  const page = parseIntSafe(req.query.page, 1);
+  const limit = Math.min(parseIntSafe(req.query.limit, 20), 100);
+  const skip = (page - 1) * limit;
 
   const teacher = await getTeacherByUserId(req.user.sub);
   if (!teacher) {
     throw new ApiError(404, "OQITUVCHI_TOPILMADI", "Teacher topilmadi");
   }
 
-  const records = await prisma.davomat.findMany({
-    where: {
-      sana: { gte: period.from, lt: period.to },
-      darsJadvali: {
-        oqituvchiId: teacher.id,
-        ...(classroomId ? { sinfId: classroomId } : {}),
-      },
+  const baseWhere = {
+    sana: { gte: period.from, lt: period.to },
+    holat: holat || undefined,
+    darsJadvali: {
+      oqituvchiId: teacher.id,
+      ...(classroomId ? { sinfId: classroomId } : {}),
     },
-    include: {
-      darsJadvali: {
-        select: {
-          id: true,
-          sinf: { select: { id: true, name: true, academicYear: true } },
-          fan: { select: { name: true } },
-          vaqtOraliq: { select: { nomi: true, boshlanishVaqti: true } },
-        },
-      },
-    },
-  });
+  };
 
-  const tarix = groupTeacherSessions(records);
+  const [allSessionKeys, pagedSessions, totalDavomatYozuvlari] =
+    await prisma.$transaction([
+      prisma.davomat.groupBy({
+        where: baseWhere,
+        by: ["darsJadvaliId", "sana"],
+      }),
+      prisma.davomat.groupBy({
+        where: baseWhere,
+        by: ["darsJadvaliId", "sana"],
+        _count: { _all: true },
+        orderBy: [{ sana: "desc" }, { darsJadvaliId: "asc" }],
+        skip,
+        take: limit,
+      }),
+      prisma.davomat.count({
+        where: baseWhere,
+      }),
+    ]);
+  const totalSessions = allSessionKeys.length;
+  const pages = Math.ceil(totalSessions / limit);
+  if (!pagedSessions.length) {
+    return res.json({
+      ok: true,
+      sana: sanaStr,
+      periodType: period.type,
+      page,
+      limit,
+      total: totalSessions,
+      pages,
+      period: {
+        from: period.from.toISOString().slice(0, 10),
+        to: new Date(period.to.getTime() - 1).toISOString().slice(0, 10),
+      },
+      tarix: [],
+      jami: {
+        davomatYozuvlari: totalDavomatYozuvlari,
+        darsSessiyalari: totalSessions,
+      },
+    });
+  }
+
+  const sessionOrWhere = pagedSessions.map((row) => ({
+    darsJadvaliId: row.darsJadvaliId,
+    sana: row.sana,
+  }));
+  const [sessionHolatRows, darslar] = await prisma.$transaction([
+    prisma.davomat.groupBy({
+      where: {
+        ...baseWhere,
+        OR: sessionOrWhere,
+      },
+      by: ["darsJadvaliId", "sana", "holat"],
+      _count: { _all: true },
+    }),
+    prisma.darsJadvali.findMany({
+      where: {
+        id: { in: [...new Set(pagedSessions.map((row) => row.darsJadvaliId))] },
+      },
+      select: {
+        id: true,
+        sinf: { select: { id: true, name: true, academicYear: true } },
+        fan: { select: { name: true } },
+        vaqtOraliq: { select: { nomi: true, boshlanishVaqti: true } },
+      },
+    }),
+  ]);
+  const darsMap = new Map(darslar.map((row) => [row.id, row]));
+  const holatMap = new Map();
+  for (const row of sessionHolatRows) {
+    const key = `${row.darsJadvaliId}__${row.sana.toISOString().slice(0, 10)}`;
+    if (!holatMap.has(key)) {
+      holatMap.set(key, { KELDI: 0, KECHIKDI: 0, SABABLI: 0, SABABSIZ: 0 });
+    }
+    holatMap.get(key)[row.holat] = row._count?._all || 0;
+  }
+
+  const tarix = pagedSessions.map((row) => {
+    const sanaKey = row.sana.toISOString().slice(0, 10);
+    const dars = darsMap.get(row.darsJadvaliId);
+    const holatlar = holatMap.get(`${row.darsJadvaliId}__${sanaKey}`) || {
+      KELDI: 0,
+      KECHIKDI: 0,
+      SABABLI: 0,
+      SABABSIZ: 0,
+    };
+    return {
+      darsJadvaliId: row.darsJadvaliId,
+      sana: sanaKey,
+      sinf: dars?.sinf
+        ? `${dars.sinf.name} (${dars.sinf.academicYear})`
+        : "-",
+      fan: dars?.fan?.name || "-",
+      vaqtOraliq: dars?.vaqtOraliq
+        ? `${dars.vaqtOraliq.nomi} (${dars.vaqtOraliq.boshlanishVaqti})`
+        : "-",
+      holatlar,
+      jami: row._count?._all || 0,
+    };
+  });
 
   res.json({
     ok: true,
     sana: sanaStr,
     periodType: period.type,
+    page,
+    limit,
+    total: totalSessions,
+    pages,
     period: {
       from: period.from.toISOString().slice(0, 10),
       to: new Date(period.to.getTime() - 1).toISOString().slice(0, 10),
     },
     tarix,
     jami: {
-      davomatYozuvlari: records.length,
-      darsSessiyalari: tarix.length,
+      davomatYozuvlari: totalDavomatYozuvlari,
+      darsSessiyalari: totalSessions,
     },
   });
 }

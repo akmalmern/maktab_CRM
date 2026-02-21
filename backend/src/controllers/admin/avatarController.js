@@ -95,7 +95,7 @@ async function adminUploadAvatar(req, res) {
 
   res.status(201).json({
     ok: true,
-    message: "Avatar muvaffaqiyatli yuklandi",
+    message: req.t("messages.AVATAR_UPLOADED"),
     avatar: result.updated,
   });
 }
@@ -124,7 +124,7 @@ async function adminDeleteAvatar(req, res) {
 
   removeFileBestEffort(result.oldAvatarPath);
 
-  res.json({ ok: true, message: "Avatar muvaffaqiyatli o'chirildi" });
+  res.json({ ok: true, message: req.t("messages.AVATAR_DELETED") });
 }
 
 module.exports = { adminUploadAvatar, adminDeleteAvatar };

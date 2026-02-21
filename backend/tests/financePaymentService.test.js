@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const {
   resolvePaymentMonthCount,
   resolvePaymentAmount,
+  resolvePaymentPlan,
 } = require("../src/services/financePaymentService");
 
 test("resolvePaymentMonthCount computes monthly oylar soni", () => {
@@ -49,4 +50,24 @@ test("resolvePaymentAmount rejects mismatched summa", () => {
       }),
     { code: "PAYMENT_AMOUNT_MISMATCH" },
   );
+});
+
+test("resolvePaymentPlan builds month rows with per-month amount map", () => {
+  const monthAmountByKey = new Map([
+    ["2026-01", 200000],
+    ["2026-02", 250000],
+  ]);
+  const result = resolvePaymentPlan({
+    turi: "OYLIK",
+    startMonth: "2026-01",
+    oylarSoniRaw: 2,
+    monthAmountByKey,
+    defaultMonthAmount: 300000,
+  });
+
+  assert.equal(result.oylarSoni, 2);
+  assert.deepEqual(result.monthPlans, [
+    { key: "2026-01", yil: 2026, oy: 1, oySumma: 200000 },
+    { key: "2026-02", yil: 2026, oy: 2, oySumma: 250000 },
+  ]);
 });

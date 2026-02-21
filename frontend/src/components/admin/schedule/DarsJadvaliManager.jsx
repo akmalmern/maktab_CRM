@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import AutoTranslate from '../../AutoTranslate';
 import { Button, Card, Input, Modal, Select } from '../../../components/ui';
 
 const HAFTA_KUNLARI = ['DUSHANBA', 'SESHANBA', 'CHORSHANBA', 'PAYSHANBA', 'JUMA', 'SHANBA'];
+const JADVAL_MENU = [
+  { key: 'HAFTALIK', label: "Haftalik jadval" },
+  { key: 'DARS_QOSHISH', label: "Dars qo'shish" },
+  { key: 'VAQT_QOSHISH', label: "Vaqt oralig'i qo'shish" },
+  { key: 'VAQT_LIST', label: "Vaqtlar ro'yxati" },
+  { key: 'FAN_RANG', label: "Fan ranglari" },
+];
 const HAFTA_KUNI_LABEL = {
   DUSHANBA: 'Dushanba',
   SESHANBA: 'Seshanba',
@@ -61,6 +69,7 @@ export default function DarsJadvaliManager({
   const [tezQoshishOqituvchiId, setTezQoshishOqituvchiId] = useState('');
   const [tezQoshishFanId, setTezQoshishFanId] = useState('');
   const [jadvalXatolik, setJadvalXatolik] = useState(null);
+  const [jadvalMenu, setJadvalMenu] = useState('HAFTALIK');
   const tezQoshishRef = useRef(null);
 
   const tanlanganSinfId = darsForm.sinfId || classrooms[0]?.id || '';
@@ -249,24 +258,44 @@ export default function DarsJadvaliManager({
   }
 
   return (
-    <Card title="Dars jadvali boshqaruvi">
-      <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <p className="mb-2 text-sm font-semibold text-slate-700">Fan ranglari (legend)</p>
+    <AutoTranslate>
+      <Card title="Dars jadvali boshqaruvi">
+      <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-2">
         <div className="flex flex-wrap gap-2">
-          {subjects.map((subject) => (
-            <span
-              key={subject.id}
-              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${fanRangi(subject.name)}`}
+          {JADVAL_MENU.map((item) => (
+            <Button
+              key={item.key}
+              type="button"
+              size="sm"
+              variant={jadvalMenu === item.key ? 'indigo' : 'secondary'}
+              onClick={() => setJadvalMenu(item.key)}
             >
-              {subject.name}
-            </span>
+              {item.label}
+            </Button>
           ))}
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-4">
+      {jadvalMenu === 'FAN_RANG' && (
+        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <p className="mb-2 text-sm font-semibold text-slate-700">Fan ranglari (legend)</p>
+          <div className="flex flex-wrap gap-2">
+            {subjects.map((subject) => (
+              <span
+                key={subject.id}
+                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${fanRangi(subject.name)}`}
+              >
+                {subject.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {jadvalMenu === 'VAQT_QOSHISH' && (
         <form onSubmit={handleVaqtSubmit} className="space-y-2 rounded-lg border border-slate-200 p-3">
           <p className="text-sm font-semibold text-slate-700">Vaqt oralig'i qo'shish</p>
+          <label className="block text-xs font-medium text-slate-600">Vaqt oralig'i nomi</label>
           <Input
             type="text"
             placeholder="Nomi (1-para)"
@@ -275,96 +304,125 @@ export default function DarsJadvaliManager({
             required
           />
           <div className="grid grid-cols-3 gap-2">
-            <Input
-              type="time"
-              value={vaqtForm.boshlanishVaqti}
-              onChange={(event) => setVaqtForm((prev) => ({ ...prev, boshlanishVaqti: event.target.value }))}
-              required
-            />
-            <Input
-              type="time"
-              value={vaqtForm.tugashVaqti}
-              onChange={(event) => setVaqtForm((prev) => ({ ...prev, tugashVaqti: event.target.value }))}
-              required
-            />
-            <Input
-              type="number"
-              min={1}
-              value={vaqtForm.tartib}
-              onChange={(event) => setVaqtForm((prev) => ({ ...prev, tartib: event.target.value }))}
-              required
-            />
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-600">Boshlanish vaqti</label>
+              <Input
+                type="time"
+                value={vaqtForm.boshlanishVaqti}
+                onChange={(event) => setVaqtForm((prev) => ({ ...prev, boshlanishVaqti: event.target.value }))}
+                required
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-600">Tugash vaqti</label>
+              <Input
+                type="time"
+                value={vaqtForm.tugashVaqti}
+                onChange={(event) => setVaqtForm((prev) => ({ ...prev, tugashVaqti: event.target.value }))}
+                required
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-600">Tartib raqami</label>
+              <Input
+                type="number"
+                min={1}
+                value={vaqtForm.tartib}
+                onChange={(event) => setVaqtForm((prev) => ({ ...prev, tartib: event.target.value }))}
+                required
+              />
+            </div>
           </div>
           <Button type="submit" disabled={actionLoading} variant="success">
             Vaqt oralig'ini saqlash
           </Button>
         </form>
+      )}
 
+      {jadvalMenu === 'DARS_QOSHISH' && (
         <form onSubmit={handleDarsSubmit} className="space-y-2 rounded-lg border border-slate-200 p-3">
           <p className="text-sm font-semibold text-slate-700">Dars jadvaliga dars qo'shish</p>
           <div className="grid grid-cols-2 gap-2">
-            <Select
-              value={tanlanganSinfId}
-              onChange={(event) => setDarsForm((prev) => ({ ...prev, sinfId: event.target.value }))}
-              required
-            >
-              {classrooms.map((classroom) => (
-                <option key={classroom.id} value={classroom.id}>
-                  {classroom.name} ({classroom.academicYear})
-                </option>
-              ))}
-            </Select>
-            <Select
-              value={tanlanganOqituvchiId}
-              onChange={(event) => setDarsForm((prev) => ({ ...prev, oqituvchiId: event.target.value }))}
-              required
-            >
-              {fanBoyichaOqituvchilar.map((teacher) => (
-                <option key={teacher.id} value={teacher.id}>
-                  {teacher.firstName} {teacher.lastName}
-                </option>
-              ))}
-            </Select>
-            <Select
-              value={tanlanganFanId}
-              onChange={(event) => setDarsForm((prev) => ({ ...prev, fanId: event.target.value }))}
-              required
-            >
-              {subjects.map((subject) => (
-                <option key={subject.id} value={subject.id}>
-                  {subject.name}
-                </option>
-              ))}
-            </Select>
-            <Select
-              value={darsForm.haftaKuni}
-              onChange={(event) => setDarsForm((prev) => ({ ...prev, haftaKuni: event.target.value }))}
-              required
-            >
-              {HAFTA_KUNLARI.map((kun) => (
-                <option key={kun} value={kun}>
-                  {kun}
-                </option>
-              ))}
-            </Select>
-            <Select
-              value={tanlanganVaqtOraliqId}
-              onChange={(event) => setDarsForm((prev) => ({ ...prev, vaqtOraliqId: event.target.value }))}
-              required
-            >
-              {vaqtOraliqlari.map((vaqt) => (
-                <option key={vaqt.id} value={vaqt.id}>
-                  {vaqt.nomi} ({vaqt.boshlanishVaqti}-{vaqt.tugashVaqti})
-                </option>
-              ))}
-            </Select>
-            <Input
-              type="text"
-              value={darsForm.oquvYili}
-              onChange={(event) => setDarsForm((prev) => ({ ...prev, oquvYili: event.target.value }))}
-              placeholder="2025-2026"
-              required
-            />
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-600">Sinf</label>
+              <Select
+                value={tanlanganSinfId}
+                onChange={(event) => setDarsForm((prev) => ({ ...prev, sinfId: event.target.value }))}
+                required
+              >
+                {classrooms.map((classroom) => (
+                  <option key={classroom.id} value={classroom.id}>
+                    {classroom.name} ({classroom.academicYear})
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-600">O'qituvchi</label>
+              <Select
+                value={tanlanganOqituvchiId}
+                onChange={(event) => setDarsForm((prev) => ({ ...prev, oqituvchiId: event.target.value }))}
+                required
+              >
+                {fanBoyichaOqituvchilar.map((teacher) => (
+                  <option key={teacher.id} value={teacher.id}>
+                    {teacher.firstName} {teacher.lastName}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-600">Fan</label>
+              <Select
+                value={tanlanganFanId}
+                onChange={(event) => setDarsForm((prev) => ({ ...prev, fanId: event.target.value }))}
+                required
+              >
+                {subjects.map((subject) => (
+                  <option key={subject.id} value={subject.id}>
+                    {subject.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-600">Hafta kuni</label>
+              <Select
+                value={darsForm.haftaKuni}
+                onChange={(event) => setDarsForm((prev) => ({ ...prev, haftaKuni: event.target.value }))}
+                required
+              >
+                {HAFTA_KUNLARI.map((kun) => (
+                  <option key={kun} value={kun}>
+                    {kun}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-600">Vaqt oralig'i</label>
+              <Select
+                value={tanlanganVaqtOraliqId}
+                onChange={(event) => setDarsForm((prev) => ({ ...prev, vaqtOraliqId: event.target.value }))}
+                required
+              >
+                {vaqtOraliqlari.map((vaqt) => (
+                  <option key={vaqt.id} value={vaqt.id}>
+                    {vaqt.nomi} ({vaqt.boshlanishVaqti}-{vaqt.tugashVaqti})
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-600">O'quv yili</label>
+              <Input
+                type="text"
+                value={darsForm.oquvYili}
+                onChange={(event) => setDarsForm((prev) => ({ ...prev, oquvYili: event.target.value }))}
+                placeholder="2025-2026"
+                required
+              />
+            </div>
           </div>
           <Button
             type="submit"
@@ -385,9 +443,9 @@ export default function DarsJadvaliManager({
             </p>
           )}
         </form>
-      </div>
+      )}
 
-      <div className="mt-4 grid grid-cols-1 gap-4">
+      {jadvalMenu === 'VAQT_LIST' && (
         <div className="rounded-lg border border-slate-200 p-3">
           <p className="mb-2 text-sm font-semibold text-slate-700">Vaqt oraliqlari ro'yxati</p>
           <div className="max-h-52 overflow-auto">
@@ -408,24 +466,32 @@ export default function DarsJadvaliManager({
             </table>
           </div>
         </div>
+      )}
 
-        <div className="rounded-lg border border-slate-200 p-3">
+      {jadvalMenu === 'HAFTALIK' && (
+        <div className="mt-4 rounded-lg border border-slate-200 p-3">
           <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <p className="text-sm font-semibold text-slate-700">Haftalik jadval ko'rinishi</p>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <Select value={tanlanganGridSinfId} onChange={(event) => setGridSinfId(event.target.value)}>
-                {classrooms.map((classroom) => (
-                  <option key={classroom.id} value={classroom.id}>
-                    {classroom.name}
-                  </option>
-                ))}
-              </Select>
-              <Input
-                type="text"
-                value={gridOquvYili}
-                onChange={(event) => setGridOquvYili(event.target.value)}
-                placeholder="2025-2026"
-              />
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-slate-600">Sinfni tanlang</label>
+                <Select value={tanlanganGridSinfId} onChange={(event) => setGridSinfId(event.target.value)}>
+                  {classrooms.map((classroom) => (
+                    <option key={classroom.id} value={classroom.id}>
+                      {classroom.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-slate-600">O'quv yili filtri</label>
+                <Input
+                  type="text"
+                  value={gridOquvYili}
+                  onChange={(event) => setGridOquvYili(event.target.value)}
+                  placeholder="2025-2026"
+                />
+              </div>
               <Button onClick={handleExportPdf} size="sm">
                 PDF export
               </Button>
@@ -514,7 +580,7 @@ export default function DarsJadvaliManager({
             </div>
           )}
         </div>
-      </div>
+      )}
 
       {tezQoshish && tezQoshishJoylashuv && (
         <>
@@ -535,23 +601,29 @@ export default function DarsJadvaliManager({
               {vaqtOraliqlari.find((vaqt) => vaqt.id === tezQoshish.vaqtOraliqId)?.boshlanishVaqti}
             </p>
             <form onSubmit={handleTezQoshishSubmit} className="mt-2 grid grid-cols-1 gap-2">
-              <Select value={tezTanlanganFanId} onChange={(event) => setTezQoshishFanId(event.target.value)}>
-                {subjects.map((subject) => (
-                  <option key={subject.id} value={subject.id}>
-                    {subject.name}
-                  </option>
-                ))}
-              </Select>
-              <Select
-                value={tanlanganTezOqituvchiId}
-                onChange={(event) => setTezQoshishOqituvchiId(event.target.value)}
-              >
-                {tezFanBoyichaOqituvchilar.map((teacher) => (
-                  <option key={teacher.id} value={teacher.id}>
-                    {teacher.firstName} {teacher.lastName}
-                  </option>
-                ))}
-              </Select>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-slate-600">Fan</label>
+                <Select value={tezTanlanganFanId} onChange={(event) => setTezQoshishFanId(event.target.value)}>
+                  {subjects.map((subject) => (
+                    <option key={subject.id} value={subject.id}>
+                      {subject.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-slate-600">O'qituvchi</label>
+                <Select
+                  value={tanlanganTezOqituvchiId}
+                  onChange={(event) => setTezQoshishOqituvchiId(event.target.value)}
+                >
+                  {tezFanBoyichaOqituvchilar.map((teacher) => (
+                    <option key={teacher.id} value={teacher.id}>
+                      {teacher.firstName} {teacher.lastName}
+                    </option>
+                  ))}
+                </Select>
+              </div>
               {!tezFanBoyichaOqituvchilar.length && (
                 <p className="text-xs text-rose-600">
                   Tanlangan fan uchun o'qituvchi topilmadi.
@@ -590,6 +662,7 @@ export default function DarsJadvaliManager({
           </Button>
         </div>
       </Modal>
-    </Card>
+      </Card>
+    </AutoTranslate>
   );
 }

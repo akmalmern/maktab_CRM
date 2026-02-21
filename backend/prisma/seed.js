@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const prisma = require("../src/prisma");
 const bcrypt = require("bcrypt");
+const { syncStudentOyMajburiyatlar } = require("../src/services/financeMajburiyatService");
 
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "admin123";
@@ -106,6 +107,37 @@ function addDaysUtc(date, days) {
 
 function startOfCurrentYearUtc(baseDate) {
   return new Date(Date.UTC(baseDate.getUTCFullYear(), 0, 1));
+}
+
+function startOfMonthsAgoUtc(baseDate, monthsAgo) {
+  return new Date(
+    Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth() - monthsAgo, 1),
+  );
+}
+
+function buildMonthKey(yil, oy) {
+  return `${yil}-${String(oy).padStart(2, "0")}`;
+}
+
+function buildRecentMonthTuples(baseDate, count) {
+  const out = [];
+  const start = new Date(
+    Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth() - (count - 1), 1),
+  );
+  for (let i = 0; i < count; i += 1) {
+    const d = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1));
+    out.push({
+      yil: d.getUTCFullYear(),
+      oy: d.getUTCMonth() + 1,
+      key: buildMonthKey(d.getUTCFullYear(), d.getUTCMonth() + 1),
+    });
+  }
+  return out;
+}
+
+function defaultEnrollmentStartDate() {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1));
 }
 
 function randomDavomatHolati() {
@@ -401,6 +433,7 @@ async function seedStudents(count, classrooms) {
         data: {
           studentId,
           classroomId: classroom.id,
+          startDate: defaultEnrollmentStartDate(),
         },
       });
 
@@ -432,6 +465,7 @@ async function seedStudents(count, classrooms) {
       data: {
         studentId: student.id,
         classroomId: classroom.id,
+        startDate: defaultEnrollmentStartDate(),
       },
     });
 
@@ -519,7 +553,7 @@ async function seedSchedule(classrooms, subjectIds) {
 
 async function seedAttendanceAndGradesHistory() {
   const today = toUtcDateOnly(new Date());
-  const startDate = startOfCurrentYearUtc(today);
+  const startDate = startOfMonthsAgoUtc(today, 2);
 
   const darslar = await prisma.darsJadvali.findMany({
     where: { oquvYili: DEFAULT_ACADEMIC_YEAR },
@@ -669,6 +703,242 @@ async function seedAttendanceAndGradesHistory() {
   };
 }
 
+async function seedTodayAttendanceIfMissing() {
+  const today = toUtcDateOnly(new Date());
+  const jsDay = today.getUTCDay();
+  const targetHaftaKuni = HAFTA_KUNI_BY_JS_DAY[jsDay] || "SHANBA";
+
+  const darslar = await prisma.darsJadvali.findMany({
+    where: { oquvYili: DEFAULT_ACADEMIC_YEAR, haftaKuni: targetHaftaKuni },
+    select: { id: true, sinfId: true, oqituvchiId: true },
+  });
+
+  if (!darslar.length) {
+    return { created: 0, skipped: true };
+  }
+
+  const sinfIds = [...new Set(darslar.map((d) => d.sinfId))];
+  const enrollments = await prisma.enrollment.findMany({
+    where: { isActive: true, classroomId: { in: sinfIds } },
+    select: { classroomId: true, studentId: true },
+  });
+  const studentsByClassroom = new Map();
+  for (const row of enrollments) {
+    if (!studentsByClassroom.has(row.classroomId)) studentsByClassroom.set(row.classroomId, []);
+    studentsByClassroom.get(row.classroomId).push(row.studentId);
+  }
+
+  let created = 0;
+  for (const dars of darslar) {
+    const studentIds = studentsByClassroom.get(dars.sinfId) || [];
+    if (!studentIds.length) continue;
+
+    const existing = await prisma.davomat.findMany({
+      where: { darsJadvaliId: dars.id, sana: today, studentId: { in: studentIds } },
+      select: { studentId: true },
+    });
+    const existingSet = new Set(existing.map((e) => e.studentId));
+
+    const rows = [];
+    for (const studentId of studentIds) {
+      if (existingSet.has(studentId)) continue;
+      const holat = randomDavomatHolati();
+      rows.push({
+        darsJadvaliId: dars.id,
+        studentId,
+        belgilaganTeacherId: dars.oqituvchiId,
+        sana: today,
+        holat,
+        izoh: holat === "SABABLI" ? "Seed: bugungi sababli yo'q" : null,
+      });
+    }
+
+    if (rows.length) {
+      await prisma.davomat.createMany({ data: rows, skipDuplicates: true });
+      created += rows.length;
+    }
+  }
+
+  return { created, skipped: false };
+}
+
+async function seedFinanceData() {
+  const settings = await prisma.moliyaSozlama.upsert({
+    where: { key: "MAIN" },
+    update: {},
+    create: {
+      key: "MAIN",
+      oylikSumma: 300000,
+      yillikSumma: 3000000,
+    },
+  });
+
+  const adminUser = await prisma.user.findFirst({
+    where: { role: "ADMIN" },
+    select: { id: true },
+  });
+  if (!adminUser) {
+    throw new Error("ADMIN user topilmadi. Avval admin yaratilishi kerak.");
+  }
+
+  const students = await prisma.student.findMany({
+    where: {
+      enrollments: {
+        some: { isActive: true },
+      },
+    },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  if (!students.length) {
+    return {
+      students: 0,
+      transactions: 0,
+      qoplamalar: 0,
+      imtiyozlar: 0,
+      thisMonthDebtors: 0,
+      twoThreeMonthDebtors: 0,
+      debtFree: 0,
+    };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.studentOyMajburiyat.deleteMany({});
+    await tx.tolovQoplama.deleteMany({});
+    await tx.tolovTranzaksiya.deleteMany({});
+    await tx.tolovImtiyozi.deleteMany({});
+  });
+
+  const now = new Date();
+  const recentMonths = buildRecentMonthTuples(now, 6);
+  let transactionCount = 0;
+  let qoplamaCount = 0;
+  let imtiyozCount = 0;
+
+  for (let i = 0; i < students.length; i += 1) {
+    const studentId = students[i].id;
+    const pattern = i % 4;
+    const unpaidCount = pattern === 0 ? 0 : pattern === 1 ? 1 : pattern === 2 ? 2 : 3;
+    const paidMonths = recentMonths.slice(0, recentMonths.length - unpaidCount);
+
+    if (paidMonths.length) {
+      const qoplanganOylar = paidMonths.map((m) => m.key);
+      const txn = await prisma.tolovTranzaksiya.create({
+        data: {
+          studentId,
+          adminUserId: adminUser.id,
+          turi: "OYLIK",
+          summa: paidMonths.length * settings.oylikSumma,
+          izoh: "Seed: moliya test ma'lumoti",
+          qoplanganOylar,
+          tarifVersionId: settings.faolTarifId || null,
+          tarifSnapshot: {
+            oylikSumma: settings.oylikSumma,
+            yillikSumma: settings.yillikSumma,
+            faolTarifId: settings.faolTarifId || null,
+          },
+        },
+      });
+      transactionCount += 1;
+
+      await prisma.tolovQoplama.createMany({
+        data: paidMonths.map((m) => ({
+          studentId,
+          tranzaksiyaId: txn.id,
+          yil: m.yil,
+          oy: m.oy,
+        })),
+        skipDuplicates: true,
+      });
+      qoplamaCount += paidMonths.length;
+    }
+
+    if (i < 24) {
+      let turi = "FOIZ";
+      let qiymat = 20;
+      let sabab = "Seed: ijtimoiy imtiyoz";
+      if (i >= 8 && i < 16) {
+        turi = "SUMMA";
+        qiymat = 100000;
+        sabab = "Seed: yutuq uchun imtiyoz";
+      }
+      if (i >= 16) {
+        turi = "TOLIQ_OZOD";
+        qiymat = null;
+        sabab = "Seed: to'liq ozod";
+      }
+
+      await prisma.tolovImtiyozi.create({
+        data: {
+          studentId,
+          adminUserId: adminUser.id,
+          turi,
+          qiymat,
+          boshlanishOy: recentMonths[recentMonths.length - 1].key,
+          oylarSoni: 1,
+          oylarSnapshot: [],
+          sabab,
+          izoh: "Seed imtiyoz",
+          isActive: true,
+        },
+      });
+      imtiyozCount += 1;
+    }
+  }
+
+  await syncStudentOyMajburiyatlar({
+    studentIds: students.map((s) => s.id),
+    oylikSumma: settings.oylikSumma,
+    futureMonths: 0,
+  });
+
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth() + 1;
+
+  const thisMonthDebtors = await prisma.studentOyMajburiyat.groupBy({
+    by: ["studentId"],
+    where: {
+      yil: currentYear,
+      oy: currentMonth,
+      holat: "BELGILANDI",
+      netSumma: { gt: 0 },
+    },
+    _count: { studentId: true },
+  });
+
+  const debtAgg = await prisma.studentOyMajburiyat.groupBy({
+    by: ["studentId"],
+    where: {
+      holat: "BELGILANDI",
+      netSumma: { gt: 0 },
+      OR: [
+        { yil: { lt: currentYear } },
+        { yil: currentYear, oy: { lte: currentMonth } },
+      ],
+    },
+    _count: { studentId: true },
+  });
+
+  let twoThreeMonthDebtors = 0;
+  let debtFree = 0;
+  for (const row of debtAgg) {
+    const count = Number(row._count?.studentId || 0);
+    if (count === 2 || count === 3) twoThreeMonthDebtors += 1;
+  }
+  debtFree = students.length - debtAgg.length;
+
+  return {
+    students: students.length,
+    transactions: transactionCount,
+    qoplamalar: qoplamaCount,
+    imtiyozlar: imtiyozCount,
+    thisMonthDebtors: thisMonthDebtors.length,
+    twoThreeMonthDebtors,
+    debtFree,
+  };
+}
+
 async function seedAttendanceHistory(months = 0) {
   // Eski nom bilan chaqirilgan joylar bo'lsa moslik uchun qoldirildi.
   if (months) {
@@ -744,6 +1014,8 @@ async function main() {
   const studentResult = await seedStudents(STUDENT_COUNT, classrooms);
   const scheduleResult = await seedSchedule(classrooms, subjectIds);
   const historyResult = await seedAttendanceAndGradesHistory();
+  const todayAttendance = await seedTodayAttendanceIfMissing();
+  const financeResult = await seedFinanceData();
 
   console.log("Seed completed");
   console.log(`Subjects => total: ${Object.keys(subjectIds).length}`);
@@ -752,10 +1024,17 @@ async function main() {
   console.log(`Students => target: ${studentResult.total}, created: ${studentResult.created}, updated: ${studentResult.updated}`);
   console.log(`Schedule lessons => created: ${scheduleResult.created}`);
   console.log(
-    `Attendance (Yanvar -> bugun) => deleted: ${historyResult.deletedDavomat}, created: ${historyResult.createdDavomat}, range: ${historyResult.startDate.toISOString().slice(0, 10)}..${historyResult.endDate.toISOString().slice(0, 10)}`,
+    `Attendance (3 oy -> bugun) => deleted: ${historyResult.deletedDavomat}, created: ${historyResult.createdDavomat}, range: ${historyResult.startDate.toISOString().slice(0, 10)}..${historyResult.endDate.toISOString().slice(0, 10)}`,
   );
+  console.log(`Today attendance ensure => created: ${todayAttendance.created}, skipped: ${todayAttendance.skipped}`);
   console.log(
     `Grades (JORIY/NAZORAT/ORALIQ) => deleted: ${historyResult.deletedBaholar}, created: ${historyResult.createdBaholar}`,
+  );
+  console.log(
+    `Finance => students: ${financeResult.students}, transactions: ${financeResult.transactions}, qoplamalar: ${financeResult.qoplamalar}, imtiyozlar: ${financeResult.imtiyozlar}`,
+  );
+  console.log(
+    `Finance segments => shu oy qarzdor: ${financeResult.thisMonthDebtors}, 2-3 oy qarzdor: ${financeResult.twoThreeMonthDebtors}, qarzi yo'q: ${financeResult.debtFree}`,
   );
   console.log(`Default password for teacher/student: ${DEFAULT_PASSWORD}`);
   console.log(`Manager credentials: ${MANAGER_USERNAME} / ${MANAGER_PASSWORD}`);

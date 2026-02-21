@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { Button, Card, Input, StateView } from '../../components/ui';
+import { Button, Card, Select, StateView } from '../../components/ui';
 import { apiRequest, getErrorMessage } from '../../lib/apiClient';
 
 const HAFTA_KUNLARI = ['DUSHANBA', 'SESHANBA', 'CHORSHANBA', 'PAYSHANBA', 'JUMA', 'SHANBA'];
@@ -28,7 +29,9 @@ function fanRangi(fanNomi) {
 }
 
 export default function StudentSchedulePage() {
+  const { t } = useTranslation();
   const [oquvYili, setOquvYili] = useState('');
+  const [oquvYillar, setOquvYillar] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [darslar, setDarslar] = useState([]);
@@ -44,6 +47,7 @@ export default function StudentSchedulePage() {
       });
       setDarslar(data.darslar || []);
       setStudentInfo(data.student || null);
+      setOquvYillar(data.oquvYillar || []);
       setOquvYili(data.oquvYili || nextYear || '');
     } catch (e) {
       const message = getErrorMessage(e);
@@ -51,6 +55,7 @@ export default function StudentSchedulePage() {
       toast.error(message);
       setDarslar([]);
       setStudentInfo(null);
+      setOquvYillar([]);
     } finally {
       setLoading(false);
     }
@@ -80,22 +85,30 @@ export default function StudentSchedulePage() {
 
   return (
     <div className="space-y-4">
-      <Card title="Mening haftalik jadvalim" subtitle={studentInfo?.sinf ? `${studentInfo.sinf.name} (${studentInfo.sinf.academicYear})` : ''}>
+      <Card title={t('Mening haftalik jadvalim')} subtitle={studentInfo?.sinf ? `${studentInfo.sinf.name} (${studentInfo.sinf.academicYear})` : ''}>
         <form
           onSubmit={(event) => {
             event.preventDefault();
             loadSchedule(oquvYili);
           }}
-          className="grid grid-cols-1 gap-2 md:grid-cols-[220px_auto]"
+          className="grid grid-cols-1 gap-2 md:grid-cols-[260px_auto]"
         >
-          <Input
-            type="text"
+          <Select
             value={oquvYili}
             onChange={(event) => setOquvYili(event.target.value)}
-            placeholder="Masalan: 2025-2026"
-          />
+          >
+            {oquvYillar.length ? (
+              oquvYillar.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))
+            ) : (
+              <option value={oquvYili || ''}>{oquvYili || t("O'quv yili topilmadi")}</option>
+            )}
+          </Select>
           <Button type="submit" variant="indigo">
-            Jadvalni yangilash
+            {t('Jadvalni yangilash')}
           </Button>
         </form>
       </Card>
@@ -104,13 +117,13 @@ export default function StudentSchedulePage() {
       {!loading && error && <StateView type="error" description={error} />}
 
       {!loading && !error && (
-        <Card title="Haftalik grid ko'rinishi">
+        <Card title={t("Haftalik grid ko'rinishi")}>
           {vaqtlar.length ? (
             <div className="overflow-x-auto rounded-lg border border-slate-200">
               <table className="w-full min-w-[980px] table-fixed text-xs">
                 <thead className="bg-slate-900 text-white">
                   <tr>
-                    <th className="px-2 py-2 text-left">Vaqt</th>
+                    <th className="px-2 py-2 text-left">{t('Vaqt')}</th>
                     {HAFTA_KUNLARI.map((kun) => (
                       <th key={kun} className="px-2 py-2 text-left">
                         {KUN_LABEL[kun]}
@@ -140,7 +153,7 @@ export default function StudentSchedulePage() {
                               </div>
                             ) : (
                               <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-400">
-                                Bo'sh slot
+                                {t("Bo'sh slot")}
                               </div>
                             )}
                           </td>
@@ -152,11 +165,10 @@ export default function StudentSchedulePage() {
               </table>
             </div>
           ) : (
-            <StateView type="empty" description="Jadvalda dars topilmadi" />
+            <StateView type="empty" description={t('Jadvalda dars topilmadi')} />
           )}
         </Card>
       )}
     </div>
   );
 }
-

@@ -1,4 +1,5 @@
 import { Button, Card, DataTable, Input, Select, StateView } from '../../../components/ui';
+import { useTranslation } from 'react-i18next';
 
 export default function PersonTable({
   title,
@@ -22,44 +23,49 @@ export default function PersonTable({
   pageSize,
   onPageSizeChange,
 }) {
+  const { t } = useTranslation();
+
   const sortOptions = [
-    { value: 'name:asc', label: 'Ism A-Z' },
-    { value: 'name:desc', label: 'Ism Z-A' },
-    { value: 'username:asc', label: 'Username A-Z' },
-    { value: 'username:desc', label: 'Username Z-A' },
+    { value: 'name:asc', label: t('Ism A-Z') },
+    { value: 'name:desc', label: t('Ism Z-A') },
+    { value: 'username:asc', label: t('Username A-Z') },
+    { value: 'username:desc', label: t('Username Z-A') },
   ];
 
   if (showSubject) {
-    sortOptions.push({ value: 'subject:asc', label: 'Fan A-Z' });
-    sortOptions.push({ value: 'subject:desc', label: 'Fan Z-A' });
+    sortOptions.push({ value: 'subject:asc', label: t('Fan A-Z') });
+    sortOptions.push({ value: 'subject:desc', label: t('Fan Z-A') });
   }
   if (showClassroom) {
-    sortOptions.push({ value: 'classroom:asc', label: 'Sinf A-Z' });
-    sortOptions.push({ value: 'classroom:desc', label: 'Sinf Z-A' });
+    sortOptions.push({ value: 'classroom:asc', label: t('Sinf A-Z') });
+    sortOptions.push({ value: 'classroom:desc', label: t('Sinf Z-A') });
   }
 
   const columns = [
     {
       key: 'fullName',
-      header: 'F.I.SH',
+      header: t('F.I.SH'),
       render: (row) => `${row.firstName} ${row.lastName}`,
     },
     {
       key: 'username',
-      header: 'Username',
+      header: t('Username'),
       render: (row) => row.user?.username || '-',
     },
     {
       key: 'phone',
-      header: 'Telefon',
+      header: t('Telefon'),
       render: (row) => row.user?.phone || '-',
     },
     ...(showSubject
       ? [
           {
             key: 'subject',
-            header: 'Fan',
-            render: (row) => row.subject?.name || '-',
+            header: t('Fan'),
+            render: (row) =>
+              row.subject?.name
+                ? t(row.subject.name, { defaultValue: row.subject.name })
+                : '-',
           },
         ]
       : []),
@@ -67,7 +73,7 @@ export default function PersonTable({
       ? [
           {
             key: 'classroom',
-            header: 'Sinf',
+            header: t('Sinf'),
             render: (row) =>
               row.enrollments?.[0]?.classroom
                 ? `${row.enrollments[0].classroom.name} (${row.enrollments[0].classroom.academicYear})`
@@ -75,24 +81,24 @@ export default function PersonTable({
           },
           {
             key: 'paymentStatus',
-            header: "To'lov",
+            header: t("To'lov"),
             render: (row) =>
               row.tolovHolati === 'QARZDOR'
-                ? `Qarzdor (${row.qarzOylarSoni || 0} oy)`
-                : "To'lagan",
+                ? t('Qarzdor ({{count}} oy)', { count: row.qarzOylarSoni || 0 })
+                : t("To'lagan"),
           },
         ]
       : []),
     {
       key: 'actions',
-      header: 'Amallar',
+      header: t('Amallar'),
       render: (row) => (
         <div className="flex gap-2">
           <Button size="sm" variant="indigo" onClick={() => onOpenDetail(row.id)}>
-            Batafsil
+            {t('Batafsil')}
           </Button>
           <Button size="sm" variant="danger" onClick={() => onDelete(row.id)}>
-            O'chirish
+            {t("O'chirish")}
           </Button>
         </div>
       ),
@@ -102,20 +108,20 @@ export default function PersonTable({
   return (
     <Card
       title={title}
-      actions={<span className="text-sm text-slate-500">Sahifa: {page} / {pages || 1}</span>}
+      actions={<span className="text-sm text-slate-500">{t('Sahifa')}: {page} / {pages || 1}</span>}
     >
       <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-4">
         <Input
           type="text"
           value={searchValue}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Qidirish..."
+          placeholder={t('Qidirish...')}
         />
         <Select value={filterValue} onChange={(e) => onFilterChange(e.target.value)}>
-          <option value="all">Hammasi</option>
+          <option value="all">{t('Hammasi')}</option>
           {filterOptions.map((item) => (
             <option key={item.value} value={item.value}>
-              {item.label}
+              {t(item.label, { defaultValue: item.label })}
             </option>
           ))}
         </Select>
@@ -132,7 +138,7 @@ export default function PersonTable({
         >
           {[10, 20, 50].map((size) => (
             <option key={size} value={size}>
-              {size} ta / sahifa
+              {t('{{count}} ta / sahifa', { count: size })}
             </option>
           ))}
         </Select>
@@ -161,7 +167,7 @@ export default function PersonTable({
           size="sm"
           disabled={page <= 1}
         >
-          Oldingi
+          {t('Oldingi')}
         </Button>
         <Button
           onClick={() => onPageChange(Math.min(pages || 1, page + 1))}
@@ -169,7 +175,7 @@ export default function PersonTable({
           size="sm"
           disabled={page >= (pages || 1)}
         >
-          Keyingi
+          {t('Keyingi')}
         </Button>
       </div>
     </Card>

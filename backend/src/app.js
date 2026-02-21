@@ -12,6 +12,7 @@ const teacherRoutes = require("./routes/teacherRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 const managerRoutes = require("./routes/managerRoutes");
 const { buildCorsOptions } = require("./config/cors");
+const { locale } = require("./middlewares/locale");
 
 const { notFound } = require("./middlewares/notFound");
 const { errorHandler } = require("./middlewares/errorhandler");
@@ -21,6 +22,7 @@ const app = express();
 app.use(cors(buildCorsOptions()));
 app.use(express.json());
 app.use(cookieParser());
+app.use(locale);
 
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 

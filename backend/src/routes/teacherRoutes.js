@@ -5,18 +5,29 @@ const { validate, validateBody } = require("../middlewares/validate");
 const attendance = require("../controllers/teacher/attendanceController");
 const schedule = require("../controllers/teacher/scheduleController");
 const grades = require("../controllers/teacher/gradeController");
+const profile = require("../controllers/teacher/profileController");
 const {
   sanaQuerySchema,
+  teacherDarslarQuerySchema,
   davomatTarixQuerySchema,
   darsIdParamSchema,
   davomatSaqlashSchema,
 } = require("../validators/attendanceSchemas");
 const { listBaholarQuerySchema } = require("../validators/gradeSchemas");
+const { studentJadvalQuerySchema } = require("../validators/jadvalSchemas");
+
+router.get(
+  "/profil",
+  requireAuth,
+  requireRole("TEACHER"),
+  asyncHandler(profile.getTeacherProfile),
+);
 
 router.get(
   "/jadval",
   requireAuth,
   requireRole("TEACHER"),
+  validate({ query: studentJadvalQuerySchema }),
   asyncHandler(schedule.getTeacherHaftalikJadval),
 );
 
@@ -24,7 +35,7 @@ router.get(
   "/davomat/darslar",
   requireAuth,
   requireRole("TEACHER"),
-  validate({ query: sanaQuerySchema }),
+  validate({ query: teacherDarslarQuerySchema }),
   asyncHandler(attendance.getTeacherDarslar),
 );
 

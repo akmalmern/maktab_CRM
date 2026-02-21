@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 import { Button, Card, Input } from '../components/ui';
 import { clearAuthError, loginThunk } from '../features/auth/authSlice';
 
 export default function LoginPage() {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const { loading, error, isAuthenticated, role } = useAppSelector((state) => state.auth);
@@ -30,7 +33,7 @@ export default function LoginPage() {
 
     const result = await dispatch(loginThunk(form));
     if (loginThunk.fulfilled.match(result)) {
-      toast.success('Xush kelibsiz');
+      toast.success(t('Xush kelibsiz'));
       navigate('/', { replace: true });
     }
   }
@@ -38,13 +41,16 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
       <Card className="w-full max-w-md p-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Maktab CRM</p>
-        <h1 className="mt-2 text-2xl font-bold text-slate-900">Tizimga kirish</h1>
-        <p className="mt-1 text-sm text-slate-500">Dashboardga kirish uchun login qiling</p>
+        <div className="mb-2 flex justify-end">
+          <LanguageSwitcher compact />
+        </div>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{t('Maktab CRM')}</p>
+        <h1 className="mt-2 text-2xl font-bold text-slate-900">{t('Tizimga kirish')}</h1>
+        <p className="mt-1 text-sm text-slate-500">{t('Dashboardga kirish uchun login qiling')}</p>
 
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           <div>
-            <label className="mb-1 block text-sm text-slate-600">Username</label>
+            <label className="mb-1 block text-sm text-slate-600">{t('Username')}</label>
             <Input
               type="text"
               value={form.username}
@@ -55,7 +61,7 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-sm text-slate-600">Password</label>
+            <label className="mb-1 block text-sm text-slate-600">{t('Password')}</label>
             <Input
               type="password"
               value={form.password}
@@ -71,7 +77,7 @@ export default function LoginPage() {
             variant="success"
             className="w-full"
           >
-            {loading ? 'Kirish...' : 'Kirish'}
+            {loading ? t('Kirish...') : t('Kirish')}
           </Button>
         </form>
       </Card>

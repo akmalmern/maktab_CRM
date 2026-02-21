@@ -1,8 +1,11 @@
 const { z } = require("zod");
 
 const sanaRegex = /^\d{4}-\d{2}-\d{2}$/;
+const academicYearRegex = /^\d{4}\s*-\s*\d{4}$/;
 const periodTypeEnum = z.enum(["KUNLIK", "HAFTALIK", "OYLIK", "CHORAKLIK", "YILLIK"]);
 const bahoTuriEnum = z.enum(["JORIY", "NAZORAT", "ORALIQ", "YAKUNIY"]);
+const pageSchema = z.coerce.number().int().min(1).optional();
+const limitSchema = z.coerce.number().int().min(1).max(100).optional();
 
 const davomatHolatiEnum = z.enum(["KELDI", "KECHIKDI", "SABABLI", "SABABSIZ"]);
 
@@ -10,10 +13,30 @@ const sanaQuerySchema = z.object({
   sana: z.string().trim().regex(sanaRegex, "sana YYYY-MM-DD formatda bo'lishi kerak").optional(),
 });
 
+const oquvYiliSchema = z
+  .string()
+  .trim()
+  .regex(academicYearRegex, "oquvYili formati 2025-2026 bo'lishi kerak")
+  .transform((value) => value.replace(/\s+/g, ""))
+  .refine((value) => {
+    const [startRaw, endRaw] = value.split("-");
+    const start = Number.parseInt(startRaw, 10);
+    const end = Number.parseInt(endRaw, 10);
+    return Number.isFinite(start) && Number.isFinite(end) && end === start + 1;
+  }, "oquvYili noto'g'ri: ikkinchi yil birinchisidan 1 ga katta bo'lishi kerak");
+
+const teacherDarslarQuerySchema = z.object({
+  sana: z.string().trim().regex(sanaRegex, "sana YYYY-MM-DD formatda bo'lishi kerak").optional(),
+  oquvYili: oquvYiliSchema.optional(),
+});
+
 const davomatTarixQuerySchema = z.object({
   sana: z.string().trim().regex(sanaRegex, "sana YYYY-MM-DD formatda bo'lishi kerak").optional(),
   periodType: periodTypeEnum.optional(),
   classroomId: z.string().cuid("classroomId noto'g'ri").optional(),
+  holat: davomatHolatiEnum.optional(),
+  page: pageSchema,
+  limit: limitSchema,
 });
 
 const darsIdParamSchema = z.object({
@@ -78,6 +101,7 @@ const adminHisobotQuerySchema = z.object({
 
 module.exports = {
   sanaQuerySchema,
+  teacherDarslarQuerySchema,
   davomatTarixQuerySchema,
   darsIdParamSchema,
   davomatSaqlashSchema,

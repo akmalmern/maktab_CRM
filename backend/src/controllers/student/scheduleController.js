@@ -33,15 +33,25 @@ async function getStudentHaftalikJadval(req, res) {
   }
 
   const sinfId = activeEnrollment.classroom.id;
+  const requestedYear = req.query.oquvYili?.trim();
+  const classroomAcademicYear = activeEnrollment.classroom.academicYear?.trim();
+  const oquvYiliRows = await prisma.darsJadvali.findMany({
+    where: { sinfId },
+    select: { oquvYili: true },
+    distinct: ["oquvYili"],
+    orderBy: { oquvYili: "desc" },
+  });
+  const oquvYillar = [
+    ...new Set([
+      classroomAcademicYear,
+      ...oquvYiliRows.map((row) => row.oquvYili?.trim()).filter(Boolean),
+    ]),
+  ].filter(Boolean);
   const oquvYili =
-    req.query.oquvYili?.trim() ||
-    (await prisma.darsJadvali
-      .findFirst({
-        where: { sinfId },
-        orderBy: { createdAt: "desc" },
-        select: { oquvYili: true },
-      })
-      .then((row) => row?.oquvYili || ""));
+    requestedYear ||
+    classroomAcademicYear ||
+    oquvYillar[0] ||
+    "";
 
   const darslar = await prisma.darsJadvali.findMany({
     where: {
@@ -67,6 +77,7 @@ async function getStudentHaftalikJadval(req, res) {
   res.json({
     ok: true,
     oquvYili,
+    oquvYillar,
     student: {
       id: student.id,
       fullName: `${student.firstName} ${student.lastName}`.trim(),

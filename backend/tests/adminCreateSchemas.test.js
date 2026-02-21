@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const {
   createTeacherSchema,
   createStudentSchema,
+  createClassroomSchema,
 } = require("../src/validators/adminCreateSchemas");
 
 test("createTeacherSchema requires valid cuid subjectId", () => {
@@ -29,4 +30,33 @@ test("createStudentSchema requires classroomId", () => {
   });
 
   assert.equal(parsed.success, false);
+});
+
+test("createClassroomSchema rejects invalid name format", () => {
+  const parsed = createClassroomSchema.safeParse({
+    name: "Class A",
+    academicYear: "2025-2026",
+  });
+
+  assert.equal(parsed.success, false);
+});
+
+test("createClassroomSchema rejects invalid academicYear range", () => {
+  const parsed = createClassroomSchema.safeParse({
+    name: "7-A",
+    academicYear: "2025-2028",
+  });
+
+  assert.equal(parsed.success, false);
+});
+
+test("createClassroomSchema normalizes valid name and academicYear", () => {
+  const parsed = createClassroomSchema.safeParse({
+    name: " 7 - a ",
+    academicYear: " 2025 - 2026 ",
+  });
+
+  assert.equal(parsed.success, true);
+  assert.equal(parsed.data.name, "7-A");
+  assert.equal(parsed.data.academicYear, "2025-2026");
 });

@@ -60,11 +60,28 @@ async function buildAnnualPromotionPlan(referenceDate = new Date()) {
       isArchived: false,
       academicYear: sourceAcademicYear,
     },
-    include: {
-      _count: { select: { enrollments: true } },
+    select: {
+      id: true,
+      name: true,
+      academicYear: true,
     },
     orderBy: { name: "asc" },
   });
+
+  const sourceIds = sourceClassrooms.map((item) => item.id);
+  const activeCountRows = sourceIds.length
+    ? await prisma.enrollment.groupBy({
+        by: ["classroomId"],
+        where: {
+          classroomId: { in: sourceIds },
+          isActive: true,
+        },
+        _count: { _all: true },
+      })
+    : [];
+  const activeCountMap = new Map(
+    activeCountRows.map((row) => [row.classroomId, row._count?._all || 0]),
+  );
 
   const promoteItems = [];
   const graduateItems = [];
@@ -87,7 +104,7 @@ async function buildAnnualPromotionPlan(referenceDate = new Date()) {
         id: classroom.id,
         sourceName: classroom.name,
         sourceAcademicYear: classroom.academicYear,
-        studentCount: classroom._count?.enrollments || 0,
+        studentCount: activeCountMap.get(classroom.id) || 0,
       });
       continue;
     }
@@ -98,39 +115,61 @@ async function buildAnnualPromotionPlan(referenceDate = new Date()) {
       sourceAcademicYear: classroom.academicYear,
       targetName: buildTargetName(parsed.grade + 1, parsed.suffix),
       targetAcademicYear,
-      studentCount: classroom._count?.enrollments || 0,
+      studentCount: activeCountMap.get(classroom.id) || 0,
     });
   }
 
-  const destinationKeys = promoteItems.map((item) => ({
-    name: item.targetName,
-    academicYear: item.targetAcademicYear,
-  }));
-
-  let conflicts = [];
-  if (destinationKeys.length) {
-    const existing = await prisma.classroom.findMany({
-      where: {
-        OR: destinationKeys,
-      },
-      select: { id: true, name: true, academicYear: true, isArchived: true },
-    });
-    const sourceIds = new Set(promoteItems.map((item) => item.id));
-    conflicts = existing
-      .filter((row) => !sourceIds.has(row.id))
-      .map((row) => ({
-        id: row.id,
-        name: row.name,
-        academicYear: row.academicYear,
-      }));
+  const destinationKeys = new Map();
+  const duplicateTargets = [];
+  for (const item of promoteItems) {
+    const key = `${item.targetName}__${item.targetAcademicYear}`;
+    const existing = destinationKeys.get(key);
+    if (existing) {
+      duplicateTargets.push({
+        name: item.targetName,
+        academicYear: item.targetAcademicYear,
+        sourceClassrooms: [existing.sourceName, item.sourceName],
+      });
+      continue;
+    }
+    destinationKeys.set(key, item);
   }
+
+  const targets = [...new Set(promoteItems.map((item) => item.targetName))];
+  const existingTargetClassrooms = targets.length
+    ? await prisma.classroom.findMany({
+        where: {
+          name: { in: targets },
+          academicYear: targetAcademicYear,
+        },
+        select: { id: true, name: true, academicYear: true, isArchived: true },
+      })
+    : [];
+  const existingTargetByKey = new Map(
+    existingTargetClassrooms.map((row) => [
+      `${row.name}__${row.academicYear}`,
+      row,
+    ]),
+  );
+
+  const conflicts = [...duplicateTargets];
+  const promoteItemsResolved = promoteItems.map((item) => {
+    const key = `${item.targetName}__${item.targetAcademicYear}`;
+    const existingTarget = existingTargetByKey.get(key);
+    return {
+      ...item,
+      targetClassroomId: existingTarget?.id || null,
+      targetExists: Boolean(existingTarget),
+      targetArchived: Boolean(existingTarget?.isArchived),
+    };
+  });
 
   return {
     generatedAt: new Date(),
     targetAcademicYear,
     sourceAcademicYear,
     isSeptember: referenceDate.getUTCMonth() === SENTYABR_MONTH_INDEX,
-    promoteItems,
+    promoteItems: promoteItemsResolved,
     graduateItems,
     skippedItems,
     conflicts,
@@ -149,7 +188,7 @@ async function applyAnnualPromotion({
     throw new ApiError(
       409,
       "PROMOTION_CONFLICT",
-      "Ba'zi maqsad sinflar allaqachon mavjud, avval conflictni bartaraf qiling",
+      "Sinf nomlarini avtomat oshirishda konflikt topildi, avval nomlarni tekshiring",
       { conflicts: plan.conflicts },
     );
   }
@@ -175,17 +214,83 @@ async function applyAnnualPromotion({
   }
 
   const now = new Date();
-  const promoteIds = plan.promoteItems.map((item) => item.id);
   const graduateIds = plan.graduateItems.map((item) => item.id);
 
   await prisma.$transaction(async (tx) => {
     for (const item of plan.promoteItems) {
+      const targetClassroom =
+        item.targetClassroomId &&
+        (await tx.classroom.findUnique({
+          where: { id: item.targetClassroomId },
+          select: { id: true, isArchived: true },
+        }));
+
+      let targetClassroomId = targetClassroom?.id || null;
+      if (targetClassroomId && targetClassroom?.isArchived) {
+        await tx.classroom.update({
+          where: { id: targetClassroomId },
+          data: { isArchived: false },
+        });
+      }
+
+      if (!targetClassroomId) {
+        const createdClassroom = await tx.classroom.create({
+          data: {
+            name: item.targetName,
+            academicYear: item.targetAcademicYear,
+            isArchived: false,
+          },
+          select: { id: true },
+        });
+        targetClassroomId = createdClassroom.id;
+      }
+
+      const activeEnrollments = await tx.enrollment.findMany({
+        where: {
+          classroomId: item.id,
+          isActive: true,
+        },
+        select: { id: true, studentId: true },
+      });
+      const enrollmentIds = activeEnrollments.map((row) => row.id);
+      const studentIds = [
+        ...new Set(activeEnrollments.map((row) => row.studentId)),
+      ];
+
+      if (enrollmentIds.length) {
+        await tx.enrollment.updateMany({
+          where: { id: { in: enrollmentIds } },
+          data: { isActive: false, endDate: now },
+        });
+      }
+
+      if (studentIds.length) {
+        // Safety: bitta studentga bir vaqtda bitta aktiv enrollment.
+        await tx.enrollment.updateMany({
+          where: {
+            studentId: { in: studentIds },
+            isActive: true,
+          },
+          data: {
+            isActive: false,
+            endDate: now,
+          },
+        });
+
+        await tx.enrollment.createMany({
+          data: studentIds.map((studentId) => ({
+            studentId,
+            classroomId: targetClassroomId,
+            startDate: now,
+            isActive: true,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
       await tx.classroom.update({
         where: { id: item.id },
-        data: {
-          name: item.targetName,
-          academicYear: item.targetAcademicYear,
-        },
+        data: { isArchived: true },
       });
     }
 

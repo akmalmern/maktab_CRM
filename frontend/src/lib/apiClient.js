@@ -71,8 +71,10 @@ function attachInterceptors() {
 
   requestInterceptorId = api.interceptors.request.use((config) => {
     const token = tokenGetter ? tokenGetter() : null;
+
+    config.headers = config.headers || {};
+
     if (token) {
-      config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
+import AutoTranslate from '../../components/AutoTranslate';
 import { Button, Card, Input, Modal, Select, StateView, Textarea } from '../../components/ui';
 import { apiRequest, getErrorMessage } from '../../lib/apiClient';
 
@@ -328,7 +329,8 @@ export default function ManagerDebtorsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <AutoTranslate>
+      <div className="space-y-4">
       <Card
         title="Qarzdorlar ro'yxati"
         subtitle="Menejer faqat qarzdor o'quvchilar bilan ishlaydi va ota-ona bilan aloqa izohini yozadi."
@@ -674,6 +676,7 @@ export default function ManagerDebtorsPage() {
           </div>
         )}
       </Modal>
-    </div>
+      </div>
+    </AutoTranslate>
   );
 }

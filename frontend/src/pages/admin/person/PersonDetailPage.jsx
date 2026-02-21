@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
+import AutoTranslate from '../../../components/AutoTranslate';
 import {
   Button,
   Card,
@@ -241,7 +242,8 @@ export default function PersonDetailPage() {
   if (!person) return null;
 
   return (
-    <div className="space-y-6">
+    <AutoTranslate>
+      <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link to={backLink} className="text-sm font-semibold text-indigo-600 hover:text-indigo-700">
@@ -432,6 +434,7 @@ export default function PersonDetailPage() {
         onCancel={() => handleConfirmClose(false)}
         onConfirm={() => handleConfirmClose(true)}
       />
-    </div>
+      </div>
+    </AutoTranslate>
   );
 }

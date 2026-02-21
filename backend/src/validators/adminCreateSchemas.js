@@ -66,10 +66,41 @@ const createSubjectSchema = z
   })
   .strict();
 
+const classroomNameSchema = requiredText("name")
+  .regex(/^\d{1,2}\s*-\s*[A-Za-z]$/, "name formati 7-A bo'lishi kerak")
+  .transform((value) => {
+    const [gradeRaw, suffixRaw] = value.split("-");
+    const grade = Number.parseInt(String(gradeRaw).trim(), 10);
+    const suffix = String(suffixRaw || "")
+      .trim()
+      .toUpperCase();
+    return `${grade}-${suffix}`;
+  })
+  .refine(
+    (value) => {
+      const grade = Number.parseInt(value.split("-")[0], 10);
+      return Number.isFinite(grade) && grade >= 1 && grade <= 11;
+    },
+    "name noto'g'ri: sinf darajasi 1 dan 11 gacha bo'lishi kerak",
+  );
+
+const academicYearSchema = requiredText("academicYear")
+  .regex(
+    /^\d{4}\s*-\s*\d{4}$/,
+    "academicYear formati 2025-2026 bo'lishi kerak",
+  )
+  .transform((value) => value.replace(/\s+/g, ""))
+  .refine((value) => {
+    const [startRaw, endRaw] = value.split("-");
+    const start = Number.parseInt(startRaw, 10);
+    const end = Number.parseInt(endRaw, 10);
+    return Number.isFinite(start) && Number.isFinite(end) && end === start + 1;
+  }, "academicYear noto'g'ri: ikkinchi yil birinchisidan 1 ga katta bo'lishi kerak");
+
 const createClassroomSchema = z
   .object({
-    name: requiredText("name"),
-    academicYear: requiredText("academicYear"),
+    name: classroomNameSchema,
+    academicYear: academicYearSchema,
   })
   .strict();
 

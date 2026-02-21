@@ -1,8 +1,10 @@
 import { Badge } from '../../../components/ui';
+import AutoTranslate from '../../AutoTranslate';
 
 export default function DashboardStats({ stats }) {
   return (
-    <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+    <AutoTranslate>
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
       {stats.map((stat) => (
         <div
           key={stat.label}
@@ -15,6 +17,7 @@ export default function DashboardStats({ stats }) {
           </div>
         </div>
       ))}
-    </section>
+      </section>
+    </AutoTranslate>
   );
 }

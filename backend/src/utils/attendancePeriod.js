@@ -9,8 +9,16 @@ function isStrictIsoDateString(value) {
   return date.toISOString().slice(0, 10) === value;
 }
 
+function localTodayIsoDate() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function parseSanaOrToday(value) {
-  const sanaStr = value || new Date().toISOString().slice(0, 10);
+  const sanaStr = value || localTodayIsoDate();
   if (!isStrictIsoDateString(sanaStr)) {
     throw new ApiError(400, "SANA_NOTOGRI", "Sana noto'g'ri formatda yoki mavjud bo'lmagan sana");
   }
@@ -79,6 +87,7 @@ function buildAllRanges(sana) {
 
 module.exports = {
   PERIOD_TYPES,
+  localTodayIsoDate,
   parseSanaOrToday,
   buildRangeByType,
   buildAllRanges,

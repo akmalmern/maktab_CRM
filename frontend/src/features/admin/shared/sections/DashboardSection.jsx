@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import AutoTranslate from '../../../../components/AutoTranslate';
 import { Card } from '../../../../components/ui';
 import { DashboardStats } from '../../../../components/admin';
 
@@ -32,7 +33,8 @@ export default function DashboardSection({ headerStats, attendanceReport, darsla
   ];
 
   return (
-    <div className="space-y-6">
+    <AutoTranslate>
+      <div className="space-y-6">
       <DashboardStats stats={headerStats} />
 
       <Card className="p-6">
@@ -47,6 +49,7 @@ export default function DashboardSection({ headerStats, attendanceReport, darsla
         </div>
       </Card>
 
-    </div>
+      </div>
+    </AutoTranslate>
   );
 }

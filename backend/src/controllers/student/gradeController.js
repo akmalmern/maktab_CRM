@@ -48,6 +48,15 @@ function buildStats(items) {
   return stats;
 }
 
+function toOneDecimal(value) {
+  return Number(Number(value || 0).toFixed(1));
+}
+
+function toPercent(ball, maxBall) {
+  if (!maxBall) return 0;
+  return Number(((Number(ball || 0) / Number(maxBall || 1)) * 100).toFixed(1));
+}
+
 async function getStudentByUserId(userId) {
   return prisma.student.findUnique({
     where: { userId },
@@ -188,56 +197,79 @@ async function getMyClassBaholar(req, res) {
     },
   };
 
-  const [items, total, allForStats] = await prisma.$transaction([
-    prisma.baho.findMany({
+  const [grouped, allForStats] = await prisma.$transaction([
+    prisma.baho.groupBy({
+      by: ["sana", "turi", "darsJadvaliId", "teacherId"],
       where,
-      skip,
-      take: limit,
-      include: {
-        student: { select: { firstName: true, lastName: true } },
-        teacher: { select: { firstName: true, lastName: true } },
-        darsJadvali: {
-          select: {
-            fan: { select: { name: true } },
-            vaqtOraliq: { select: { nomi: true, boshlanishVaqti: true } },
-          },
-        },
-      },
-      orderBy: [{ sana: "desc" }, { createdAt: "desc" }],
+      orderBy: [{ sana: "desc" }],
+      _count: { _all: true },
+      _avg: { ball: true, maxBall: true },
+      _min: { ball: true },
+      _max: { ball: true },
     }),
-    prisma.baho.count({ where }),
     prisma.baho.findMany({
       where,
       select: { turi: true, ball: true, maxBall: true },
     }),
   ]);
 
+  const total = grouped.length;
+  const pages = Math.ceil(total / limit);
+  const pagedGroups = grouped.slice(skip, skip + limit);
+  const darsJadvaliIds = [...new Set(pagedGroups.map((row) => row.darsJadvaliId))];
+  const teacherIds = [...new Set(pagedGroups.map((row) => row.teacherId))];
+
+  const [darslar, oqituvchilar] = await prisma.$transaction([
+    prisma.darsJadvali.findMany({
+      where: { id: { in: darsJadvaliIds } },
+      select: {
+        id: true,
+        fan: { select: { name: true } },
+        vaqtOraliq: { select: { nomi: true, boshlanishVaqti: true } },
+      },
+    }),
+    prisma.teacher.findMany({
+      where: { id: { in: teacherIds } },
+      select: { id: true, firstName: true, lastName: true },
+    }),
+  ]);
+
+  const darsMap = new Map(darslar.map((row) => [row.id, row]));
+  const oqituvchiMap = new Map(oqituvchilar.map((row) => [row.id, row]));
+
   res.json({
     ok: true,
     page,
     limit,
     total,
-    pages: Math.ceil(total / limit),
+    pages,
     classroom: `${classroom.name} (${classroom.academicYear})`,
+    isAnonymized: true,
     stats: buildStats(allForStats),
-    baholar: items.map((row) => ({
-      id: row.id,
-      sana: toIsoDate(row.sana),
-      turi: row.turi,
-      ball: row.ball,
-      maxBall: row.maxBall,
-      izoh: row.izoh || "",
-      student: row.student
-        ? `${row.student.firstName} ${row.student.lastName}`
-        : "-",
-      fan: row.darsJadvali?.fan?.name || "-",
-      vaqt: row.darsJadvali?.vaqtOraliq
-        ? `${row.darsJadvali.vaqtOraliq.nomi} (${row.darsJadvali.vaqtOraliq.boshlanishVaqti})`
-        : "-",
-      oqituvchi: row.teacher
-        ? `${row.teacher.firstName} ${row.teacher.lastName}`
-        : "-",
-    })),
+    baholar: pagedGroups.map((row) => {
+      const dars = darsMap.get(row.darsJadvaliId);
+      const oqituvchi = oqituvchiMap.get(row.teacherId);
+      const avgBall = toOneDecimal(row._avg?.ball);
+      const avgMaxBall = toOneDecimal(row._avg?.maxBall);
+      return {
+        id: `${row.darsJadvaliId}-${toIsoDate(row.sana)}-${row.turi}`,
+        sana: toIsoDate(row.sana),
+        turi: row.turi,
+        yozuvlarSoni: row._count?._all || 0,
+        ortachaBall: avgBall,
+        ortachaMaxBall: avgMaxBall,
+        ortachaFoiz: toPercent(avgBall, avgMaxBall),
+        minBall: Number(row._min?.ball || 0),
+        maxBall: Number(row._max?.ball || 0),
+        fan: dars?.fan?.name || "-",
+        vaqt: dars?.vaqtOraliq
+          ? `${dars.vaqtOraliq.nomi} (${dars.vaqtOraliq.boshlanishVaqti})`
+          : "-",
+        oqituvchi: oqituvchi
+          ? `${oqituvchi.firstName} ${oqituvchi.lastName}`
+          : "-",
+      };
+    }),
   });
 }
 

@@ -6,6 +6,7 @@ function notFound(req, res, next) {
       404,
       "ROUTE_NOT_FOUND",
       `Route topilmadi: ${req.method} ${req.originalUrl}`,
+      { method: req.method, path: req.originalUrl },
     ),
   );
 }

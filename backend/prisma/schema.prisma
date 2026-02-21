@@ -68,6 +68,11 @@ enum ImtiyozTuri {
   TOLIQ_OZOD
 }
 
+enum StudentOyMajburiyatHolati {
+  BELGILANDI
+  TOLANGAN
+}
+
 model User {
   id   String   @id @default(cuid())
   role UserRole
@@ -167,6 +172,7 @@ model Student {
   tolovQoplamalari TolovQoplama[]
   tolovImtiyozlari TolovImtiyozi[]
   qarzdorIzohlari QarzdorIzoh[]
+  oyMajburiyatlari StudentOyMajburiyat[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -454,6 +460,30 @@ model TolovQoplama {
   @@index([studentId, yil, oy])
   @@index([tranzaksiyaId])
   @@unique([studentId, yil, oy])
+}
+
+model StudentOyMajburiyat {
+  id String @id @default(cuid())
+
+  studentId String
+  yil Int
+  oy Int
+
+  bazaSumma Int
+  imtiyozSumma Int @default(0)
+  netSumma Int
+
+  holat StudentOyMajburiyatHolati @default(BELGILANDI)
+  source String @default("BAZA")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, yil, oy])
+  @@index([studentId, holat, yil, oy])
+  @@index([holat, yil, oy])
 }
 
 model TolovImtiyozi {

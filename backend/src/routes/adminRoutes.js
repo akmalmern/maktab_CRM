@@ -22,6 +22,7 @@ const {
 const {
   listTeachersQuerySchema,
   listStudentsQuerySchema,
+  listClassroomStudentsQuerySchema,
 } = require("../validators/adminListSchemas");
 const {
   createVaqtOraliqSchema,
@@ -95,6 +96,16 @@ router.get(
   requireAuth,
   requireRole("ADMIN"),
   asyncHandler(classrooms.getClassrooms),
+);
+router.get(
+  "/classrooms/:id/students",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({
+    params: ClassroomIdParamSchema,
+    query: listClassroomStudentsQuerySchema,
+  }),
+  asyncHandler(classrooms.getClassroomStudents),
 );
 router.post(
   "/classrooms",

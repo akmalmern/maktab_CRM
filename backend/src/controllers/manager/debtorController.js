@@ -1,10 +1,8 @@
+const { Prisma } = require("@prisma/client");
 const prisma = require("../../prisma");
 const { ApiError } = require("../../utils/apiError");
-const {
-  buildPaidMonthMap,
-  buildImtiyozMonthMap,
-  buildDebtInfo,
-} = require("../../services/financeDebtService");
+const { formatMonthKey } = require("../../services/financeDebtService");
+const { syncStudentOyMajburiyatlar } = require("../../services/financeMajburiyatService");
 
 const DEFAULT_OYLIK_SUMMA = 300000;
 
@@ -13,10 +11,9 @@ function parseIntSafe(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function formatClassroom(enrollment) {
-  const classroom = enrollment?.classroom;
-  if (!classroom) return "-";
-  return `${classroom.name} (${classroom.academicYear})`;
+function formatClassroomName(name, year) {
+  if (!name || !year) return "-";
+  return `${name} (${year})`;
 }
 
 function formatManagerName(managerUser) {
@@ -44,31 +41,6 @@ function mapNoteRow(row) {
   };
 }
 
-function buildStudentsWhere({ search, classroomId }) {
-  const where = {};
-  const text = String(search || "").trim();
-
-  if (text) {
-    where.OR = [
-      { firstName: { contains: text, mode: "insensitive" } },
-      { lastName: { contains: text, mode: "insensitive" } },
-      { parentPhone: { contains: text, mode: "insensitive" } },
-      { user: { is: { username: { contains: text, mode: "insensitive" } } } },
-    ];
-  }
-
-  if (classroomId) {
-    where.enrollments = {
-      some: {
-        isActive: true,
-        classroomId,
-      },
-    };
-  }
-
-  return where;
-}
-
 async function getSettings() {
   const settings = await prisma.moliyaSozlama.findUnique({
     where: { key: "MAIN" },
@@ -76,53 +48,6 @@ async function getSettings() {
   return {
     oylikSumma: settings?.oylikSumma || DEFAULT_OYLIK_SUMMA,
   };
-}
-
-async function getStudentDebtInfo(studentId, oylikSumma) {
-  const student = await prisma.student.findUnique({
-    where: { id: studentId },
-    select: {
-      id: true,
-      createdAt: true,
-      enrollments: {
-        where: { isActive: true },
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: { startDate: true },
-      },
-    },
-  });
-
-  if (!student) {
-    throw new ApiError(404, "STUDENT_NOT_FOUND", "Student topilmadi");
-  }
-
-  const qoplamalar = await prisma.tolovQoplama.findMany({
-    where: { studentId },
-    select: { studentId: true, yil: true, oy: true },
-  });
-  const imtiyozlar = await prisma.tolovImtiyozi.findMany({
-    where: { studentId },
-    select: {
-      turi: true,
-      qiymat: true,
-      boshlanishOy: true,
-      oylarSoni: true,
-      isActive: true,
-      bekorQilinganAt: true,
-      oylarSnapshot: true,
-    },
-  });
-  const paidSet = buildPaidMonthMap(qoplamalar).get(studentId) || new Set();
-  const imtiyozMonthMap = buildImtiyozMonthMap({ imtiyozlar, oylikSumma });
-  const debtInfo = buildDebtInfo({
-    startDate: student.enrollments?.[0]?.startDate || student.createdAt,
-    paidMonthSet: paidSet,
-    oylikSumma,
-    imtiyozMonthMap,
-  });
-
-  return debtInfo;
 }
 
 async function fetchLatestNotesMap(studentIds) {
@@ -150,6 +75,29 @@ async function fetchLatestNotesMap(studentIds) {
   return map;
 }
 
+function buildDebtorsWhereSql({ search, classroomId }) {
+  const clauses = [Prisma.sql`d."debtMonths" > 0`];
+  const text = String(search || "").trim();
+
+  if (text) {
+    const term = `%${text}%`;
+    clauses.push(
+      Prisma.sql`(
+        s."firstName" ILIKE ${term}
+        OR s."lastName" ILIKE ${term}
+        OR s."parentPhone" ILIKE ${term}
+        OR u."username" ILIKE ${term}
+      )`,
+    );
+  }
+
+  if (classroomId) {
+    clauses.push(Prisma.sql`ae."classroomId" = ${classroomId}`);
+  }
+
+  return Prisma.sql`WHERE ${Prisma.join(clauses, Prisma.sql` AND `)}`;
+}
+
 async function getManagerClassrooms(_req, res) {
   const classrooms = await prisma.classroom.findMany({
     where: { isArchived: false },
@@ -166,120 +114,132 @@ async function getManagerClassrooms(_req, res) {
 async function getDebtors(req, res) {
   const page = parseIntSafe(req.query.page, 1);
   const limit = Math.min(parseIntSafe(req.query.limit, 20), 100);
-  const skip = (page - 1) * limit;
+  const offset = (page - 1) * limit;
   const search = String(req.query.search || "").trim();
   const classroomId = req.query.classroomId || null;
-  const batchSize = 200;
 
-  const where = buildStudentsWhere({ search, classroomId });
   const settings = await getSettings();
-  let dbSkip = 0;
-  let debtorIndex = 0;
-  let total = 0;
-  let totalDebtAmount = 0;
-  const pageItems = [];
-  const pageStart = skip;
-  const pageEnd = skip + limit;
+  const now = new Date();
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth() + 1;
+  const missingCurrentRows = await prisma.$queryRaw`
+    SELECT s.id
+    FROM "Student" s
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM "StudentOyMajburiyat" m
+      WHERE m."studentId" = s.id
+        AND m.yil = ${currentYear}
+        AND m.oy = ${currentMonth}
+    )
+    LIMIT 500
+  `;
+  if (missingCurrentRows.length) {
+    await syncStudentOyMajburiyatlar({
+      studentIds: missingCurrentRows.map((row) => row.id),
+      oylikSumma: settings.oylikSumma,
+      futureMonths: 0,
+    });
+  }
 
-  while (true) {
-    const students = await prisma.student.findMany({
-      where,
-      skip: dbSkip,
-      take: batchSize,
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        parentPhone: true,
-        createdAt: true,
-        user: { select: { username: true, phone: true } },
-        enrollments: {
-          where: { isActive: true },
-          orderBy: { createdAt: "desc" },
-          take: 1,
-          select: {
-            startDate: true,
-            classroom: { select: { id: true, name: true, academicYear: true } },
-          },
-        },
+  const whereSql = buildDebtorsWhereSql({ search, classroomId });
+
+  const rows = await prisma.$queryRaw`
+    WITH active_enrollment AS (
+      SELECT DISTINCT ON (e."studentId")
+        e."studentId",
+        e."classroomId"
+      FROM "Enrollment" e
+      WHERE e."isActive" = true
+      ORDER BY e."studentId", e."createdAt" DESC
+    ),
+    debt AS (
+      SELECT
+        m."studentId",
+        COUNT(*)::int AS "debtMonths",
+        COALESCE(SUM(m."netSumma"), 0)::int AS "debtSum"
+      FROM "StudentOyMajburiyat" m
+      WHERE m.holat = 'BELGILANDI'
+        AND m."netSumma" > 0
+        AND (m.yil < ${currentYear} OR (m.yil = ${currentYear} AND m.oy <= ${currentMonth}))
+      GROUP BY m."studentId"
+    ),
+    base AS (
+      SELECT
+        s.id,
+        s."firstName",
+        s."lastName",
+        s."parentPhone",
+        u.username,
+        u.phone,
+        c.name AS "classroomName",
+        c."academicYear",
+        d."debtMonths",
+        d."debtSum"
+      FROM "Student" s
+      LEFT JOIN "User" u ON u.id = s."userId"
+      LEFT JOIN active_enrollment ae ON ae."studentId" = s.id
+      LEFT JOIN "Classroom" c ON c.id = ae."classroomId"
+      LEFT JOIN debt d ON d."studentId" = s.id
+      ${whereSql}
+    )
+    SELECT
+      b.*,
+      COUNT(*) OVER()::int AS "__total",
+      COALESCE(SUM(b."debtSum") OVER(), 0)::int AS "__sum"
+    FROM base b
+    ORDER BY b."firstName" ASC, b."lastName" ASC
+    LIMIT ${limit}
+    OFFSET ${offset}
+  `;
+
+  const total = Number(rows[0]?.__total || 0);
+  const totalDebtAmount = Number(rows[0]?.__sum || 0);
+  const pages = Math.ceil(total / limit);
+
+  const studentIds = rows.map((r) => r.id);
+  const notesMap = await fetchLatestNotesMap(studentIds);
+  const debtMonthsMap = new Map();
+
+  if (studentIds.length) {
+    const debtMonths = await prisma.studentOyMajburiyat.findMany({
+      where: {
+        studentId: { in: studentIds },
+        holat: "BELGILANDI",
+        netSumma: { gt: 0 },
+        OR: [
+          { yil: { lt: currentYear } },
+          { yil: currentYear, oy: { lte: currentMonth } },
+        ],
       },
-      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+      select: { studentId: true, yil: true, oy: true },
+      orderBy: [{ yil: "asc" }, { oy: "asc" }],
     });
 
-    if (!students.length) break;
-    dbSkip += students.length;
-
-    const studentIds = students.map((row) => row.id);
-    const [qoplamalar, imtiyozlar] = await Promise.all([
-      prisma.tolovQoplama.findMany({
-        where: { studentId: { in: studentIds } },
-        select: { studentId: true, yil: true, oy: true },
-      }),
-      prisma.tolovImtiyozi.findMany({
-        where: { studentId: { in: studentIds } },
-        select: {
-          studentId: true,
-          turi: true,
-          qiymat: true,
-          boshlanishOy: true,
-          oylarSoni: true,
-          isActive: true,
-          bekorQilinganAt: true,
-          oylarSnapshot: true,
-        },
-      }),
-    ]);
-
-    const paidMonthMap = buildPaidMonthMap(qoplamalar);
-    const imtiyozGrouped = new Map();
-    for (const row of imtiyozlar) {
-      if (!imtiyozGrouped.has(row.studentId))
-        imtiyozGrouped.set(row.studentId, []);
-      imtiyozGrouped.get(row.studentId).push(row);
-    }
-
-    for (const student of students) {
-      const startDate = student.enrollments?.[0]?.startDate || student.createdAt;
-      const paidSet = paidMonthMap.get(student.id) || new Set();
-      const debtInfo = buildDebtInfo({
-        startDate,
-        paidMonthSet: paidSet,
-        oylikSumma: settings.oylikSumma,
-        imtiyozMonthMap: buildImtiyozMonthMap({
-          imtiyozlar: imtiyozGrouped.get(student.id) || [],
-          oylikSumma: settings.oylikSumma,
-        }),
-      });
-
-      if (debtInfo.qarzOylarSoni < 1) continue;
-
-      total += 1;
-      totalDebtAmount += Number(debtInfo.jamiQarzSumma || 0);
-      if (debtorIndex >= pageStart && debtorIndex < pageEnd) {
-        pageItems.push({
-          id: student.id,
-          fullName: `${student.firstName} ${student.lastName}`.trim(),
-          username: student.user?.username || "-",
-          phone: student.user?.phone || "-",
-          parentPhone: student.parentPhone || "-",
-          classroom: formatClassroom(student.enrollments?.[0]),
-          qarzOylarSoni: debtInfo.qarzOylarSoni,
-          qarzOylar: debtInfo.qarzOylar.map((m) => m.key),
-          qarzOylarFormatted: debtInfo.qarzOylar.map((m) => m.label),
-          jamiQarzSumma: debtInfo.jamiQarzSumma,
-          oxirgiIzoh: null,
-        });
-      }
-      debtorIndex += 1;
+    for (const row of debtMonths) {
+      if (!debtMonthsMap.has(row.studentId)) debtMonthsMap.set(row.studentId, []);
+      debtMonthsMap
+        .get(row.studentId)
+        .push(`${row.yil}-${String(row.oy).padStart(2, "0")}`);
     }
   }
 
-  const latestNoteMap = await fetchLatestNotesMap(pageItems.map((item) => item.id));
-  const items = pageItems.map((item) => ({
-    ...item,
-    oxirgiIzoh: latestNoteMap.get(item.id) || null,
-  }));
-  const pages = Math.ceil(total / limit);
+  const items = rows.map((row) => {
+    const monthKeys = debtMonthsMap.get(row.id) || [];
+    return {
+      id: row.id,
+      fullName: `${row.firstName} ${row.lastName}`.trim(),
+      username: row.username || "-",
+      phone: row.phone || "-",
+      parentPhone: row.parentPhone || "-",
+      classroom: formatClassroomName(row.classroomName, row.academicYear),
+      qarzOylarSoni: Number(row.debtMonths || 0),
+      qarzOylar: monthKeys,
+      qarzOylarFormatted: monthKeys.map((key) => formatMonthKey(key)),
+      jamiQarzSumma: Number(row.debtSum || 0),
+      oxirgiIzoh: notesMap.get(row.id) || null,
+    };
+  });
 
   res.json({
     ok: true,
@@ -346,9 +306,38 @@ async function getDebtorNotes(req, res) {
 async function createDebtorNote(req, res) {
   const { studentId } = req.params;
   const settings = await getSettings();
-  const debtInfo = await getStudentDebtInfo(studentId, settings.oylikSumma);
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    select: { id: true },
+  });
+  if (!student) {
+    throw new ApiError(404, "STUDENT_NOT_FOUND", "Student topilmadi");
+  }
+  await syncStudentOyMajburiyatlar({
+    studentIds: [studentId],
+    oylikSumma: settings.oylikSumma,
+    futureMonths: 0,
+  });
 
-  if (debtInfo.qarzOylarSoni < 1) {
+  const now = new Date();
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth() + 1;
+
+  const debt = await prisma.studentOyMajburiyat.aggregate({
+    where: {
+      studentId,
+      holat: "BELGILANDI",
+      netSumma: { gt: 0 },
+      OR: [
+        { yil: { lt: currentYear } },
+        { yil: currentYear, oy: { lte: currentMonth } },
+      ],
+    },
+    _count: { _all: true },
+    _sum: { netSumma: true },
+  });
+
+  if (Number(debt?._count?._all || 0) < 1) {
     throw new ApiError(
       409,
       "STUDENT_NOT_DEBTOR",
@@ -378,10 +367,8 @@ async function createDebtorNote(req, res) {
     ok: true,
     note: mapNoteRow(created),
     debt: {
-      qarzOylarSoni: debtInfo.qarzOylarSoni,
-      qarzOylar: debtInfo.qarzOylar.map((m) => m.key),
-      qarzOylarFormatted: debtInfo.qarzOylar.map((m) => m.label),
-      jamiQarzSumma: debtInfo.jamiQarzSumma,
+      qarzOylarSoni: Number(debt?._count?._all || 0),
+      jamiQarzSumma: Number(debt?._sum?.netSumma || 0),
     },
   });
 }

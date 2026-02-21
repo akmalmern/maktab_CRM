@@ -1,6 +1,10 @@
+import { useTranslation } from 'react-i18next';
+import { translateNode } from '../../lib/i18nHelpers';
 import { cn } from './utils';
 
 export default function Select({ className, children, ...props }) {
+  const { t } = useTranslation();
+
   return (
     <select
       className={cn(
@@ -9,7 +13,7 @@ export default function Select({ className, children, ...props }) {
       )}
       {...props}
     >
-      {children}
+      {translateNode(t, children)}
     </select>
   );
 }
