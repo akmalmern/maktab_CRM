@@ -1,4 +1,5 @@
 import axios from 'axios';
+import i18n from '../i18n';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 const REFRESH_TIMEOUT_MS = 10000;
@@ -60,6 +61,12 @@ function shouldSkipRefresh(url = '') {
   );
 }
 
+function resolveLangHeaderValue() {
+  const lang = i18n.language?.split('-')?.[0];
+  if (lang === 'ru' || lang === 'en' || lang === 'uz') return lang;
+  return 'uz';
+}
+
 function attachInterceptors() {
   if (requestInterceptorId !== null) {
     api.interceptors.request.eject(requestInterceptorId);
@@ -73,10 +80,13 @@ function attachInterceptors() {
     const token = tokenGetter ? tokenGetter() : null;
 
     config.headers = config.headers || {};
+    const lang = resolveLangHeaderValue();
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    config.headers['X-Lang'] = lang;
+    config.headers['Accept-Language'] = lang;
     return config;
   });
 
@@ -177,6 +187,8 @@ export async function apiRequest({
   try {
     const finalHeaders = {
       ...(isFormData ? {} : body ? { 'Content-Type': 'application/json' } : {}),
+      'X-Lang': resolveLangHeaderValue(),
+      'Accept-Language': resolveLangHeaderValue(),
       ...(headers || {}),
     };
 
@@ -223,7 +235,11 @@ export async function apiDownload({
       method,
       params: query,
       data: body,
-      headers: headers || {},
+      headers: {
+        'X-Lang': resolveLangHeaderValue(),
+        'Accept-Language': resolveLangHeaderValue(),
+        ...(headers || {}),
+      },
       signal,
       responseType: 'blob',
     });

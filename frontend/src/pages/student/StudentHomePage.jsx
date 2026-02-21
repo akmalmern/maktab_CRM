@@ -4,8 +4,14 @@ import { useNavigate } from 'react-router-dom';
 import { Button, Card, StateView } from '../../components/ui';
 import { apiRequest, getErrorMessage } from '../../lib/apiClient';
 
-function sumFormat(value) {
-  return new Intl.NumberFormat('uz-UZ').format(Number(value || 0));
+function resolveLocale(language) {
+  if (language === 'ru') return 'ru-RU';
+  if (language === 'en') return 'en-US';
+  return 'uz-UZ';
+}
+
+function sumFormat(value, locale) {
+  return new Intl.NumberFormat(locale).format(Number(value || 0));
 }
 
 function percentFormat(value) {
@@ -13,7 +19,7 @@ function percentFormat(value) {
 }
 
 export default function StudentHomePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -44,6 +50,7 @@ export default function StudentHomePage() {
   const debt = profile?.moliya;
   const dashboard = profile?.dashboard || {};
   const davomat30 = dashboard?.davomat || {};
+  const locale = resolveLocale(i18n.language);
   const hasDebt = debt?.holat === 'QARZDOR' && Number(debt?.qarzOylarSoni || 0) > 0;
   const debtTitle = hasDebt ? t("Qarzdorlik ogohlantirishi") : t("To'lov holati");
   const debtText = hasDebt
@@ -71,7 +78,9 @@ export default function StudentHomePage() {
             </div>
             <div className="rounded-lg border border-slate-200 bg-white p-3">
               <p className="text-xs text-slate-500">{t('Jami qarz')}</p>
-              <p className="text-xl font-bold text-slate-900">{sumFormat(debt?.jamiQarzSumma)} {t("so'm")}</p>
+              <p className="text-xl font-bold text-slate-900">
+                {sumFormat(debt?.jamiQarzSumma, locale)} {t("so'm")}
+              </p>
             </div>
           </section>
 
@@ -86,7 +95,7 @@ export default function StudentHomePage() {
             <p>{debtText}</p>
             {hasDebt && (
               <p className="mt-1 text-xs">
-                {t('Qarz oylar soni')}: <b>{debt?.qarzOylarSoni}</b> | {t('Jami qarz')}: <b>{sumFormat(debt?.jamiQarzSumma)} {t("so'm")}</b>
+                {t('Qarz oylar soni')}: <b>{debt?.qarzOylarSoni}</b> | {t('Jami qarz')}: <b>{sumFormat(debt?.jamiQarzSumma, locale)} {t("so'm")}</b>
               </p>
             )}
           </div>
@@ -118,8 +127,8 @@ export default function StudentHomePage() {
                 <div className="space-y-1 text-sm">
                   {dashboard.oxirgiTolovlar.map((item) => (
                     <div key={item.id} className="flex items-center justify-between rounded-md bg-slate-50 px-2 py-1">
-                      <span>{item.turi}</span>
-                      <span className="font-semibold">{sumFormat(item.summa)} {t("so'm")}</span>
+                      <span>{t(item.turi, { defaultValue: item.turi })}</span>
+                      <span className="font-semibold">{sumFormat(item.summa, locale)} {t("so'm")}</span>
                     </div>
                   ))}
                 </div>

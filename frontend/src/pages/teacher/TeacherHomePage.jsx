@@ -77,7 +77,9 @@ export default function TeacherHomePage() {
                       <span>
                         {item.sinf} / {item.fan}
                       </span>
-                      <span className="font-semibold">{item.studentlarSoni} ta</span>
+                      <span className="font-semibold">
+                        {item.studentlarSoni} {t('ta')}
+                      </span>
                     </div>
                   ))}
                 </div>

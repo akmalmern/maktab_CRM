@@ -6,27 +6,38 @@ import { Button, Card, DataTable, Input, Select, StateView } from '../../compone
 import { apiRequest, getErrorMessage } from '../../lib/apiClient';
 import { getLocalDateInputValue } from '../../lib/dateUtils';
 
-const HOLAT_OPTIONS = [
-  { value: 'KELDI', label: 'Keldi' },
-  { value: 'KECHIKDI', label: 'Kechikdi' },
-  { value: 'SABABLI', label: 'Sababli' },
-  { value: 'SABABSIZ', label: 'Sababsiz' },
-];
+const HOLAT_OPTIONS = ['KELDI', 'KECHIKDI', 'SABABLI', 'SABABSIZ'];
+const HOLAT_LABEL_KEYS = {
+  KELDI: 'Keldi',
+  KECHIKDI: 'Kechikdi',
+  SABABLI: 'Sababli',
+  SABABSIZ: 'Sababsiz',
+};
 
-const BAHO_TURI_OPTIONS = [
-  { value: 'JORIY', label: 'Joriy' },
-  { value: 'NAZORAT', label: 'Nazorat' },
-  { value: 'ORALIQ', label: 'Oraliq' },
-  { value: 'YAKUNIY', label: 'Yakuniy' },
-];
+const BAHO_TURI_OPTIONS = ['JORIY', 'NAZORAT', 'ORALIQ', 'YAKUNIY'];
+const BAHO_TURI_LABEL_KEYS = {
+  JORIY: 'Joriy',
+  NAZORAT: 'Nazorat',
+  ORALIQ: 'Oraliq',
+  YAKUNIY: 'Yakuniy',
+};
 
-const PERIOD_OPTIONS = [
-  { value: 'KUNLIK', label: 'Kunlik' },
-  { value: 'HAFTALIK', label: 'Haftalik' },
-  { value: 'OYLIK', label: 'Oylik' },
-  { value: 'CHORAKLIK', label: 'Choraklik' },
-  { value: 'YILLIK', label: 'Yillik' },
-];
+const PERIOD_OPTIONS = ['KUNLIK', 'HAFTALIK', 'OYLIK', 'CHORAKLIK', 'YILLIK'];
+const PERIOD_LABEL_KEYS = {
+  KUNLIK: 'Kunlik',
+  HAFTALIK: 'Haftalik',
+  OYLIK: 'Oylik',
+  CHORAKLIK: 'Choraklik',
+  YILLIK: 'Yillik',
+};
+
+function holatLabel(t, value) {
+  return t(HOLAT_LABEL_KEYS[value] || value, { defaultValue: value });
+}
+
+function bahoTuriLabel(t, value) {
+  return t(BAHO_TURI_LABEL_KEYS[value] || value, { defaultValue: value });
+}
 
 export default function TeacherAttendancePage() {
   const { t } = useTranslation();
@@ -164,11 +175,11 @@ export default function TeacherAttendancePage() {
 
   const columns = useMemo(
     () => [
-      { key: 'fullName', header: "O'quvchi", render: (row) => row.fullName },
-      { key: 'username', header: 'Username', render: (row) => row.username || '-' },
+      { key: 'fullName', header: t("O'quvchi"), render: (row) => row.fullName },
+      { key: 'username', header: t('Username'), render: (row) => row.username || '-' },
       {
         key: 'holat',
-        header: 'Holat',
+        header: t('Holat'),
         render: (row) => (
           <Select
             value={row.holat}
@@ -181,9 +192,9 @@ export default function TeacherAttendancePage() {
               }))
             }
           >
-            {HOLAT_OPTIONS.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
+            {HOLAT_OPTIONS.map((value) => (
+              <option key={value} value={value}>
+                {holatLabel(t, value)}
               </option>
             ))}
           </Select>
@@ -191,7 +202,7 @@ export default function TeacherAttendancePage() {
       },
       {
         key: 'izoh',
-        header: 'Izoh',
+        header: t('Izoh'),
         render: (row) => (
           <Input
             type="text"
@@ -204,13 +215,13 @@ export default function TeacherAttendancePage() {
                 ),
               }))
             }
-            placeholder="Ixtiyoriy"
+            placeholder={t('Ixtiyoriy')}
           />
         ),
       },
       {
         key: 'bahoTuri',
-        header: 'Baho turi',
+        header: t('Baho turi'),
         render: (row) => (
           <Select
             value={row.bahoTuri || 'JORIY'}
@@ -223,9 +234,9 @@ export default function TeacherAttendancePage() {
               }))
             }
           >
-            {BAHO_TURI_OPTIONS.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
+            {BAHO_TURI_OPTIONS.map((value) => (
+              <option key={value} value={value}>
+                {bahoTuriLabel(t, value)}
               </option>
             ))}
           </Select>
@@ -233,7 +244,7 @@ export default function TeacherAttendancePage() {
       },
       {
         key: 'bahoBall',
-        header: 'Ball',
+        header: t('Ball'),
         render: (row) => (
           <Input
             type="number"
@@ -248,13 +259,13 @@ export default function TeacherAttendancePage() {
                 ),
               }))
             }
-            placeholder="Masalan: 4"
+            placeholder={t('Masalan: 4')}
           />
         ),
       },
       {
         key: 'bahoMaxBall',
-        header: 'Max ball',
+        header: t('Max ball'),
         render: (row) => (
           <Input
             type="number"
@@ -275,7 +286,7 @@ export default function TeacherAttendancePage() {
       },
       {
         key: 'bahoIzoh',
-        header: 'Baho izoh',
+        header: t('Baho izoh'),
         render: (row) => (
           <Input
             type="text"
@@ -288,26 +299,26 @@ export default function TeacherAttendancePage() {
                 ),
               }))
             }
-            placeholder="Ixtiyoriy"
+            placeholder={t('Ixtiyoriy')}
           />
         ),
       },
     ],
-    [],
+    [t],
   );
 
   const tarixColumns = [
-    { key: 'sana', header: 'Sana', render: (row) => row.sana },
-    { key: 'sinf', header: 'Sinf', render: (row) => row.sinf },
-    { key: 'fan', header: 'Fan', render: (row) => row.fan },
-    { key: 'vaqtOraliq', header: 'Vaqt', render: (row) => row.vaqtOraliq },
+    { key: 'sana', header: t('Sana'), render: (row) => row.sana },
+    { key: 'sinf', header: t('Sinf'), render: (row) => row.sinf },
+    { key: 'fan', header: t('Fan'), render: (row) => row.fan },
+    { key: 'vaqtOraliq', header: t('Vaqt'), render: (row) => row.vaqtOraliq },
     {
       key: 'holat',
-      header: 'Holatlar',
+      header: t('Holatlar'),
       render: (row) =>
-        `K:${row.holatlar?.KELDI || 0} / Kech:${row.holatlar?.KECHIKDI || 0} / Sab:${row.holatlar?.SABABLI || 0} / Sabs:${row.holatlar?.SABABSIZ || 0}`,
+        `${t('Keldi')}: ${row.holatlar?.KELDI || 0} / ${t('Kechikdi')}: ${row.holatlar?.KECHIKDI || 0} / ${t('Sababli')}: ${row.holatlar?.SABABLI || 0} / ${t('Sababsiz')}: ${row.holatlar?.SABABSIZ || 0}`,
     },
-    { key: 'jami', header: 'Jami', render: (row) => row.jami || 0 },
+    { key: 'jami', header: t('Jami'), render: (row) => row.jami || 0 },
   ];
 
   async function handleSave() {
@@ -385,7 +396,7 @@ export default function TeacherAttendancePage() {
             )}
           </Select>
           <Select value={selectedDarsId} onChange={(event) => setSelectedDarsId(event.target.value)}>
-            {!darslar.length && <option value="">Bugun dars topilmadi</option>}
+            {!darslar.length && <option value="">{t('Bugun dars topilmadi')}</option>}
             {darslar.map((dars) => (
               <option key={dars.id} value={dars.id}>
                 {dars.sinf?.name} - {dars.fan?.name} ({dars.vaqtOraliq?.boshlanishVaqti})
@@ -425,9 +436,9 @@ export default function TeacherAttendancePage() {
         <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-4">
           <Input type="date" value={sana} onChange={(event) => setSana(event.target.value)} />
           <Select value={tarixPeriodType} onChange={(event) => setTarixPeriodType(event.target.value)}>
-            {PERIOD_OPTIONS.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
+            {PERIOD_OPTIONS.map((value) => (
+              <option key={value} value={value}>
+                {t(PERIOD_LABEL_KEYS[value] || value)}
               </option>
             ))}
           </Select>

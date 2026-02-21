@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import AutoTranslate from '../../AutoTranslate';
+import { useTranslation } from 'react-i18next';
 import { Button, Card, Input, Modal, Select } from '../../../components/ui';
 
 const HAFTA_KUNLARI = ['DUSHANBA', 'SESHANBA', 'CHORSHANBA', 'PAYSHANBA', 'JUMA', 'SHANBA'];
 const JADVAL_MENU = [
-  { key: 'HAFTALIK', label: "Haftalik jadval" },
-  { key: 'DARS_QOSHISH', label: "Dars qo'shish" },
-  { key: 'VAQT_QOSHISH', label: "Vaqt oralig'i qo'shish" },
-  { key: 'VAQT_LIST', label: "Vaqtlar ro'yxati" },
-  { key: 'FAN_RANG', label: "Fan ranglari" },
+  { key: 'HAFTALIK', labelKey: 'Haftalik jadval' },
+  { key: 'DARS_QOSHISH', labelKey: "Dars qo'shish" },
+  { key: 'VAQT_QOSHISH', labelKey: "Vaqt oralig'i qo'shish" },
+  { key: 'VAQT_LIST', labelKey: "Vaqtlar ro'yxati" },
+  { key: 'FAN_RANG', labelKey: 'Fan ranglari' },
 ];
 const HAFTA_KUNI_LABEL = {
   DUSHANBA: 'Dushanba',
@@ -47,6 +47,7 @@ export default function DarsJadvaliManager({
   onDeleteDars,
   onMoveDars,
 }) {
+  const { t } = useTranslation();
   const [vaqtForm, setVaqtForm] = useState({
     nomi: '',
     boshlanishVaqti: '08:30',
@@ -144,10 +145,16 @@ export default function DarsJadvaliManager({
 
     if (result?.isConflict) {
       setJadvalXatolik({
-        title: "Dars vaqti to'qnashuvi",
+        title: t("Dars vaqti to'qnashuvi", { defaultValue: "Dars vaqti to'qnashuvi" }),
         message:
           result.message ||
-          "Tanlangan vaqt oralig'ida sinf yoki o'qituvchi allaqachon band. Boshqa vaqt yoki boshqa o'qituvchini tanlang.",
+          t(
+            "Tanlangan vaqt oralig'ida sinf yoki o'qituvchi allaqachon band. Boshqa vaqt yoki boshqa o'qituvchini tanlang.",
+            {
+              defaultValue:
+                "Tanlangan vaqt oralig'ida sinf yoki o'qituvchi allaqachon band. Boshqa vaqt yoki boshqa o'qituvchini tanlang.",
+            },
+          ),
       });
     }
   }
@@ -172,8 +179,12 @@ export default function DarsJadvaliManager({
       setTezQoshishFanId('');
     } else if (result?.isConflict) {
       setJadvalXatolik({
-        title: "Dars vaqti to'qnashuvi",
-        message: result.message || "Bu katakka dars qo'shib bo'lmadi, chunki vaqt oralig'i band.",
+        title: t("Dars vaqti to'qnashuvi", { defaultValue: "Dars vaqti to'qnashuvi" }),
+        message:
+          result.message ||
+          t("Bu katakka dars qo'shib bo'lmadi, chunki vaqt oralig'i band.", {
+            defaultValue: "Bu katakka dars qo'shib bo'lmadi, chunki vaqt oralig'i band.",
+          }),
       });
     }
   }
@@ -190,8 +201,12 @@ export default function DarsJadvaliManager({
       setDragDarsId(null);
     } else if (result?.isConflict) {
       setJadvalXatolik({
-        title: "Ko'chirishda to'qnashuv",
-        message: result.message || "Darsni bu slotga ko'chirib bo'lmaydi: shu vaqtda boshqa dars mavjud.",
+        title: t("Ko'chirishda to'qnashuv", { defaultValue: "Ko'chirishda to'qnashuv" }),
+        message:
+          result.message ||
+          t("Darsni bu slotga ko'chirib bo'lmaydi: shu vaqtda boshqa dars mavjud.", {
+            defaultValue: "Darsni bu slotga ko'chirib bo'lmaydi: shu vaqtda boshqa dars mavjud.",
+          }),
       });
     }
   }
@@ -210,6 +225,11 @@ export default function DarsJadvaliManager({
 
   function handleExportPdf() {
     const sinfNomi = classrooms.find((classroom) => classroom.id === tanlanganGridSinfId)?.name || '';
+    const pdfTitle = t('{{classroom}} sinf dars jadvali', {
+      classroom: sinfNomi,
+      defaultValue: `${sinfNomi} sinf dars jadvali`,
+    });
+    const pdfAcademicYear = `${gridOquvYili} ${t("O'quv yili", { defaultValue: "O'quv yili" })}`;
     const printWindow = window.open('', '_blank', 'width=1200,height=900');
     if (!printWindow) return;
 
@@ -219,7 +239,7 @@ export default function DarsJadvaliManager({
           const dars = gridMap.get(`${kun}__${vaqt.id}`);
           const body = dars
             ? `${dars.fan?.name || ''}<br/><small>${dars.oqituvchi?.firstName || ''} ${dars.oqituvchi?.lastName || ''}</small>`
-            : "<span style='color:#9ca3af'>Bo'sh</span>";
+            : `<span style='color:#9ca3af'>${t("Bo'sh", { defaultValue: "Bo'sh" })}</span>`;
           return `<td style="border:1px solid #e2e8f0;padding:8px;vertical-align:top;">${body}</td>`;
         }).join('');
         return `<tr><td style="border:1px solid #e2e8f0;padding:8px;"><b>${vaqt.nomi}</b><br/><small>${vaqt.boshlanishVaqti}-${vaqt.tugashVaqti}</small></td>${cols}</tr>`;
@@ -229,7 +249,7 @@ export default function DarsJadvaliManager({
     printWindow.document.write(`
       <html>
         <head>
-          <title>Dars jadvali</title>
+          <title>${t('Dars Jadvali', { defaultValue: 'Dars Jadvali' })}</title>
           <style>
             body{font-family:Arial,sans-serif;padding:18px;color:#0f172a}
             h2{margin:0 0 4px}
@@ -238,13 +258,13 @@ export default function DarsJadvaliManager({
           </style>
         </head>
         <body>
-          <h2>${sinfNomi} sinf dars jadvali</h2>
-          <p>${gridOquvYili} o'quv yili</p>
+          <h2>${pdfTitle}</h2>
+          <p>${pdfAcademicYear}</p>
           <table>
             <thead>
               <tr>
-                <th>Vaqt</th>
-                ${HAFTA_KUNLARI.map((kun) => `<th>${HAFTA_KUNI_LABEL[kun]}</th>`).join('')}
+                <th>${t('Vaqt', { defaultValue: 'Vaqt' })}</th>
+                ${HAFTA_KUNLARI.map((kun) => `<th>${t(HAFTA_KUNI_LABEL[kun], { defaultValue: HAFTA_KUNI_LABEL[kun] })}</th>`).join('')}
               </tr>
             </thead>
             <tbody>${rows}</tbody>
@@ -258,8 +278,7 @@ export default function DarsJadvaliManager({
   }
 
   return (
-    <AutoTranslate>
-      <Card title="Dars jadvali boshqaruvi">
+    <Card title={t("Dars jadvali boshqaruvi", { defaultValue: "Dars jadvali boshqaruvi" })}>
       <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-2">
         <div className="flex flex-wrap gap-2">
           {JADVAL_MENU.map((item) => (
@@ -270,7 +289,7 @@ export default function DarsJadvaliManager({
               variant={jadvalMenu === item.key ? 'indigo' : 'secondary'}
               onClick={() => setJadvalMenu(item.key)}
             >
-              {item.label}
+              {t(item.labelKey, { defaultValue: item.labelKey })}
             </Button>
           ))}
         </div>
@@ -278,7 +297,9 @@ export default function DarsJadvaliManager({
 
       {jadvalMenu === 'FAN_RANG' && (
         <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <p className="mb-2 text-sm font-semibold text-slate-700">Fan ranglari (legend)</p>
+          <p className="mb-2 text-sm font-semibold text-slate-700">
+            {t('Fan ranglari (legend)', { defaultValue: 'Fan ranglari (legend)' })}
+          </p>
           <div className="flex flex-wrap gap-2">
             {subjects.map((subject) => (
               <span
@@ -294,18 +315,24 @@ export default function DarsJadvaliManager({
 
       {jadvalMenu === 'VAQT_QOSHISH' && (
         <form onSubmit={handleVaqtSubmit} className="space-y-2 rounded-lg border border-slate-200 p-3">
-          <p className="text-sm font-semibold text-slate-700">Vaqt oralig'i qo'shish</p>
-          <label className="block text-xs font-medium text-slate-600">Vaqt oralig'i nomi</label>
+          <p className="text-sm font-semibold text-slate-700">
+            {t("Vaqt oralig'i qo'shish", { defaultValue: "Vaqt oralig'i qo'shish" })}
+          </p>
+          <label className="block text-xs font-medium text-slate-600">
+            {t("Vaqt oralig'i nomi", { defaultValue: "Vaqt oralig'i nomi" })}
+          </label>
           <Input
             type="text"
-            placeholder="Nomi (1-para)"
+            placeholder={t('Nomi (1-para)', { defaultValue: 'Nomi (1-para)' })}
             value={vaqtForm.nomi}
             onChange={(event) => setVaqtForm((prev) => ({ ...prev, nomi: event.target.value }))}
             required
           />
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-600">Boshlanish vaqti</label>
+              <label className="block text-xs font-medium text-slate-600">
+                {t('Boshlanish vaqti', { defaultValue: 'Boshlanish vaqti' })}
+              </label>
               <Input
                 type="time"
                 value={vaqtForm.boshlanishVaqti}
@@ -314,7 +341,9 @@ export default function DarsJadvaliManager({
               />
             </div>
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-600">Tugash vaqti</label>
+              <label className="block text-xs font-medium text-slate-600">
+                {t('Tugash vaqti', { defaultValue: 'Tugash vaqti' })}
+              </label>
               <Input
                 type="time"
                 value={vaqtForm.tugashVaqti}
@@ -323,7 +352,9 @@ export default function DarsJadvaliManager({
               />
             </div>
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-600">Tartib raqami</label>
+              <label className="block text-xs font-medium text-slate-600">
+                {t('Tartib raqami', { defaultValue: 'Tartib raqami' })}
+              </label>
               <Input
                 type="number"
                 min={1}
@@ -334,17 +365,21 @@ export default function DarsJadvaliManager({
             </div>
           </div>
           <Button type="submit" disabled={actionLoading} variant="success">
-            Vaqt oralig'ini saqlash
+            {t("Vaqt oralig'ini saqlash", { defaultValue: "Vaqt oralig'ini saqlash" })}
           </Button>
         </form>
       )}
 
       {jadvalMenu === 'DARS_QOSHISH' && (
         <form onSubmit={handleDarsSubmit} className="space-y-2 rounded-lg border border-slate-200 p-3">
-          <p className="text-sm font-semibold text-slate-700">Dars jadvaliga dars qo'shish</p>
+          <p className="text-sm font-semibold text-slate-700">
+            {t("Dars jadvaliga dars qo'shish", { defaultValue: "Dars jadvaliga dars qo'shish" })}
+          </p>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-600">Sinf</label>
+              <label className="block text-xs font-medium text-slate-600">
+                {t('Sinf', { defaultValue: 'Sinf' })}
+              </label>
               <Select
                 value={tanlanganSinfId}
                 onChange={(event) => setDarsForm((prev) => ({ ...prev, sinfId: event.target.value }))}
@@ -358,7 +393,9 @@ export default function DarsJadvaliManager({
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-600">O'qituvchi</label>
+              <label className="block text-xs font-medium text-slate-600">
+                {t("O'qituvchi", { defaultValue: "O'qituvchi" })}
+              </label>
               <Select
                 value={tanlanganOqituvchiId}
                 onChange={(event) => setDarsForm((prev) => ({ ...prev, oqituvchiId: event.target.value }))}
@@ -372,7 +409,9 @@ export default function DarsJadvaliManager({
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-600">Fan</label>
+              <label className="block text-xs font-medium text-slate-600">
+                {t('Fan', { defaultValue: 'Fan' })}
+              </label>
               <Select
                 value={tanlanganFanId}
                 onChange={(event) => setDarsForm((prev) => ({ ...prev, fanId: event.target.value }))}
@@ -386,7 +425,9 @@ export default function DarsJadvaliManager({
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-600">Hafta kuni</label>
+              <label className="block text-xs font-medium text-slate-600">
+                {t('Hafta kuni', { defaultValue: 'Hafta kuni' })}
+              </label>
               <Select
                 value={darsForm.haftaKuni}
                 onChange={(event) => setDarsForm((prev) => ({ ...prev, haftaKuni: event.target.value }))}
@@ -394,13 +435,15 @@ export default function DarsJadvaliManager({
               >
                 {HAFTA_KUNLARI.map((kun) => (
                   <option key={kun} value={kun}>
-                    {kun}
+                    {t(HAFTA_KUNI_LABEL[kun], { defaultValue: HAFTA_KUNI_LABEL[kun] })}
                   </option>
                 ))}
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-600">Vaqt oralig'i</label>
+              <label className="block text-xs font-medium text-slate-600">
+                {t("Vaqt oralig'i", { defaultValue: "Vaqt oralig'i" })}
+              </label>
               <Select
                 value={tanlanganVaqtOraliqId}
                 onChange={(event) => setDarsForm((prev) => ({ ...prev, vaqtOraliqId: event.target.value }))}
@@ -414,12 +457,14 @@ export default function DarsJadvaliManager({
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-600">O'quv yili</label>
+              <label className="block text-xs font-medium text-slate-600">
+                {t("O'quv yili", { defaultValue: "O'quv yili" })}
+              </label>
               <Input
                 type="text"
                 value={darsForm.oquvYili}
                 onChange={(event) => setDarsForm((prev) => ({ ...prev, oquvYili: event.target.value }))}
-                placeholder="2025-2026"
+                placeholder={t('Masalan: 2025-2026', { defaultValue: 'Masalan: 2025-2026' })}
                 required
               />
             </div>
@@ -435,11 +480,13 @@ export default function DarsJadvaliManager({
             }
             variant="indigo"
           >
-            Darsni jadvalga qo'shish
+            {t("Darsni jadvalga qo'shish", { defaultValue: "Darsni jadvalga qo'shish" })}
           </Button>
           {!fanBoyichaOqituvchilar.length && (
             <p className="text-xs text-rose-600">
-              Bu fan uchun o'qituvchi topilmadi. Avval shu fan o'qituvchisini yarating.
+              {t("Bu fan uchun o'qituvchi topilmadi. Avval shu fan o'qituvchisini yarating.", {
+                defaultValue: "Bu fan uchun o'qituvchi topilmadi. Avval shu fan o'qituvchisini yarating.",
+              })}
             </p>
           )}
         </form>
@@ -447,7 +494,9 @@ export default function DarsJadvaliManager({
 
       {jadvalMenu === 'VAQT_LIST' && (
         <div className="rounded-lg border border-slate-200 p-3">
-          <p className="mb-2 text-sm font-semibold text-slate-700">Vaqt oraliqlari ro'yxati</p>
+          <p className="mb-2 text-sm font-semibold text-slate-700">
+            {t("Vaqt oraliqlari ro'yxati", { defaultValue: "Vaqt oraliqlari ro'yxati" })}
+          </p>
           <div className="max-h-52 overflow-auto">
             <table className="min-w-full text-sm">
               <tbody>
@@ -457,7 +506,7 @@ export default function DarsJadvaliManager({
                     <td className="px-2 py-2">{vaqt.boshlanishVaqti}-{vaqt.tugashVaqti}</td>
                     <td className="px-2 py-2 text-right">
                       <Button size="sm" variant="danger" onClick={() => onDeleteVaqtOraliq(vaqt.id)}>
-                        O'chirish
+                        {t("O'chirish", { defaultValue: "O'chirish" })}
                       </Button>
                     </td>
                   </tr>
@@ -471,10 +520,14 @@ export default function DarsJadvaliManager({
       {jadvalMenu === 'HAFTALIK' && (
         <div className="mt-4 rounded-lg border border-slate-200 p-3">
           <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <p className="text-sm font-semibold text-slate-700">Haftalik jadval ko'rinishi</p>
+            <p className="text-sm font-semibold text-slate-700">
+              {t("Haftalik jadval ko'rinishi", { defaultValue: "Haftalik jadval ko'rinishi" })}
+            </p>
             <div className="flex flex-col gap-2 sm:flex-row">
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-slate-600">Sinfni tanlang</label>
+                <label className="block text-xs font-medium text-slate-600">
+                  {t('Sinfni tanlang', { defaultValue: 'Sinfni tanlang' })}
+                </label>
                 <Select value={tanlanganGridSinfId} onChange={(event) => setGridSinfId(event.target.value)}>
                   {classrooms.map((classroom) => (
                     <option key={classroom.id} value={classroom.id}>
@@ -484,31 +537,33 @@ export default function DarsJadvaliManager({
                 </Select>
               </div>
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-slate-600">O'quv yili filtri</label>
+                <label className="block text-xs font-medium text-slate-600">
+                  {t("O'quv yili filtri", { defaultValue: "O'quv yili filtri" })}
+                </label>
                 <Input
                   type="text"
                   value={gridOquvYili}
                   onChange={(event) => setGridOquvYili(event.target.value)}
-                  placeholder="2025-2026"
+                  placeholder={t('Masalan: 2025-2026', { defaultValue: 'Masalan: 2025-2026' })}
                 />
               </div>
               <Button onClick={handleExportPdf} size="sm">
-                PDF export
+                {t('PDF export', { defaultValue: 'PDF export' })}
               </Button>
             </div>
           </div>
 
           {darslarLoading ? (
-            <p className="text-sm text-slate-500">Yuklanmoqda...</p>
+            <p className="text-sm text-slate-500">{t('Yuklanmoqda...', { defaultValue: 'Yuklanmoqda...' })}</p>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-slate-200 lg:overflow-x-visible">
               <table className="w-full table-fixed text-xs">
                 <thead className="bg-slate-900 text-white">
                   <tr>
-                    <th className="px-2 py-2 text-left">Vaqt</th>
+                    <th className="px-2 py-2 text-left">{t('Vaqt', { defaultValue: 'Vaqt' })}</th>
                     {HAFTA_KUNLARI.map((kun) => (
                       <th key={kun} className="px-2 py-2 text-left">
-                        {HAFTA_KUNI_LABEL[kun]}
+                        {t(HAFTA_KUNI_LABEL[kun], { defaultValue: HAFTA_KUNI_LABEL[kun] })}
                       </th>
                     ))}
                   </tr>
@@ -539,7 +594,9 @@ export default function DarsJadvaliManager({
                                 draggable
                                 onDragStart={() => setDragDarsId(dars.id)}
                                 className={`cursor-move rounded-md border p-2 ${fanRangi(dars.fan?.name)}`}
-                                title="Boshqa katakka sudrab ko'chiring"
+                                title={t("Boshqa katakka sudrab ko'chiring", {
+                                  defaultValue: "Boshqa katakka sudrab ko'chiring",
+                                })}
                               >
                                 <p className="truncate font-semibold">{dars.fan?.name}</p>
                                 <p className="truncate text-[11px]">
@@ -547,16 +604,18 @@ export default function DarsJadvaliManager({
                                 </p>
                                 <div className="mt-2 hidden group-hover:block">
                                   <Button onClick={() => onDeleteDars(dars.id)} size="sm" variant="danger">
-                                    O'chirish
+                                    {t("O'chirish", { defaultValue: "O'chirish" })}
                                   </Button>
                                 </div>
                                 <p className="mt-1 hidden text-[10px] text-slate-600 group-hover:block">
-                                  Quick: sudrab boshqa slotga ko'chiring
+                                  {t("Quick: sudrab boshqa slotga ko'chiring", {
+                                    defaultValue: "Quick: sudrab boshqa slotga ko'chiring",
+                                  })}
                                 </p>
                               </div>
                             ) : (
                               <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-400">
-                                <p>Bo'sh slot</p>
+                                <p>{t("Bo'sh slot", { defaultValue: "Bo'sh slot" })}</p>
                                 <Button
                                   size="sm"
                                   variant="secondary"
@@ -566,7 +625,7 @@ export default function DarsJadvaliManager({
                                     openTezQoshish(event, kun, vaqt.id);
                                   }}
                                 >
-                                  + Tez qo'shish
+                                  {t("+ Tez qo'shish", { defaultValue: "+ Tez qo'shish" })}
                                 </Button>
                               </div>
                             )}
@@ -597,12 +656,18 @@ export default function DarsJadvaliManager({
             style={{ top: tezQoshishJoylashuv.top, left: tezQoshishJoylashuv.left }}
           >
             <p className="text-sm font-semibold text-indigo-900">
-              Tez qo'shish: {HAFTA_KUNI_LABEL[tezQoshish.haftaKuni]} /{' '}
+              {t("Tez qo'shish:", { defaultValue: "Tez qo'shish:" })}{' '}
+              {t(HAFTA_KUNI_LABEL[tezQoshish.haftaKuni], {
+                defaultValue: HAFTA_KUNI_LABEL[tezQoshish.haftaKuni],
+              })}{' '}
+              /{' '}
               {vaqtOraliqlari.find((vaqt) => vaqt.id === tezQoshish.vaqtOraliqId)?.boshlanishVaqti}
             </p>
             <form onSubmit={handleTezQoshishSubmit} className="mt-2 grid grid-cols-1 gap-2">
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-slate-600">Fan</label>
+                <label className="block text-xs font-medium text-slate-600">
+                  {t('Fan', { defaultValue: 'Fan' })}
+                </label>
                 <Select value={tezTanlanganFanId} onChange={(event) => setTezQoshishFanId(event.target.value)}>
                   {subjects.map((subject) => (
                     <option key={subject.id} value={subject.id}>
@@ -612,7 +677,9 @@ export default function DarsJadvaliManager({
                 </Select>
               </div>
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-slate-600">O'qituvchi</label>
+                <label className="block text-xs font-medium text-slate-600">
+                  {t("O'qituvchi", { defaultValue: "O'qituvchi" })}
+                </label>
                 <Select
                   value={tanlanganTezOqituvchiId}
                   onChange={(event) => setTezQoshishOqituvchiId(event.target.value)}
@@ -626,12 +693,14 @@ export default function DarsJadvaliManager({
               </div>
               {!tezFanBoyichaOqituvchilar.length && (
                 <p className="text-xs text-rose-600">
-                  Tanlangan fan uchun o'qituvchi topilmadi.
+                  {t("Tanlangan fan uchun o'qituvchi topilmadi.", {
+                    defaultValue: "Tanlangan fan uchun o'qituvchi topilmadi.",
+                  })}
                 </p>
               )}
               <div className="flex justify-end gap-2">
                 <Button type="submit" variant="indigo" disabled={!tezFanBoyichaOqituvchilar.length}>
-                  Saqlash
+                  {t('Saqlash', { defaultValue: 'Saqlash' })}
                 </Button>
                 <Button
                   type="button"
@@ -641,7 +710,7 @@ export default function DarsJadvaliManager({
                   }}
                   variant="secondary"
                 >
-                  Bekor
+                  {t('Bekor', { defaultValue: 'Bekor' })}
                 </Button>
               </div>
             </form>
@@ -653,16 +722,15 @@ export default function DarsJadvaliManager({
         open={Boolean(jadvalXatolik)}
         onClose={() => setJadvalXatolik(null)}
         maxWidth="max-w-md"
-        title={jadvalXatolik?.title || 'Jadval xatosi'}
+        title={jadvalXatolik?.title || t('Jadval xatosi', { defaultValue: 'Jadval xatosi' })}
         subtitle={jadvalXatolik?.message || ''}
       >
         <div className="flex justify-end">
           <Button variant="secondary" onClick={() => setJadvalXatolik(null)}>
-            Tushunarli
+            {t('Tushunarli', { defaultValue: 'Tushunarli' })}
           </Button>
         </div>
       </Modal>
-      </Card>
-    </AutoTranslate>
+    </Card>
   );
 }

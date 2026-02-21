@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import AutoTranslate from '../../AutoTranslate';
+import { useTranslation } from 'react-i18next';
 import { Button, Card, DataTable, Input, StateView } from '../../../components/ui';
 
 export default function SubjectManager({
@@ -9,6 +9,7 @@ export default function SubjectManager({
   onCreateSubject,
   onDeleteSubject,
 }) {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
 
   async function handleSubmit(event) {
@@ -18,10 +19,10 @@ export default function SubjectManager({
   }
 
   const columns = [
-    { key: 'name', header: 'Fan', render: (subject) => subject.name },
+    { key: 'name', header: t('Fan'), render: (subject) => subject.name },
     {
       key: 'actions',
-      header: 'Amal',
+      header: t('Amal'),
       headerClassName: 'text-right',
       cellClassName: 'text-right',
       render: (subject) => (
@@ -31,24 +32,23 @@ export default function SubjectManager({
           disabled={actionLoading}
           onClick={() => onDeleteSubject(subject.id)}
         >
-          O'chirish
+          {t("O'chirish")}
         </Button>
       ),
     },
   ];
 
   return (
-    <AutoTranslate>
-      <Card title="Fanlar boshqaruvi" actions={<span className="text-sm text-slate-500">Jami: {subjects.length}</span>}>
+      <Card title={t('Fanlar boshqaruvi')} actions={<span className="text-sm text-slate-500">{t('Jami')}: {subjects.length}</span>}>
       <form onSubmit={handleSubmit} className="mb-4 flex flex-col gap-2 sm:flex-row">
         <Input
           type="text"
           value={name}
           onChange={(event) => setName(event.target.value)}
-          placeholder="Yangi fan nomi"
+          placeholder={t('Yangi fan nomi')}
         />
         <Button type="submit" variant="success" disabled={actionLoading}>
-          Qo'shish
+          {t("Qo'shish")}
         </Button>
       </form>
 
@@ -57,9 +57,8 @@ export default function SubjectManager({
       ) : subjects.length ? (
         <DataTable columns={columns} rows={subjects} stickyHeader maxHeightClassName="max-h-56" />
       ) : (
-        <StateView type="empty" description="Fanlar mavjud emas" />
+        <StateView type="empty" description={t('Fanlar mavjud emas')} />
       )}
       </Card>
-    </AutoTranslate>
   );
 }

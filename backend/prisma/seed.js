@@ -823,7 +823,6 @@ async function seedFinanceData() {
     const paidMonths = recentMonths.slice(0, recentMonths.length - unpaidCount);
 
     if (paidMonths.length) {
-      const qoplanganOylar = paidMonths.map((m) => m.key);
       const txn = await prisma.tolovTranzaksiya.create({
         data: {
           studentId,
@@ -831,7 +830,6 @@ async function seedFinanceData() {
           turi: "OYLIK",
           summa: paidMonths.length * settings.oylikSumma,
           izoh: "Seed: moliya test ma'lumoti",
-          qoplanganOylar,
           tarifVersionId: settings.faolTarifId || null,
           tarifSnapshot: {
             oylikSumma: settings.oylikSumma,

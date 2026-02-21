@@ -4,21 +4,38 @@ import { Button, Card, DataTable, Input, Select, StateView } from '../../compone
 import { apiRequest, getErrorMessage } from '../../lib/apiClient';
 import { getLocalDateInputValue } from '../../lib/dateUtils';
 
-const PERIOD_OPTIONS = [
-  { value: 'KUNLIK', label: 'Kunlik' },
-  { value: 'HAFTALIK', label: 'Haftalik' },
-  { value: 'OYLIK', label: 'Oylik' },
-  { value: 'CHORAKLIK', label: 'Choraklik' },
-  { value: 'YILLIK', label: 'Yillik' },
-];
+const PERIOD_OPTIONS = ['KUNLIK', 'HAFTALIK', 'OYLIK', 'CHORAKLIK', 'YILLIK'];
+const PERIOD_LABEL_KEYS = {
+  KUNLIK: 'Kunlik',
+  HAFTALIK: 'Haftalik',
+  OYLIK: 'Oylik',
+  CHORAKLIK: 'Choraklik',
+  YILLIK: 'Yillik',
+};
 
-const HOLAT_OPTIONS = [
-  { value: 'ALL', label: 'Barcha holatlar' },
-  { value: 'KELDI', label: 'Keldi' },
-  { value: 'KECHIKDI', label: 'Kechikdi' },
-  { value: 'SABABLI', label: 'Sababli' },
-  { value: 'SABABSIZ', label: 'Sababsiz' },
-];
+const HOLAT_OPTIONS = ['ALL', 'KELDI', 'KECHIKDI', 'SABABLI', 'SABABSIZ'];
+const HOLAT_LABEL_KEYS = {
+  ALL: 'Barcha holatlar',
+  KELDI: 'Keldi',
+  KECHIKDI: 'Kechikdi',
+  SABABLI: 'Sababli',
+  SABABSIZ: 'Sababsiz',
+};
+
+function holatLabel(t, value) {
+  return t(HOLAT_LABEL_KEYS[value] || value, { defaultValue: value });
+}
+
+function bahoTuriLabel(t, value) {
+  if (!value) return '-';
+  const map = {
+    JORIY: 'Joriy',
+    NAZORAT: 'Nazorat',
+    ORALIQ: 'Oraliq',
+    YAKUNIY: 'Yakuniy',
+  };
+  return t(map[value] || value, { defaultValue: value });
+}
 
 export default function StudentAttendancePage() {
   const { t } = useTranslation();
@@ -65,21 +82,21 @@ export default function StudentAttendancePage() {
 
   const columns = useMemo(
     () => [
-      { key: 'sana', header: 'Sana', render: (row) => row.sana },
-      { key: 'fan', header: 'Fan', render: (row) => row.fan },
-      { key: 'sinf', header: 'Sinf', render: (row) => row.sinf },
-      { key: 'vaqt', header: 'Vaqt', render: (row) => row.vaqt },
-      { key: 'oqituvchi', header: "O'qituvchi", render: (row) => row.oqituvchi },
-      { key: 'holat', header: 'Holat', render: (row) => row.holat },
+      { key: 'sana', header: t('Sana'), render: (row) => row.sana },
+      { key: 'fan', header: t('Fan'), render: (row) => row.fan },
+      { key: 'sinf', header: t('Sinf'), render: (row) => row.sinf },
+      { key: 'vaqt', header: t('Vaqt'), render: (row) => row.vaqt },
+      { key: 'oqituvchi', header: t("O'qituvchi"), render: (row) => row.oqituvchi },
+      { key: 'holat', header: t('Holat'), render: (row) => holatLabel(t, row.holat) },
       {
         key: 'baho',
-        header: 'Baho',
+        header: t('Baho'),
         render: (row) => (row.bahoBall !== null && row.bahoMaxBall ? `${row.bahoBall}/${row.bahoMaxBall}` : '-'),
       },
-      { key: 'bahoTuri', header: 'Baho turi', render: (row) => row.bahoTuri || '-' },
-      { key: 'izoh', header: 'Izoh', render: (row) => row.izoh || '-' },
+      { key: 'bahoTuri', header: t('Baho turi'), render: (row) => bahoTuriLabel(t, row.bahoTuri) },
+      { key: 'izoh', header: t('Izoh'), render: (row) => row.izoh || '-' },
     ],
-    [],
+    [t],
   );
 
   return (
@@ -88,16 +105,16 @@ export default function StudentAttendancePage() {
         <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
           <Input type="date" value={sana} onChange={(event) => setSana(event.target.value)} />
           <Select value={periodType} onChange={(event) => setPeriodType(event.target.value)}>
-            {PERIOD_OPTIONS.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
+            {PERIOD_OPTIONS.map((value) => (
+              <option key={value} value={value}>
+                {t(PERIOD_LABEL_KEYS[value] || value)}
               </option>
             ))}
           </Select>
           <Select value={holat} onChange={(event) => setHolat(event.target.value)}>
-            {HOLAT_OPTIONS.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
+            {HOLAT_OPTIONS.map((value) => (
+              <option key={value} value={value}>
+                {holatLabel(t, value)}
               </option>
             ))}
           </Select>
@@ -124,7 +141,7 @@ export default function StudentAttendancePage() {
             {t('Oraliq')}: {data.period.from} - {data.period.to}
           </p>
         )}
-        {holat !== 'ALL' && <p className="mt-1 text-xs text-slate-500">{t('Filtr')}: {holat}</p>}
+        {holat !== 'ALL' && <p className="mt-1 text-xs text-slate-500">{t('Filtr')}: {holatLabel(t, holat)}</p>}
         <p className="mt-1 text-xs text-slate-500">
           {t('Sahifa')}: {data?.page || page} / {data?.pages || 1}
         </p>

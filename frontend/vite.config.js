@@ -1,14 +1,8 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
   plugins: [react()],
-  resolve: {
-    alias: {
-      'react-i18next': fileURLToPath(new URL('./src/i18n/noopReactI18next.js', import.meta.url)),
-    },
-  },
   server: {
     proxy: {
       // API so'rovlarni backendga uzatamiz.

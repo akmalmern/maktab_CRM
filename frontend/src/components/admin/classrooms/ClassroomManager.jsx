@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import AutoTranslate from '../../AutoTranslate';
 import { Badge, Button, Card, DataTable, Input, Modal, StateView } from '../../../components/ui';
 import { apiRequest, getErrorMessage } from '../../../lib/apiClient';
 
@@ -127,26 +126,26 @@ export default function ClassroomManager({
   const studentColumns = [
     {
       key: 'fullName',
-      header: 'F.I.SH',
+      header: t('F.I.SH'),
       render: (student) => `${student.firstName} ${student.lastName}`,
     },
     {
       key: 'username',
-      header: 'Username',
+      header: t('Username'),
       render: (student) => student.user?.username || '-',
     },
     {
       key: 'phone',
-      header: 'Telefon',
+      header: t('Telefon'),
       render: (student) => student.user?.phone || '-',
     },
     {
       key: 'actions',
-      header: 'Amallar',
+      header: t('Amallar'),
       render: (student) => (
         <div className="flex gap-2">
           <Button size="sm" variant="indigo" onClick={() => onOpenStudentDetail(student.id)}>
-            Batafsil
+            {t('Batafsil')}
           </Button>
           <Button
             size="sm"
@@ -162,7 +161,7 @@ export default function ClassroomManager({
               }
             }}
           >
-            O'chirish
+            {t("O'chirish")}
           </Button>
         </div>
       ),
@@ -170,7 +169,6 @@ export default function ClassroomManager({
   ];
 
   return (
-    <AutoTranslate>
       <Card
       title={t('Sinflar boshqaruvi')}
       actions={
@@ -193,10 +191,10 @@ export default function ClassroomManager({
           type="text"
           value={academicYear}
           onChange={(event) => setAcademicYear(event.target.value)}
-          placeholder="Masalan: 2025-2026"
+          placeholder={t('Masalan: 2025-2026')}
         />
         <Button type="submit" variant="success" disabled={actionLoading}>
-          Qo'shish
+          {t("Qo'shish")}
         </Button>
       </form>
 
@@ -223,7 +221,7 @@ export default function ClassroomManager({
           ))}
         </div>
       ) : (
-        <StateView type="empty" description="Sinflar mavjud emas" />
+        <StateView type="empty" description={t('Sinflar mavjud emas')} />
       )}
 
       <Modal
@@ -253,10 +251,10 @@ export default function ClassroomManager({
               type="text"
               value={studentSearch}
               onChange={(event) => setStudentSearch(event.target.value)}
-              placeholder="Ism, familiya, username yoki telefon"
+              placeholder={t('Ism, familiya, username yoki telefon')}
             />
             <Button type="submit" variant="secondary" disabled={studentLoading}>
-              Qidirish
+              {t('Qidirish')}
             </Button>
           </form>
 
@@ -287,7 +285,7 @@ export default function ClassroomManager({
                       })
                     }
                   >
-                    Oldingi
+                    {t('Oldingi')}
                   </Button>
                   <Button
                     size="sm"
@@ -301,14 +299,14 @@ export default function ClassroomManager({
                       })
                     }
                   >
-                    Keyingi
+                    {t('Keyingi')}
                   </Button>
                 </div>
               </div>
             </>
           ) : null}
           {!studentLoading && !studentError && !studentRows.length ? (
-            <StateView type="empty" description="Bu sinfda hozircha student yo'q." />
+            <StateView type="empty" description={t("Bu sinfda hozircha student yo'q.")} />
           ) : null}
         </div>
       </Modal>
@@ -324,11 +322,9 @@ export default function ClassroomManager({
         {!annualLoading && !annualError && annualPreview && (
           <div className="space-y-3">
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-              <p>
-                <b>{annualPreview.sourceAcademicYear}</b> dan <b>{annualPreview.targetAcademicYear}</b> ga
-              </p>
+              <p>{t('{{from}} dan {{to}} ga', { from: annualPreview.sourceAcademicYear, to: annualPreview.targetAcademicYear })}</p>
               <p className="mt-1">
-                Yangilanadigan sinflar: <b>{annualPreview.promoteCount}</b>, bitiruvchi sinflar:{' '}
+                {t('Yangilanadigan sinflar')}: <b>{annualPreview.promoteCount}</b>, {t('Bitiruvchi sinflar')}:{' '}
                 <b>{annualPreview.graduateCount}</b>
               </p>
               <p className="mt-1">
@@ -363,6 +359,5 @@ export default function ClassroomManager({
         )}
       </Modal>
       </Card>
-    </AutoTranslate>
   );
 }

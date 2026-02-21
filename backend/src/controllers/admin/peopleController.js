@@ -6,7 +6,6 @@ const {
   pickFreeUsername,
   cleanOptional,
   toDateOrThrow,
-  removeFileBestEffort,
   parseIntSafe,
   buildSearchWhere,
 } = require("./helpers");
@@ -169,6 +168,8 @@ async function getTeachers(req, res) {
   const filter = cleanOptional(req.query.filter);
   const sort = cleanOptional(req.query.sort) || "createdAt:desc";
   const where = buildSearchWhere(req.query.search);
+  where.user = { isActive: true };
+
   if (filter && filter !== "all") {
     where.subjectId = filter;
   }
@@ -224,6 +225,8 @@ async function getStudents(req, res) {
   const filter = cleanOptional(req.query.filter);
   const sort = cleanOptional(req.query.sort) || "createdAt:desc";
   const where = buildSearchWhere(req.query.search);
+  where.user = { isActive: true };
+
   if (filter && filter !== "all") {
     where.enrollments = { some: { isActive: true, classroomId: filter } };
   }
@@ -363,21 +366,29 @@ async function deleteTeacher(req, res) {
     select: {
       id: true,
       userId: true,
-      avatarPath: true,
-      documents: { select: { filePath: true } },
+      user: { select: { username: true, isActive: true } },
     },
   });
   if (!teacher)
     throw new ApiError(404, "TEACHER_NOT_FOUND", "Teacher topilmadi");
 
-  await prisma.$transaction(async (tx) => {
-    await tx.teacher.delete({ where: { id: teacher.id } });
-    await tx.user.delete({ where: { id: teacher.userId } });
+  if (!teacher.user?.isActive) {
+    return res.json({ ok: true, archived: true });
+  }
+
+  const archivedUsername = `archived_teacher_${Date.now()}_${teacher.userId.slice(-6)}`;
+
+  await prisma.user.update({
+    where: { id: teacher.userId },
+    data: {
+      isActive: false,
+      username: archivedUsername,
+      phone: null,
+      email: null,
+    },
   });
 
-  for (const d of teacher.documents) removeFileBestEffort(d.filePath);
-  removeFileBestEffort(teacher.avatarPath);
-  res.json({ ok: true });
+  res.json({ ok: true, archived: true });
 }
 
 async function deleteStudent(req, res) {
@@ -388,21 +399,36 @@ async function deleteStudent(req, res) {
     select: {
       id: true,
       userId: true,
-      avatarPath: true,
-      documents: { select: { filePath: true } },
+      user: { select: { username: true, isActive: true } },
     },
   });
   if (!student)
     throw new ApiError(404, "STUDENT_NOT_FOUND", "Student topilmadi");
 
+  if (!student.user?.isActive) {
+    return res.json({ ok: true, archived: true });
+  }
+
+  const archivedUsername = `archived_student_${Date.now()}_${student.userId.slice(-6)}`;
+
   await prisma.$transaction(async (tx) => {
-    await tx.student.delete({ where: { id: student.id } });
-    await tx.user.delete({ where: { id: student.userId } });
+    await tx.enrollment.updateMany({
+      where: { studentId: student.id, isActive: true },
+      data: { isActive: false, endDate: new Date() },
+    });
+
+    await tx.user.update({
+      where: { id: student.userId },
+      data: {
+        isActive: false,
+        username: archivedUsername,
+        phone: null,
+        email: null,
+      },
+    });
   });
 
-  for (const d of student.documents) removeFileBestEffort(d.filePath);
-  removeFileBestEffort(student.avatarPath);
-  res.json({ ok: true });
+  res.json({ ok: true, archived: true });
 }
 
 module.exports = {

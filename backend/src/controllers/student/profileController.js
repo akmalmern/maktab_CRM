@@ -193,7 +193,9 @@ async function getMyProfile(req, res) {
         turi: true,
         summa: true,
         tolovSana: true,
-        qoplanganOylar: true,
+        qoplamalar: {
+          select: { yil: true, oy: true },
+        },
       },
     }),
   ]);
@@ -262,8 +264,8 @@ async function getMyProfile(req, res) {
           turi: row.turi,
           summa: row.summa,
           sana: toIsoDate(row.tolovSana),
-          qoplanganOylarSoni: Array.isArray(row.qoplanganOylar)
-            ? row.qoplanganOylar.length
+          qoplanganOylarSoni: Array.isArray(row.qoplamalar)
+            ? row.qoplamalar.length
             : 0,
         })),
       },

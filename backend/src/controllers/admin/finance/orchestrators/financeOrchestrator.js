@@ -1068,15 +1068,9 @@ async function getStudentFinanceDetail(req, res) {
     student: studentRow,
     imtiyozlar: imtiyozlar.map(mapImtiyozRow),
     transactions: transactions.map((t) => {
-      const activeMonths = t.qoplamalar.map(
+      const qoplanganOylar = t.qoplamalar.map(
         (q) => `${q.yil}-${String(q.oy).padStart(2, "0")}`,
       );
-      const snapshotMonths = Array.isArray(t.qoplanganOylar)
-        ? t.qoplanganOylar
-        : [];
-      const qoplanganOylar = activeMonths.length
-        ? activeMonths
-        : snapshotMonths;
 
       return {
         id: t.id,
@@ -1165,7 +1159,6 @@ async function createStudentImtiyoz(req, res) {
             turi: "IXTIYORIY",
             summa: 0,
             izoh: `[Imtiyoz] To'liq ozod: ${sabab}`,
-            qoplanganOylar: appliedMonthKeys,
           },
         });
         await tx.tolovQoplama.createMany({
@@ -1473,7 +1466,6 @@ async function createStudentPayment(req, res) {
         turi,
         summa: finalSumma,
         izoh: req.body.izoh || null,
-        qoplanganOylar: appliedMonthKeys,
         tarifVersionId: settings.faolTarifId || null,
         tarifSnapshot: {
           oylikSumma: settings.oylikSumma,
@@ -1550,12 +1542,7 @@ async function revertPayment(req, res) {
   const qoplamalardagiOylar = txn.qoplamalar.map(
     (q) => `${q.yil}-${String(q.oy).padStart(2, "0")}`,
   );
-  const snapshotOylar = Array.isArray(txn.qoplanganOylar)
-    ? txn.qoplanganOylar
-    : [];
-  const freedMonths = qoplamalardagiOylar.length
-    ? qoplamalardagiOylar
-    : snapshotOylar;
+  const freedMonths = qoplamalardagiOylar;
 
   await prisma.$transaction(async (tx) => {
     await tx.tolovQoplama.deleteMany({ where: { tranzaksiyaId: tolovId } });

@@ -5,7 +5,7 @@ import { Button, Card, Select, StateView } from '../../components/ui';
 import { apiRequest, getErrorMessage } from '../../lib/apiClient';
 
 const HAFTA_KUNLARI = ['DUSHANBA', 'SESHANBA', 'CHORSHANBA', 'PAYSHANBA', 'JUMA', 'SHANBA'];
-const KUN_LABEL = {
+const KUN_LABEL_KEYS = {
   DUSHANBA: 'Dushanba',
   SESHANBA: 'Seshanba',
   CHORSHANBA: 'Chorshanba',
@@ -126,7 +126,7 @@ export default function StudentSchedulePage() {
                     <th className="px-2 py-2 text-left">{t('Vaqt')}</th>
                     {HAFTA_KUNLARI.map((kun) => (
                       <th key={kun} className="px-2 py-2 text-left">
-                        {KUN_LABEL[kun]}
+                        {t(KUN_LABEL_KEYS[kun])}
                       </th>
                     ))}
                   </tr>

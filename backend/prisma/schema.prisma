@@ -103,7 +103,7 @@ model User {
 model Admin {
   id     String @id @default(cuid())
   userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   firstName      String
   lastName       String
@@ -124,7 +124,7 @@ model Admin {
 model Teacher {
   id     String @id @default(cuid())
   userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   firstName      String
   lastName       String
@@ -152,7 +152,7 @@ model Teacher {
 model Student {
   id     String @id @default(cuid())
   userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   firstName      String
   lastName       String
@@ -195,9 +195,9 @@ model FileDocument {
   teacherId String?
   studentId String?
 
-  admin   Admin?   @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  student Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  admin   Admin?   @relation(fields: [adminId], references: [id], onDelete: Restrict)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  student Student? @relation(fields: [studentId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now())
 
@@ -243,7 +243,7 @@ model Enrollment {
   endDate   DateTime?
   isActive  Boolean  @default(true)
 
-  student   Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student   Student   @relation(fields: [studentId], references: [id], onDelete: Restrict)
   classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now())
@@ -312,7 +312,7 @@ model Davomat {
   izoh String?
 
   darsJadvali DarsJadvali @relation(fields: [darsJadvaliId], references: [id], onDelete: Cascade)
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
   belgilaganTeacher Teacher @relation("TeacherBelgilaganDavomat", fields: [belgilaganTeacherId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now())
@@ -340,7 +340,7 @@ model Baho {
   izoh String?
 
   darsJadvali DarsJadvali @relation(fields: [darsJadvaliId], references: [id], onDelete: Cascade)
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
   teacher Teacher @relation("TeacherQoyganBaholar", fields: [teacherId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now())
@@ -422,14 +422,13 @@ model TolovTranzaksiya {
   summa Int
   tolovSana DateTime @default(now())
   izoh String?
-  qoplanganOylar Json?
   tarifSnapshot Json?
   tarifVersionId String?
   bekorSana DateTime?
   bekorIzoh String?
   bekorQilganAdminUserId String?
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
   adminUser User @relation("AdminTolovTranzaksiyalari", fields: [adminUserId], references: [id], onDelete: Restrict)
   bekorQilganAdminUser User? @relation("BekorQilganTolovTranzaksiyalari", fields: [bekorQilganAdminUserId], references: [id], onDelete: Restrict)
   tarifVersion MoliyaTarifVersion? @relation(fields: [tarifVersionId], references: [id], onDelete: SetNull)
@@ -452,7 +451,7 @@ model TolovQoplama {
   yil Int
   oy Int
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
   tranzaksiya TolovTranzaksiya @relation(fields: [tranzaksiyaId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
@@ -476,7 +475,7 @@ model StudentOyMajburiyat {
   holat StudentOyMajburiyatHolati @default(BELGILANDI)
   source String @default("BAZA")
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -504,7 +503,7 @@ model TolovImtiyozi {
   bekorQilinganAdminUserId String?
   bekorQilishSababi String?
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
   adminUser User @relation("AdminTolovImtiyozlari", fields: [adminUserId], references: [id], onDelete: Restrict)
   bekorQilinganAdminUser User? @relation("BekorQilinganTolovImtiyozlari", fields: [bekorQilinganAdminUserId], references: [id], onDelete: Restrict)
 
@@ -525,7 +524,7 @@ model QarzdorIzoh {
   izoh String
   promisedPayDate DateTime?
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
   managerUser User @relation("ManagerQarzdorIzohlari", fields: [managerUserId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now())

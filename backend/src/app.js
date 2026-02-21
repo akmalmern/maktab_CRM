@@ -24,7 +24,12 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(locale);
 
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+// Security: never expose sensitive documents via public static serving.
+// Keep only avatars public; documents are served through protected API routes.
+app.use(
+  "/uploads/avatars",
+  express.static(path.join(process.cwd(), "uploads", "avatars")),
+);
 
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);

@@ -4,13 +4,14 @@ import { Button, Card, DataTable, Input, Select, StateView } from '../../compone
 import { apiRequest, getErrorMessage } from '../../lib/apiClient';
 import { getLocalDateInputValue } from '../../lib/dateUtils';
 
-const BAHO_TURI_OPTIONS = [
-  { value: 'ALL', label: 'Hammasi' },
-  { value: 'JORIY', label: 'Joriy' },
-  { value: 'NAZORAT', label: 'Nazorat' },
-  { value: 'ORALIQ', label: 'Oraliq' },
-  { value: 'YAKUNIY', label: 'Yakuniy' },
-];
+const BAHO_TURI_OPTIONS = ['ALL', 'JORIY', 'NAZORAT', 'ORALIQ', 'YAKUNIY'];
+const BAHO_TURI_LABEL_KEYS = {
+  ALL: 'Hammasi',
+  JORIY: 'Joriy',
+  NAZORAT: 'Nazorat',
+  ORALIQ: 'Oraliq',
+  YAKUNIY: 'Yakuniy',
+};
 
 export default function StudentGradesPage() {
   const { t } = useTranslation();
@@ -61,31 +62,31 @@ export default function StudentGradesPage() {
 
   const myColumns = useMemo(
     () => [
-      { key: 'sana', header: 'Sana', render: (row) => row.sana },
-      { key: 'fan', header: 'Fan', render: (row) => row.fan },
-      { key: 'sinf', header: 'Sinf', render: (row) => row.sinf },
-      { key: 'vaqt', header: 'Vaqt', render: (row) => row.vaqt },
-      { key: 'oqituvchi', header: "O'qituvchi", render: (row) => row.oqituvchi },
-      { key: 'turi', header: 'Turi', render: (row) => row.turi },
-      { key: 'ball', header: 'Ball', render: (row) => `${row.ball}/${row.maxBall}` },
-      { key: 'izoh', header: 'Izoh', render: (row) => row.izoh || '-' },
+      { key: 'sana', header: t('Sana'), render: (row) => row.sana },
+      { key: 'fan', header: t('Fan'), render: (row) => row.fan },
+      { key: 'sinf', header: t('Sinf'), render: (row) => row.sinf },
+      { key: 'vaqt', header: t('Vaqt'), render: (row) => row.vaqt },
+      { key: 'oqituvchi', header: t("O'qituvchi"), render: (row) => row.oqituvchi },
+      { key: 'turi', header: t('Turi'), render: (row) => t(BAHO_TURI_LABEL_KEYS[row.turi] || row.turi, { defaultValue: row.turi }) },
+      { key: 'ball', header: t('Ball'), render: (row) => `${row.ball}/${row.maxBall}` },
+      { key: 'izoh', header: t('Izoh'), render: (row) => row.izoh || '-' },
     ],
-    [],
+    [t],
   );
 
   const classColumns = useMemo(
     () => [
-      { key: 'sana', header: 'Sana', render: (row) => row.sana },
-      { key: 'fan', header: 'Fan', render: (row) => row.fan },
-      { key: 'vaqt', header: 'Vaqt', render: (row) => row.vaqt },
-      { key: 'oqituvchi', header: "O'qituvchi", render: (row) => row.oqituvchi },
-      { key: 'turi', header: 'Turi', render: (row) => row.turi },
-      { key: 'yozuvlarSoni', header: 'Yozuvlar', render: (row) => row.yozuvlarSoni },
-      { key: 'ortacha', header: "O'rtacha", render: (row) => `${row.ortachaBall}/${row.ortachaMaxBall}` },
-      { key: 'ortachaFoiz', header: "O'rtacha %", render: (row) => `${row.ortachaFoiz}%` },
-      { key: 'diapazon', header: 'Min/Max', render: (row) => `${row.minBall} / ${row.maxBall}` },
+      { key: 'sana', header: t('Sana'), render: (row) => row.sana },
+      { key: 'fan', header: t('Fan'), render: (row) => row.fan },
+      { key: 'vaqt', header: t('Vaqt'), render: (row) => row.vaqt },
+      { key: 'oqituvchi', header: t("O'qituvchi"), render: (row) => row.oqituvchi },
+      { key: 'turi', header: t('Turi'), render: (row) => t(BAHO_TURI_LABEL_KEYS[row.turi] || row.turi, { defaultValue: row.turi }) },
+      { key: 'yozuvlarSoni', header: t('Yozuvlar'), render: (row) => row.yozuvlarSoni },
+      { key: 'ortacha', header: t("O'rtacha"), render: (row) => `${row.ortachaBall}/${row.ortachaMaxBall}` },
+      { key: 'ortachaFoiz', header: t("O'rtacha %"), render: (row) => `${row.ortachaFoiz}%` },
+      { key: 'diapazon', header: t('Min/Max'), render: (row) => `${row.minBall} / ${row.maxBall}` },
     ],
-    [],
+    [t],
   );
 
   return (
@@ -109,8 +110,8 @@ export default function StudentGradesPage() {
           <Input type="date" value={sana} onChange={(event) => setSana(event.target.value)} />
           <Select value={bahoTuri} onChange={(event) => setBahoTuri(event.target.value)}>
             {BAHO_TURI_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
+              <option key={opt} value={opt}>
+                {t(BAHO_TURI_LABEL_KEYS[opt] || opt)}
               </option>
             ))}
           </Select>
@@ -157,7 +158,7 @@ export default function StudentGradesPage() {
           <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {['JORIY', 'NAZORAT', 'ORALIQ', 'YAKUNIY'].map((key) => (
               <div key={key} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
-                <p className="text-slate-500">{key}</p>
+                <p className="text-slate-500">{t(BAHO_TURI_LABEL_KEYS[key] || key)}</p>
                 <p className="font-semibold text-slate-900">
                   {data.stats?.[key]?.count || 0} {t('ta')} / {data.stats?.[key]?.avg || 0}%
                 </p>

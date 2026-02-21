@@ -1,40 +1,46 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import AutoTranslate from '../../components/AutoTranslate';
 import { Button, Card, Input, Modal, Select, StateView, Textarea } from '../../components/ui';
 import { apiRequest, getErrorMessage } from '../../lib/apiClient';
 
 const SEARCH_DEBOUNCE_MS = 400;
 const NOTES_PAGE_LIMIT = 10;
 
-function sumFormat(value) {
+function resolveLocale(language) {
+  if (language === 'ru') return 'ru-RU';
+  if (language === 'en') return 'en-US';
+  return 'uz-UZ';
+}
+
+function sumFormat(value, locale) {
   const amount = Number(value || 0);
   if (!Number.isFinite(amount)) return '0';
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 })
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 })
     .format(amount)
     .replace(/,/g, ' ');
 }
 
-function formatMoney(value) {
-  return `${sumFormat(value)} so'm`;
+function formatMoney(value, locale, t) {
+  return `${sumFormat(value, locale)} ${t("so'm")}`;
 }
 
 function currentMonthKey() {
   return new Date().toISOString().slice(0, 7);
 }
 
-function formatDateTime(value) {
+function formatDateTime(value, locale) {
   if (!value) return '-';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleString('uz-UZ');
+  return date.toLocaleString(locale);
 }
 
-function formatDate(value) {
+function formatDate(value, locale) {
   if (!value) return '-';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleDateString('uz-UZ');
+  return date.toLocaleDateString(locale);
 }
 
 function MonthChips({ items = [] }) {
@@ -58,6 +64,8 @@ function MonthChips({ items = [] }) {
 }
 
 export default function ManagerDebtorsPage() {
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const [classrooms, setClassrooms] = useState([]);
   const [query, setQuery] = useState({
     search: '',
@@ -169,11 +177,11 @@ export default function ManagerDebtorsPage() {
 
   const summaryCards = useMemo(
     () => [
-      { label: 'Jami qarzdorlar', value: Number(studentsState.summary?.totalDebtors || 0) },
-      { label: "Jami qarz summasi", value: formatMoney(studentsState.summary?.totalDebtAmount || 0) },
-      { label: 'Sahifa', value: `${query.page} / ${studentsState.pages || 1}` },
+      { label: t('Jami qarzdorlar'), value: Number(studentsState.summary?.totalDebtors || 0) },
+      { label: t("Jami qarz summasi"), value: formatMoney(studentsState.summary?.totalDebtAmount || 0, locale, t) },
+      { label: t('Sahifa'), value: `${query.page} / ${studentsState.pages || 1}` },
     ],
-    [studentsState.summary, studentsState.pages, query.page],
+    [studentsState.summary, studentsState.pages, query.page, locale, t],
   );
 
   async function reloadDebtors() {
@@ -230,7 +238,7 @@ export default function ManagerDebtorsPage() {
     if (!selectedStudent) return;
     const izoh = noteForm.izoh.trim();
     if (!izoh) {
-      toast.warning("Izoh maydoni bo'sh bo'lishi mumkin emas");
+      toast.warning(t("Izoh maydoni bo'sh bo'lishi mumkin emas"));
       return;
     }
 
@@ -244,7 +252,7 @@ export default function ManagerDebtorsPage() {
           promisedPayDate: noteForm.promisedPayDate || undefined,
         },
       });
-      toast.success("Izoh saqlandi");
+      toast.success(t('Izoh saqlandi'));
       setNoteForm({ izoh: '', promisedPayDate: '' });
       await Promise.all([loadNotes(selectedStudent.id, 1), reloadDebtors()]);
     } catch (error) {
@@ -316,7 +324,7 @@ export default function ManagerDebtorsPage() {
           oylarSoni,
         },
       });
-      toast.success(mode === 'ALL' ? "Qarz to'liq yopildi" : "1 oy to'landi");
+      toast.success(mode === 'ALL' ? t("Qarz to'liq yopildi") : t("1 oy to'landi"));
       await reloadDebtors();
       if (paymentModalOpen && paymentStudent?.id === row.id) {
         await loadPaymentDetail(row.id);
@@ -329,11 +337,10 @@ export default function ManagerDebtorsPage() {
   }
 
   return (
-    <AutoTranslate>
       <div className="space-y-4">
       <Card
-        title="Qarzdorlar ro'yxati"
-        subtitle="Menejer faqat qarzdor o'quvchilar bilan ishlaydi va ota-ona bilan aloqa izohini yozadi."
+        title={t("Qarzdorlar ro'yxati")}
+        subtitle={t("Menejer faqat qarzdor o'quvchilar bilan ishlaydi va ota-ona bilan aloqa izohini yozadi.")}
       >
         <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
           {summaryCards.map((card) => (
@@ -349,13 +356,13 @@ export default function ManagerDebtorsPage() {
             type="text"
             value={query.search}
             onChange={(e) => setQuery((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
-            placeholder="Ism, username yoki ota-ona telefoni..."
+            placeholder={t('Ism, username yoki ota-ona telefoni...')}
           />
           <Select
             value={query.classroomId}
             onChange={(e) => setQuery((prev) => ({ ...prev, classroomId: e.target.value, page: 1 }))}
           >
-            <option value="all">Barcha sinflar</option>
+            <option value="all">{t('Barcha sinflar')}</option>
             {classrooms.map((classroom) => (
               <option key={classroom.id} value={classroom.id}>
                 {classroom.name} ({classroom.academicYear})
@@ -368,12 +375,12 @@ export default function ManagerDebtorsPage() {
           >
             {[10, 20, 50].map((size) => (
               <option key={size} value={size}>
-                {size} ta / sahifa
+                {t('{{count}} ta / sahifa', { count: size })}
               </option>
             ))}
           </Select>
           <Button variant="secondary" onClick={reloadDebtors}>
-            Yangilash
+            {t('Yangilash')}
           </Button>
         </div>
 
@@ -383,7 +390,7 @@ export default function ManagerDebtorsPage() {
             <StateView type="error" description={studentsState.error} />
           )}
           {!studentsState.loading && !studentsState.error && !studentsState.items.length && (
-            <StateView type="empty" description="Qarzdor o'quvchi topilmadi." />
+            <StateView type="empty" description={t("Qarzdor o'quvchi topilmadi.")} />
           )}
 
           {!studentsState.loading && !studentsState.error && studentsState.items.length > 0 && (
@@ -391,13 +398,13 @@ export default function ManagerDebtorsPage() {
               <table className="w-full min-w-[980px] text-sm">
                 <thead className="bg-slate-50 text-left text-slate-600">
                   <tr>
-                    <th className="px-3 py-2">O'quvchi</th>
-                    <th className="px-3 py-2">Sinf</th>
-                    <th className="px-3 py-2">Ota-ona telefoni</th>
-                    <th className="px-3 py-2">Qarz oylar</th>
-                    <th className="px-3 py-2">Jami qarz</th>
-                    <th className="px-3 py-2">Oxirgi izoh</th>
-                    <th className="px-3 py-2">Amallar</th>
+                    <th className="px-3 py-2">{t("O'quvchi")}</th>
+                    <th className="px-3 py-2">{t('Sinf')}</th>
+                    <th className="px-3 py-2">{t('Ota-ona telefoni')}</th>
+                    <th className="px-3 py-2">{t('Qarz oylar')}</th>
+                    <th className="px-3 py-2">{t('Jami qarz')}</th>
+                    <th className="px-3 py-2">{t('Oxirgi izoh')}</th>
+                    <th className="px-3 py-2">{t('Amallar')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -421,22 +428,22 @@ export default function ManagerDebtorsPage() {
                         )}
                       </td>
                       <td className="px-3 py-2">
-                        <p className="mb-1 font-semibold text-rose-700">{row.qarzOylarSoni} ta</p>
+                        <p className="mb-1 font-semibold text-rose-700">{row.qarzOylarSoni} {t('ta')}</p>
                         <MonthChips items={row.qarzOylarFormatted || []} />
                       </td>
                       <td className="px-3 py-2 font-semibold text-rose-700">
-                        {formatMoney(row.jamiQarzSumma)}
+                        {formatMoney(row.jamiQarzSumma, locale, t)}
                       </td>
                       <td className="px-3 py-2">
                         {row.oxirgiIzoh ? (
                           <div>
                             <p className="max-w-[260px] text-slate-700">{row.oxirgiIzoh.izoh}</p>
                             <p className="mt-1 text-xs text-slate-500">
-                              {formatDateTime(row.oxirgiIzoh.createdAt)} | {row.oxirgiIzoh.manager?.fullName || '-'}
+                              {formatDateTime(row.oxirgiIzoh.createdAt, locale)} | {row.oxirgiIzoh.manager?.fullName || '-'}
                             </p>
                           </div>
                         ) : (
-                          <span className="text-slate-400">Izoh yo'q</span>
+                          <span className="text-slate-400">{t("Izoh yo'q")}</span>
                         )}
                       </td>
                       <td className="px-3 py-2">
@@ -447,7 +454,7 @@ export default function ManagerDebtorsPage() {
                             onClick={() => handleQuickPay(row, 'ONE')}
                             disabled={quickPayLoadingId === row.id + 'ONE' || quickPayLoadingId === row.id + 'ALL'}
                           >
-                            1 oy to'lash
+                            {t("1 oy to'lash")}
                           </Button>
                           <Button
                             size="sm"
@@ -455,13 +462,13 @@ export default function ManagerDebtorsPage() {
                             onClick={() => handleQuickPay(row, 'ALL')}
                             disabled={quickPayLoadingId === row.id + 'ONE' || quickPayLoadingId === row.id + 'ALL'}
                           >
-                            Qarzni yopish
+                            {t('Qarzni yopish')}
                           </Button>
                           <Button size="sm" variant="indigo" onClick={() => openPaymentHistory(row)}>
-                            Tarix
+                            {t('Tarix')}
                           </Button>
                           <Button size="sm" variant="secondary" onClick={() => openModal(row)}>
-                            Izohlar
+                            {t('Izohlar')}
                           </Button>
                         </div>
                       </td>
@@ -480,7 +487,7 @@ export default function ManagerDebtorsPage() {
             onClick={() => setQuery((prev) => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
             disabled={query.page <= 1}
           >
-            Oldingi
+            {t('Oldingi')}
           </Button>
           <Button
             size="sm"
@@ -493,21 +500,21 @@ export default function ManagerDebtorsPage() {
             }
             disabled={query.page >= (studentsState.pages || 1)}
           >
-            Keyingi
+            {t('Keyingi')}
           </Button>
         </div>
       </Card>
 
-      <Modal open={modalOpen} onClose={closeModal} title="Ota-ona bilan aloqa izohlari" maxWidth="max-w-4xl">
+      <Modal open={modalOpen} onClose={closeModal} title={t('Ota-ona bilan aloqa izohlari')} maxWidth="max-w-4xl">
         {!selectedStudent ? (
-          <StateView type="empty" description="O'quvchi tanlanmagan." />
+          <StateView type="empty" description={t("O'quvchi tanlanmagan.")} />
         ) : (
           <div className="space-y-4">
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
               <p className="font-semibold text-slate-900">{selectedStudent.fullName}</p>
-              <p className="mt-1 text-slate-600">Sinf: {selectedStudent.classroom}</p>
+              <p className="mt-1 text-slate-600">{t('Sinf')}: {selectedStudent.classroom}</p>
               <p className="text-slate-600">
-                Ota-ona telefoni:{' '}
+                {t('Ota-ona telefoni')}:{' '}
                 {selectedStudent.parentPhone && selectedStudent.parentPhone !== '-' ? (
                   <a
                     href={`tel:${selectedStudent.parentPhone}`}
@@ -520,18 +527,18 @@ export default function ManagerDebtorsPage() {
                 )}
               </p>
               <p className="mt-1 text-rose-700">
-                Qarz: <b>{selectedStudent.qarzOylarSoni}</b> oy /{' '}
-                <b>{formatMoney(selectedStudent.jamiQarzSumma)}</b>
+                {t('Qarz')}: <b>{selectedStudent.qarzOylarSoni}</b> {t('oy')} /{' '}
+                <b>{formatMoney(selectedStudent.jamiQarzSumma, locale, t)}</b>
               </p>
             </div>
 
             <form onSubmit={handleSaveNote} className="space-y-2 rounded-lg border border-slate-200 p-3">
-              <p className="text-sm font-semibold text-slate-900">Yangi izoh qo'shish</p>
+              <p className="text-sm font-semibold text-slate-900">{t("Yangi izoh qo'shish")}</p>
               <Textarea
                 rows={3}
                 value={noteForm.izoh}
                 onChange={(e) => setNoteForm((prev) => ({ ...prev, izoh: e.target.value }))}
-                placeholder="Masalan: Ota-onasi bilan gaplashildi, keyingi haftada to'lov qilishini aytdi."
+                placeholder={t("Masalan: Ota-onasi bilan gaplashildi, keyingi haftada to'lov qilishini aytdi.")}
                 required
               />
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -541,18 +548,18 @@ export default function ManagerDebtorsPage() {
                   onChange={(e) => setNoteForm((prev) => ({ ...prev, promisedPayDate: e.target.value }))}
                 />
                 <Button type="submit" variant="success" disabled={savingNote}>
-                  {savingNote ? 'Saqlanmoqda...' : 'Izohni saqlash'}
+                  {savingNote ? t('Saqlanmoqda...') : t("Izohni saqlash")}
                 </Button>
               </div>
             </form>
 
-            <Card title={`Izohlar tarixi (${notesState.total})`}>
+            <Card title={t('Izohlar tarixi ({{count}})', { count: notesState.total })}>
               {notesState.loading && <StateView type="loading" />}
               {!notesState.loading && notesState.error && (
                 <StateView type="error" description={notesState.error} />
               )}
               {!notesState.loading && !notesState.error && !notesState.items.length && (
-                <StateView type="empty" description="Hali izoh kiritilmagan." />
+                <StateView type="empty" description={t("Hali izoh kiritilmagan.")} />
               )}
               {!notesState.loading && !notesState.error && notesState.items.length > 0 && (
                 <div className="space-y-2">
@@ -560,9 +567,9 @@ export default function ManagerDebtorsPage() {
                     <div key={note.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
                       <p className="text-slate-800">{note.izoh}</p>
                       <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                        <span>Yozilgan vaqt: {formatDateTime(note.createdAt)}</span>
-                        <span>Manager: {note.manager?.fullName || note.manager?.username || '-'}</span>
-                        <span>Va'da qilingan sana: {formatDate(note.promisedPayDate)}</span>
+                        <span>{t('Yozilgan vaqt')}: {formatDateTime(note.createdAt, locale)}</span>
+                        <span>{t('Manager')}: {note.manager?.fullName || note.manager?.username || '-'}</span>
+                        <span>{t("Va'da qilingan sana")}: {formatDate(note.promisedPayDate, locale)}</span>
                       </div>
                     </div>
                   ))}
@@ -575,7 +582,7 @@ export default function ManagerDebtorsPage() {
                   onClick={() => loadNotes(selectedStudent.id, Math.max(1, notesState.page - 1))}
                   disabled={notesState.page <= 1 || notesState.loading}
                 >
-                  Oldingi
+                  {t('Oldingi')}
                 </Button>
                 <Button
                   size="sm"
@@ -588,7 +595,7 @@ export default function ManagerDebtorsPage() {
                   }
                   disabled={notesState.page >= (notesState.pages || 1) || notesState.loading}
                 >
-                  Keyingi
+                  {t('Keyingi')}
                 </Button>
               </div>
             </Card>
@@ -596,16 +603,16 @@ export default function ManagerDebtorsPage() {
         )}
       </Modal>
 
-      <Modal open={paymentModalOpen} onClose={closePaymentModal} title="To'lovlar tarixi" maxWidth="max-w-4xl">
+      <Modal open={paymentModalOpen} onClose={closePaymentModal} title={t("To'lovlar tarixi")} maxWidth="max-w-4xl">
         {!paymentStudent ? (
-          <StateView type="empty" description="O'quvchi tanlanmagan." />
+          <StateView type="empty" description={t("O'quvchi tanlanmagan.")} />
         ) : (
           <div className="space-y-4">
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
               <p className="font-semibold text-slate-900">{paymentStudent.fullName}</p>
-              <p className="mt-1 text-slate-600">Sinf: {paymentStudent.classroom}</p>
+              <p className="mt-1 text-slate-600">{t('Sinf')}: {paymentStudent.classroom}</p>
               <p className="text-slate-600">
-                Qarz: <b>{paymentStudent.qarzOylarSoni}</b> oy / <b>{formatMoney(paymentStudent.jamiQarzSumma)}</b>
+                {t('Qarz')}: <b>{paymentStudent.qarzOylarSoni}</b> {t('oy')} / <b>{formatMoney(paymentStudent.jamiQarzSumma, locale, t)}</b>
               </p>
             </div>
 
@@ -615,54 +622,54 @@ export default function ManagerDebtorsPage() {
                 onClick={() => handleQuickPay(paymentStudent, 'ONE')}
                 disabled={quickPayLoadingId === paymentStudent.id + 'ONE' || quickPayLoadingId === paymentStudent.id + 'ALL'}
               >
-                1 oy to'lash
+                {t("1 oy to'lash")}
               </Button>
               <Button
                 variant="secondary"
                 onClick={() => handleQuickPay(paymentStudent, 'ALL')}
                 disabled={quickPayLoadingId === paymentStudent.id + 'ONE' || quickPayLoadingId === paymentStudent.id + 'ALL'}
               >
-                Qarzni yopish
+                {t('Qarzni yopish')}
               </Button>
             </div>
 
-            <Card title="To'lov tranzaksiyalari">
+            <Card title={t("To'lov tranzaksiyalari")}>
               {paymentState.loading && <StateView type="loading" />}
               {!paymentState.loading && paymentState.error && (
                 <StateView type="error" description={paymentState.error} />
               )}
               {!paymentState.loading && !paymentState.error && !paymentState.transactions.length && (
-                <StateView type="empty" description="To'lov tarixi yo'q." />
+                <StateView type="empty" description={t("To'lov tarixi yo'q.")} />
               )}
               {!paymentState.loading && !paymentState.error && paymentState.transactions.length > 0 && (
                 <div className="overflow-x-auto rounded-lg border border-slate-200">
                   <table className="w-full min-w-[760px] text-sm">
                     <thead className="bg-slate-50 text-left text-slate-600">
                       <tr>
-                        <th className="px-3 py-2">Sana</th>
-                        <th className="px-3 py-2">Turi</th>
-                        <th className="px-3 py-2">Holat</th>
-                        <th className="px-3 py-2">Summa</th>
-                        <th className="px-3 py-2">Qoplangan oylar</th>
+                        <th className="px-3 py-2">{t('Sana')}</th>
+                        <th className="px-3 py-2">{t('Turi')}</th>
+                        <th className="px-3 py-2">{t('Holat')}</th>
+                        <th className="px-3 py-2">{t('Summa')}</th>
+                        <th className="px-3 py-2">{t('Qoplangan oylar')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {paymentState.transactions.map((tx) => (
                         <tr key={tx.id} className="border-t border-slate-100">
-                          <td className="px-3 py-2">{formatDateTime(tx.tolovSana)}</td>
-                          <td className="px-3 py-2">{tx.turi}</td>
+                          <td className="px-3 py-2">{formatDateTime(tx.tolovSana, locale)}</td>
+                          <td className="px-3 py-2">{t(tx.turi, { defaultValue: tx.turi })}</td>
                           <td className="px-3 py-2">
                             {tx.holat === 'BEKOR_QILINGAN' ? (
                               <span className="rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700">
-                                Bekor qilingan
+                                {t('Bekor qilingan')}
                               </span>
                             ) : (
                               <span className="rounded bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
-                                Aktiv
+                                {t('Aktiv')}
                               </span>
                             )}
                           </td>
-                          <td className="px-3 py-2 font-semibold text-slate-900">{formatMoney(tx.summa)}</td>
+                          <td className="px-3 py-2 font-semibold text-slate-900">{formatMoney(tx.summa, locale, t)}</td>
                           <td className="px-3 py-2">
                             {(tx.qoplanganOylarFormatted || []).join(', ') || '-'}
                           </td>
@@ -677,6 +684,5 @@ export default function ManagerDebtorsPage() {
         )}
       </Modal>
       </div>
-    </AutoTranslate>
   );
 }

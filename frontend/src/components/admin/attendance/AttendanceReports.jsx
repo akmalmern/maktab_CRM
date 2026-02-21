@@ -1,18 +1,19 @@
 import { useMemo, useState } from 'react';
-import AutoTranslate from '../../AutoTranslate';
+import { useTranslation } from 'react-i18next';
 import { Button, Card, DataTable, Input, Select, StateView } from '../../../components/ui';
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-const PERIOD_OPTIONS = [
-  { value: 'KUNLIK', label: 'Kunlik' },
-  { value: 'HAFTALIK', label: 'Haftalik' },
-  { value: 'OYLIK', label: 'Oylik' },
-  { value: 'CHORAKLIK', label: 'Choraklik' },
-  { value: 'YILLIK', label: 'Yillik' },
-];
+const PERIOD_OPTIONS = ['KUNLIK', 'HAFTALIK', 'OYLIK', 'CHORAKLIK', 'YILLIK'];
+const PERIOD_LABEL_KEYS = {
+  KUNLIK: 'Kunlik',
+  HAFTALIK: 'Haftalik',
+  OYLIK: 'Oylik',
+  CHORAKLIK: 'Choraklik',
+  YILLIK: 'Yillik',
+};
 
 export default function AttendanceReports({
   classrooms,
@@ -23,6 +24,7 @@ export default function AttendanceReports({
   onExport,
   exporting,
 }) {
+  const { t } = useTranslation();
   const [sana, setSana] = useState(todayStr());
   const [classroomId, setClassroomId] = useState('all');
   const [periodType, setPeriodType] = useState('OYLIK');
@@ -30,28 +32,28 @@ export default function AttendanceReports({
 
   const percentCards = useMemo(
     () => [
-      { label: 'Kunlik foiz', value: report?.foizlar?.kunlik ?? 0 },
-      { label: 'Haftalik foiz', value: report?.foizlar?.haftalik ?? 0 },
-      { label: 'Oylik foiz', value: report?.foizlar?.oylik ?? 0 },
-      { label: 'Choraklik foiz', value: report?.foizlar?.choraklik ?? 0 },
-      { label: 'Yillik foiz', value: report?.foizlar?.yillik ?? 0 },
-      { label: 'Tanlangan period', value: report?.foizlar?.tanlanganPeriod ?? 0 },
+      { label: t('Kunlik foiz'), value: report?.foizlar?.kunlik ?? 0 },
+      { label: t('Haftalik foiz'), value: report?.foizlar?.haftalik ?? 0 },
+      { label: t('Oylik foiz'), value: report?.foizlar?.oylik ?? 0 },
+      { label: t('Choraklik foiz'), value: report?.foizlar?.choraklik ?? 0 },
+      { label: t('Yillik foiz'), value: report?.foizlar?.yillik ?? 0 },
+      { label: t('Tanlangan period'), value: report?.foizlar?.tanlanganPeriod ?? 0 },
     ],
-    [report],
+    [report, t],
   );
 
   const historyColumns = [
-    { key: 'sana', header: 'Sana', render: (row) => row.sana },
-    { key: 'sinf', header: 'Sinf', render: (row) => row.sinf || '-' },
-    { key: 'fan', header: 'Fan', render: (row) => row.fan || '-' },
-    { key: 'oqituvchi', header: "O'qituvchi", render: (row) => row.oqituvchi || '-' },
+    { key: 'sana', header: t('Sana'), render: (row) => row.sana },
+    { key: 'sinf', header: t('Sinf'), render: (row) => row.sinf || '-' },
+    { key: 'fan', header: t('Fan'), render: (row) => row.fan || '-' },
+    { key: 'oqituvchi', header: t("O'qituvchi"), render: (row) => row.oqituvchi || '-' },
     {
       key: 'holat',
-      header: 'Holatlar',
+      header: t('Holatlar'),
       render: (row) =>
-        `K:${row.holatlar?.KELDI || 0} / Kech:${row.holatlar?.KECHIKDI || 0} / Sab:${row.holatlar?.SABABLI || 0} / Sabs:${row.holatlar?.SABABSIZ || 0}`,
+        `${t('Keldi')}: ${row.holatlar?.KELDI || 0} / ${t('Kechikdi')}: ${row.holatlar?.KECHIKDI || 0} / ${t('Sababli')}: ${row.holatlar?.SABABLI || 0} / ${t('Sababsiz')}: ${row.holatlar?.SABABSIZ || 0}`,
     },
-    { key: 'jami', header: 'Jami', render: (row) => row.jami || 0 },
+    { key: 'jami', header: t('Jami'), render: (row) => row.jami || 0 },
   ];
 
   function handleSubmit(event) {
@@ -72,34 +74,33 @@ export default function AttendanceReports({
   }
 
   return (
-    <AutoTranslate>
       <div className="space-y-4">
-      <Card title="Davomat bo'limi">
+      <Card title={t("Davomat bo'limi")}>
         <div className="flex flex-wrap gap-2">
           {activeView === 'report' ? (
             <Button type="button" variant="secondary" onClick={() => setActiveView('history')}>
-              O'tilgan darslar davomat tarixi
+              {t("O'tilgan darslar davomat tarixi")}
             </Button>
           ) : (
             <Button type="button" variant="secondary" onClick={() => setActiveView('report')}>
-              Ortga qaytish
+              {t('Ortga qaytish')}
             </Button>
           )}
         </div>
       </Card>
 
-      <Card title="Davomat hisobotlari">
+      <Card title={t('Davomat hisobotlari')}>
         <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-2 md:grid-cols-5">
           <Input type="date" value={sana} onChange={(event) => setSana(event.target.value)} />
           <Select value={periodType} onChange={(event) => setPeriodType(event.target.value)}>
-            {PERIOD_OPTIONS.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
+            {PERIOD_OPTIONS.map((value) => (
+              <option key={value} value={value}>
+                {t(PERIOD_LABEL_KEYS[value] || value)}
               </option>
             ))}
           </Select>
           <Select value={classroomId} onChange={(event) => setClassroomId(event.target.value)}>
-            <option value="all">Barcha sinflar</option>
+            <option value="all">{t('Barcha sinflar')}</option>
             {classrooms.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.name} ({item.academicYear})
@@ -107,7 +108,7 @@ export default function AttendanceReports({
             ))}
           </Select>
           <Button type="submit" variant="indigo" className="md:col-span-2">
-            Hisobotni yangilash
+            {t('Hisobotni yangilash')}
           </Button>
         </form>
         <div className="mt-2 flex flex-wrap gap-2">
@@ -117,7 +118,7 @@ export default function AttendanceReports({
             disabled={Boolean(exporting)}
             onClick={() => onExport?.('xlsx', getFilterParams())}
           >
-            {exporting === 'xlsx' ? 'Excel yuklanmoqda...' : 'Excel export'}
+            {exporting === 'xlsx' ? t('Excel yuklanmoqda...') : t('Excel export')}
           </Button>
           <Button
             type="button"
@@ -125,12 +126,12 @@ export default function AttendanceReports({
             disabled={Boolean(exporting)}
             onClick={() => onExport?.('pdf', getFilterParams())}
           >
-            {exporting === 'pdf' ? 'PDF yuklanmoqda...' : 'PDF export'}
+            {exporting === 'pdf' ? t('PDF yuklanmoqda...') : t('PDF export')}
           </Button>
         </div>
         {report?.period && (
           <p className="mt-2 text-xs text-slate-500">
-            Tanlangan oraliq: {report.period.from} - {report.period.to}
+            {t('Tanlangan oraliq')}: {report.period.from} - {report.period.to}
           </p>
         )}
       </Card>
@@ -157,7 +158,7 @@ export default function AttendanceReports({
           )}
 
           {activeView === 'history' && (
-            <Card title="Barcha sinflar davomat tarixi">
+            <Card title={t('Barcha sinflar davomat tarixi')}>
             {report?.tarix?.length ? (
               <DataTable
                 columns={historyColumns}
@@ -166,13 +167,12 @@ export default function AttendanceReports({
                 maxHeightClassName="max-h-[520px]"
               />
             ) : (
-              <StateView type="empty" description="Tanlangan period bo'yicha tarix topilmadi" />
+              <StateView type="empty" description={t("Tanlangan period bo'yicha tarix topilmadi")} />
             )}
             </Card>
           )}
         </>
       )}
       </div>
-    </AutoTranslate>
   );
 }
