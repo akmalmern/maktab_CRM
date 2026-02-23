@@ -4,7 +4,16 @@ const { cleanOptional, parseIntSafe } = require("./helpers");
 const {
   buildAnnualPromotionPlan,
   applyAnnualPromotion,
+  getCurrentAcademicYear,
 } = require("../../services/classroomPromotionService");
+
+function getNextAcademicYear(currentAcademicYear) {
+  const match = String(currentAcademicYear || "").match(/^(\d{4})-(\d{4})$/);
+  if (!match) return null;
+  const start = Number.parseInt(match[1], 10);
+  if (!Number.isFinite(start)) return null;
+  return `${start + 1}-${start + 2}`;
+}
 
 async function getClassrooms(_req, res) {
   const classrooms = await prisma.classroom.findMany({
@@ -17,23 +26,15 @@ async function getClassrooms(_req, res) {
       isArchived: true,
       createdAt: true,
       updatedAt: true,
+      _count: {
+        select: {
+          enrollments: {
+            where: { isActive: true },
+          },
+        },
+      },
     },
   });
-
-  const classroomIds = classrooms.map((row) => row.id);
-  const counts = classroomIds.length
-    ? await prisma.enrollment.groupBy({
-        by: ["classroomId"],
-        where: {
-          classroomId: { in: classroomIds },
-          isActive: true,
-        },
-        _count: { _all: true },
-      })
-    : [];
-  const countMap = new Map(
-    counts.map((row) => [row.classroomId, row._count?._all || 0]),
-  );
 
   const items = classrooms.map((classroom) => {
     return {
@@ -43,11 +44,47 @@ async function getClassrooms(_req, res) {
       isArchived: classroom.isArchived,
       createdAt: classroom.createdAt,
       updatedAt: classroom.updatedAt,
-      studentCount: countMap.get(classroom.id) || 0,
+      studentCount: classroom._count?.enrollments || 0,
     };
   });
 
-  res.json({ ok: true, classrooms: items });
+  const academicYears = [
+    ...new Set(
+      items.map((item) => item.academicYear).filter(Boolean),
+    ),
+  ].sort((a, b) => b.localeCompare(a));
+
+  res.json({ ok: true, classrooms: items, academicYears });
+}
+
+async function getClassroomsMeta(_req, res) {
+  const classroomYearRows = await prisma.classroom.findMany({
+    where: { isArchived: false },
+    select: { academicYear: true },
+    distinct: ["academicYear"],
+    orderBy: { academicYear: "desc" },
+  });
+
+  const currentAcademicYear = getCurrentAcademicYear(new Date());
+  const nextAcademicYear = getNextAcademicYear(currentAcademicYear);
+  const allowedAcademicYears = [
+    ...new Set(
+      [
+        ...classroomYearRows.map((row) => row.academicYear).filter(Boolean),
+        currentAcademicYear,
+        nextAcademicYear,
+      ].filter(Boolean),
+    ),
+  ].sort((a, b) => b.localeCompare(a));
+
+  res.json({
+    ok: true,
+    meta: {
+      currentAcademicYear,
+      nextAcademicYear,
+      allowedAcademicYears,
+    },
+  });
 }
 
 async function getClassroomStudents(req, res) {
@@ -428,6 +465,7 @@ async function runAnnualClassPromotion(req, res) {
 
 module.exports = {
   getClassrooms,
+  getClassroomsMeta,
   getClassroomStudents,
   createClassroom,
   deleteClassroom,

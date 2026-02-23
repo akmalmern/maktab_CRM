@@ -1,80 +1,10 @@
 const prisma = require("../../prisma");
 const { ApiError } = require("../../utils/apiError");
 const {
-  parseSanaOrToday,
-  buildRangeByType,
-  buildAllRanges,
-} = require("../../utils/attendancePeriod");
-
-function toIsoDate(value) {
-  return value.toISOString().slice(0, 10);
-}
-
-function calcFoiz(records) {
-  if (!records.length) return 0;
-  const present = records.filter(
-    (r) => r.holat === "KELDI" || r.holat === "KECHIKDI",
-  ).length;
-  return Number(((present / records.length) * 100).toFixed(1));
-}
-
-function groupSessions(records) {
-  const sessionMap = new Map();
-  for (const row of records) {
-    const sanaKey = row.sana.toISOString().slice(0, 10);
-    const key = `${row.darsJadvaliId}__${sanaKey}`;
-    if (!sessionMap.has(key)) {
-      sessionMap.set(key, {
-        darsJadvaliId: row.darsJadvaliId,
-        sana: sanaKey,
-        sinf: row.darsJadvali?.sinf
-          ? `${row.darsJadvali.sinf.name} (${row.darsJadvali.sinf.academicYear})`
-          : "-",
-        fan: row.darsJadvali?.fan?.name || "-",
-        oqituvchi: row.darsJadvali?.oqituvchi
-          ? `${row.darsJadvali.oqituvchi.firstName} ${row.darsJadvali.oqituvchi.lastName}`
-          : "-",
-        holatlar: { KELDI: 0, KECHIKDI: 0, SABABLI: 0, SABABSIZ: 0 },
-        jami: 0,
-      });
-    }
-    const session = sessionMap.get(key);
-    session.jami += 1;
-    session.holatlar[row.holat] += 1;
-  }
-
-  return [...sessionMap.values()].sort((a, b) => {
-    if (a.sana === b.sana) return a.sinf.localeCompare(b.sinf, "uz");
-    return a.sana < b.sana ? 1 : -1;
-  });
-}
-
-function buildBaseWhere({ classroomId, studentId }) {
-  return {
-    ...(studentId ? { studentId } : {}),
-    ...(classroomId ? { darsJadvali: { sinfId: classroomId } } : {}),
-  };
-}
-
-async function fetchSelectedRecords(baseWhere, selectedRange) {
-  return prisma.davomat.findMany({
-    where: {
-      ...baseWhere,
-      sana: { gte: selectedRange.from, lt: selectedRange.to },
-    },
-    include: {
-      student: { select: { id: true, firstName: true, lastName: true } },
-      darsJadvali: {
-        select: {
-          id: true,
-          sinf: { select: { id: true, name: true, academicYear: true } },
-          fan: { select: { name: true } },
-          oqituvchi: { select: { firstName: true, lastName: true } },
-        },
-      },
-    },
-  });
-}
+  getAdminAttendanceReportCore,
+  getAdminAttendanceReportData,
+} = require("../../services/attendance/attendanceService");
+const { toIsoDate } = require("../../services/attendance/attendanceScope");
 
 function createSimplePdf(textLines) {
   const lines = textLines.slice(0, 44);
@@ -124,92 +54,13 @@ function createSimplePdf(textLines) {
 }
 
 async function getAttendanceReport(req, res) {
-  const { sana, sanaStr } = parseSanaOrToday(req.query.sana);
-  const { classroomId, studentId } = req.query;
-  const selectedRange = buildRangeByType(req.query.periodType, sana);
-  const ranges = buildAllRanges(sana);
-
-  const baseWhere = buildBaseWhere({ classroomId, studentId });
-
-  const [
-    kunlikRecords,
-    haftalikRecords,
-    oylikRecords,
-    choraklikRecords,
-    yillikRecords,
-    selectedRecords,
-  ] = await Promise.all([
-    prisma.davomat.findMany({
-      where: {
-        ...baseWhere,
-        sana: { gte: ranges.kunlik.from, lt: ranges.kunlik.to },
-      },
-      select: { holat: true },
-    }),
-    prisma.davomat.findMany({
-      where: {
-        ...baseWhere,
-        sana: { gte: ranges.haftalik.from, lt: ranges.haftalik.to },
-      },
-      select: { holat: true },
-    }),
-    prisma.davomat.findMany({
-      where: {
-        ...baseWhere,
-        sana: { gte: ranges.oylik.from, lt: ranges.oylik.to },
-      },
-      select: { holat: true },
-    }),
-    prisma.davomat.findMany({
-      where: {
-        ...baseWhere,
-        sana: { gte: ranges.choraklik.from, lt: ranges.choraklik.to },
-      },
-      select: { holat: true },
-    }),
-    prisma.davomat.findMany({
-      where: {
-        ...baseWhere,
-        sana: { gte: ranges.yillik.from, lt: ranges.yillik.to },
-      },
-      select: { holat: true },
-    }),
-    fetchSelectedRecords(baseWhere, selectedRange),
-  ]);
-
-  const tarix = groupSessions(selectedRecords);
-
-  res.json({
-    ok: true,
-    sana: sanaStr,
-    periodType: selectedRange.type,
-    period: {
-      from: toIsoDate(selectedRange.from),
-      to: toIsoDate(new Date(selectedRange.to.getTime() - 1)),
-    },
-    foizlar: {
-      kunlik: calcFoiz(kunlikRecords),
-      haftalik: calcFoiz(haftalikRecords),
-      oylik: calcFoiz(oylikRecords),
-      choraklik: calcFoiz(choraklikRecords),
-      yillik: calcFoiz(yillikRecords),
-      tanlanganPeriod: calcFoiz(selectedRecords),
-    },
-    tarix,
-    jami: {
-      tanlanganPeriodDavomatYozuvlari: selectedRecords.length,
-      tanlanganPeriodDarsSessiyalari: tarix.length,
-    },
-  });
+  res.json(await getAdminAttendanceReportData(req.query));
 }
 
 async function exportAttendanceReportPdf(req, res) {
-  const { sana } = parseSanaOrToday(req.query.sana);
-  const { classroomId, studentId } = req.query;
-  const selectedRange = buildRangeByType(req.query.periodType, sana);
-  const baseWhere = buildBaseWhere({ classroomId, studentId });
-  const selectedRecords = await fetchSelectedRecords(baseWhere, selectedRange);
-  const tarix = groupSessions(selectedRecords);
+  const { selectedRange, selectedRecords, tarix } = await getAdminAttendanceReportCore(
+    req.query,
+  );
 
   const lines = [
     "Maktab CRM - Davomat Hisoboti",
@@ -250,12 +101,9 @@ async function exportAttendanceReportXlsx(req, res) {
     );
   }
 
-  const { sana } = parseSanaOrToday(req.query.sana);
-  const { classroomId, studentId } = req.query;
-  const selectedRange = buildRangeByType(req.query.periodType, sana);
-  const baseWhere = buildBaseWhere({ classroomId, studentId });
-  const selectedRecords = await fetchSelectedRecords(baseWhere, selectedRange);
-  const tarix = groupSessions(selectedRecords);
+  const { selectedRange, selectedRecords, tarix } = await getAdminAttendanceReportCore(
+    req.query,
+  );
 
   const tarixRows = tarix.map((row) => ({
     Sana: row.sana,

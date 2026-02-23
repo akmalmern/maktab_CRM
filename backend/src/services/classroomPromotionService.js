@@ -1,8 +1,17 @@
 const prisma = require("../prisma");
 const { ApiError } = require("../utils/apiError");
+const { utcDateToTashkentIsoDate } = require("../utils/tashkentTime");
 
 const SENTYABR_MONTH_INDEX = 8; // JS: 0-based
 const MAX_GRADE = 11;
+
+function isClassroomUniqueConflict(err) {
+  if (!err || err.code !== "P2002") return false;
+  const target = Array.isArray(err.meta?.target)
+    ? err.meta.target.join(",")
+    : String(err.meta?.target || "");
+  return target.includes("name") && target.includes("academicYear");
+}
 
 function parseAcademicYear(value) {
   const raw = String(value || "").trim();
@@ -16,12 +25,23 @@ function parseAcademicYear(value) {
 }
 
 function getCurrentAcademicYear(date = new Date()) {
-  const year = date.getUTCFullYear();
-  const month = date.getUTCMonth();
+  const tashkentIso = utcDateToTashkentIsoDate(date);
+  const [yearRaw, monthRaw] = String(tashkentIso).split("-");
+  const year = Number.parseInt(yearRaw, 10);
+  const month = Number.parseInt(monthRaw, 10) - 1; // JS month index
+  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+    throw new ApiError(400, "INVALID_DATE", "Sana noto'g'ri");
+  }
   if (month >= SENTYABR_MONTH_INDEX) {
     return `${year}-${year + 1}`;
   }
   return `${year - 1}-${year}`;
+}
+
+function isSeptemberInTashkent(date = new Date()) {
+  const tashkentIso = utcDateToTashkentIsoDate(date);
+  const month = Number.parseInt(String(tashkentIso).split("-")[1], 10) - 1;
+  return month === SENTYABR_MONTH_INDEX;
 }
 
 function getPreviousAcademicYear(targetAcademicYear) {
@@ -42,6 +62,20 @@ function parseClassName(name) {
 
 function buildTargetName(grade, suffix) {
   return `${grade}-${suffix}`;
+}
+
+function parseClassNameSafe(name) {
+  const raw = String(name || "").trim();
+  const match = raw.match(/^(\d{1,2})\s*-\s*(.+)$/u);
+  if (!match) return null;
+  const grade = Number.parseInt(match[1], 10);
+  if (!Number.isFinite(grade) || grade < 1 || grade > MAX_GRADE) return null;
+  const suffix = String(match[2] || "").trim().replace(/\s{2,}/g, " ");
+  if (!suffix) return null;
+  return {
+    grade,
+    suffix,
+  };
 }
 
 async function buildAnnualPromotionPlan(referenceDate = new Date()) {
@@ -88,7 +122,7 @@ async function buildAnnualPromotionPlan(referenceDate = new Date()) {
   const skippedItems = [];
 
   for (const classroom of sourceClassrooms) {
-    const parsed = parseClassName(classroom.name);
+    const parsed = parseClassNameSafe(classroom.name);
     if (!parsed) {
       skippedItems.push({
         id: classroom.id,
@@ -168,7 +202,7 @@ async function buildAnnualPromotionPlan(referenceDate = new Date()) {
     generatedAt: new Date(),
     targetAcademicYear,
     sourceAcademicYear,
-    isSeptember: referenceDate.getUTCMonth() === SENTYABR_MONTH_INDEX,
+    isSeptember: isSeptemberInTashkent(referenceDate),
     promoteItems: promoteItemsResolved,
     graduateItems,
     skippedItems,
@@ -234,15 +268,34 @@ async function applyAnnualPromotion({
       }
 
       if (!targetClassroomId) {
-        const createdClassroom = await tx.classroom.create({
-          data: {
-            name: item.targetName,
-            academicYear: item.targetAcademicYear,
-            isArchived: false,
-          },
-          select: { id: true },
-        });
-        targetClassroomId = createdClassroom.id;
+        try {
+          const createdClassroom = await tx.classroom.create({
+            data: {
+              name: item.targetName,
+              academicYear: item.targetAcademicYear,
+              isArchived: false,
+            },
+            select: { id: true },
+          });
+          targetClassroomId = createdClassroom.id;
+        } catch (error) {
+          if (!isClassroomUniqueConflict(error)) throw error;
+          const racedTarget = await tx.classroom.findFirst({
+            where: {
+              name: item.targetName,
+              academicYear: item.targetAcademicYear,
+            },
+            select: { id: true, isArchived: true },
+          });
+          if (!racedTarget) throw error;
+          if (racedTarget.isArchived) {
+            await tx.classroom.update({
+              where: { id: racedTarget.id },
+              data: { isArchived: false },
+            });
+          }
+          targetClassroomId = racedTarget.id;
+        }
       }
 
       const activeEnrollments = await tx.enrollment.findMany({
@@ -353,7 +406,9 @@ module.exports = {
   MAX_GRADE,
   getCurrentAcademicYear,
   getPreviousAcademicYear,
-  parseClassName,
+  isSeptemberInTashkent,
+  parseClassName: parseClassNameSafe,
+  isClassroomUniqueConflict,
   buildAnnualPromotionPlan,
   applyAnnualPromotion,
 };

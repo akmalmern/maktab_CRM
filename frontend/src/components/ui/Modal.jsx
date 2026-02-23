@@ -44,22 +44,22 @@ export default function Modal({ open, title, subtitle, onClose, children, maxWid
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-[2px]"
       onMouseDown={onClose}
       role="presentation"
     >
       <div
         ref={panelRef}
-        className={`w-full ${maxWidth} rounded-xl bg-white shadow-xl`}
+        className={`w-full ${maxWidth} rounded-2xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.25)] ring-1 ring-slate-200/50`}
         onMouseDown={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={subtitle ? subtitleId : undefined}
       >
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <div>
-            <h3 id={titleId} className="text-lg font-bold text-slate-900">
+            <h3 id={titleId} className="text-lg font-semibold tracking-tight text-slate-900">
               {translateText(t, title)}
             </h3>
             {subtitle && (
@@ -72,7 +72,7 @@ export default function Modal({ open, title, subtitle, onClose, children, maxWid
             {t('Yopish')}
           </Button>
         </div>
-        <div className="max-h-[60vh] overflow-auto p-4">{children}</div>
+        <div className="max-h-[70vh] overflow-auto p-5">{children}</div>
       </div>
     </div>
   );

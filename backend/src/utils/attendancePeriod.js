@@ -1,20 +1,27 @@
 const { ApiError } = require("./apiError");
+const {
+  localTodayIsoDateTashkent,
+  localDayRangeUtc,
+  addDaysToIsoDate,
+  isIsoDateString,
+  weekdayFromIsoDate,
+} = require("./tashkentTime");
 
 const PERIOD_TYPES = ["KUNLIK", "HAFTALIK", "OYLIK", "CHORAKLIK", "YILLIK"];
 
 function isStrictIsoDateString(value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return false;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) return false;
-  return date.toISOString().slice(0, 10) === value;
+  if (!isIsoDateString(value)) return false;
+  try {
+    // validate existing real calendar date using helper parsing path
+    localDayRangeUtc(String(value));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function localTodayIsoDate() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return localTodayIsoDateTashkent();
 }
 
 function parseSanaOrToday(value) {
@@ -22,31 +29,33 @@ function parseSanaOrToday(value) {
   if (!isStrictIsoDateString(sanaStr)) {
     throw new ApiError(400, "SANA_NOTOGRI", "Sana noto'g'ri formatda yoki mavjud bo'lmagan sana");
   }
+  // Keep "sana" as UTC midnight of the selected ISO date for existing controllers that use date parts.
   const sana = new Date(`${sanaStr}T00:00:00.000Z`);
   return { sanaStr, sana };
 }
 
 function startOfWeekUTC(date) {
-  const day = date.getUTCDay();
+  const iso = date.toISOString().slice(0, 10);
+  const day = weekdayFromIsoDate(iso);
   const diff = day === 0 ? 6 : day - 1;
-  const d = new Date(date);
-  d.setUTCDate(d.getUTCDate() - diff);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
+  const weekStartIso = addDaysToIsoDate(iso, -diff);
+  return localDayRangeUtc(weekStartIso).from;
 }
 
 function startOfMonthUTC(date) {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+  const iso = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`;
+  return localDayRangeUtc(iso).from;
 }
 
 function startOfQuarterUTC(date) {
   const month = date.getUTCMonth();
   const quarterStartMonth = Math.floor(month / 3) * 3;
-  return new Date(Date.UTC(date.getUTCFullYear(), quarterStartMonth, 1));
+  const iso = `${date.getUTCFullYear()}-${String(quarterStartMonth + 1).padStart(2, "0")}-01`;
+  return localDayRangeUtc(iso).from;
 }
 
 function startOfYearUTC(date) {
-  return new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return localDayRangeUtc(`${date.getUTCFullYear()}-01-01`).from;
 }
 
 function addDays(date, days) {
@@ -55,21 +64,24 @@ function addDays(date, days) {
 
 function buildRangeByType(periodType, sana) {
   const type = PERIOD_TYPES.includes(periodType) ? periodType : "OYLIK";
-  let from = sana;
-  let to = addDays(sana, 1);
+  const sanaIso = sana.toISOString().slice(0, 10);
+  let from = localDayRangeUtc(sanaIso).from;
+  let to = localDayRangeUtc(addDaysToIsoDate(sanaIso, 1)).from;
 
   if (type === "HAFTALIK") {
     from = startOfWeekUTC(sana);
-    to = addDays(from, 7);
+    to = new Date(from.getTime() + 7 * 24 * 60 * 60 * 1000);
   } else if (type === "OYLIK") {
     from = startOfMonthUTC(sana);
-    to = new Date(Date.UTC(sana.getUTCFullYear(), sana.getUTCMonth() + 1, 1));
+    to = startOfMonthUTC(new Date(Date.UTC(sana.getUTCFullYear(), sana.getUTCMonth() + 1, 1)));
   } else if (type === "CHORAKLIK") {
     from = startOfQuarterUTC(sana);
-    to = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 3, 1));
+    const tmp = new Date(sana);
+    tmp.setUTCMonth(Math.floor(sana.getUTCMonth() / 3) * 3 + 3, 1);
+    to = startOfQuarterUTC(tmp);
   } else if (type === "YILLIK") {
     from = startOfYearUTC(sana);
-    to = new Date(Date.UTC(sana.getUTCFullYear() + 1, 0, 1));
+    to = startOfYearUTC(new Date(Date.UTC(sana.getUTCFullYear() + 1, 0, 1)));
   }
 
   return { type, from, to };

@@ -2,7 +2,7 @@ import Button from './Button';
 
 export default function Tabs({ items = [], value, onChange }) {
   return (
-    <div className="flex gap-2">
+    <div className="inline-flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1 ring-1 ring-slate-200/50">
       {items.map((item) => (
         <Button
           key={item.value}

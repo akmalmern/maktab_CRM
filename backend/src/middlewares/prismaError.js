@@ -117,10 +117,10 @@ function mapPrismaError(err) {
 
       if (
         (targetLower.includes("tolovqoplama") &&
-          targetLower.includes("studentid") &&
+          (targetLower.includes("studentid") || targetLower.includes("tranzaksiyaid")) &&
           targetLower.includes("yil") &&
           targetLower.includes("oy")) ||
-        (targetStr.includes("studentId") &&
+        ((targetStr.includes("studentId") || targetStr.includes("tranzaksiyaId")) &&
           targetStr.includes("yil") &&
           targetStr.includes("oy"))
       ) {

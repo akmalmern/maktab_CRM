@@ -4,14 +4,6 @@ import { Card } from '../../../../components/ui';
 import { useTranslation } from 'react-i18next';
 
 export default function ClassroomsSection({
-  classrooms,
-  loading,
-  actionLoading,
-  onCreateClassroom,
-  onPreviewPromoteClassroom,
-  onPromoteClassroom,
-  onPreviewAnnualClassPromotion,
-  onRunAnnualClassPromotion,
   onOpenStudentDetail,
   onDeleteStudent,
 }) {
@@ -19,26 +11,18 @@ export default function ClassroomsSection({
 
   return (
     <AutoTranslate>
-      <>
-      <Card>
-        <h3 className="text-lg font-semibold text-slate-900">{t('Sinflar boshqaruvi')}</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          {t("Bu bo'limda yangi sinf qo'shish va mavjud sinflarni boshqarish mumkin.")}
-        </p>
-      </Card>
-      <ClassroomManager
-        classrooms={classrooms}
-        loading={loading}
-        actionLoading={actionLoading}
-        onCreateClassroom={onCreateClassroom}
-        onPreviewPromoteClassroom={onPreviewPromoteClassroom}
-        onPromoteClassroom={onPromoteClassroom}
-        onPreviewAnnualClassPromotion={onPreviewAnnualClassPromotion}
-        onRunAnnualClassPromotion={onRunAnnualClassPromotion}
-        onOpenStudentDetail={onOpenStudentDetail}
-        onDeleteStudent={onDeleteStudent}
-      />
-      </>
+      <div className="space-y-4">
+        <Card>
+          <h3 className="text-lg font-semibold tracking-tight text-slate-900">{t('Sinflar boshqaruvi')}</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            {t("Bu bo'limda yangi sinf qo'shish va mavjud sinflarni boshqarish mumkin.")}
+          </p>
+        </Card>
+        <ClassroomManager
+          onOpenStudentDetail={onOpenStudentDetail}
+          onDeleteStudent={onDeleteStudent}
+        />
+      </div>
     </AutoTranslate>
   );
 }

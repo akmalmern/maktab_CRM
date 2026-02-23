@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 const OPTIONS = [
-  { value: 'uz', label: 'O`zbekcha' },
+  { value: 'uz', label: "O'zbekcha" },
   { value: 'ru', label: 'Русский' },
   { value: 'en', label: 'English' },
 ];

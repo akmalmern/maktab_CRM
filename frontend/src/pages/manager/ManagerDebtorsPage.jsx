@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { Button, Card, Input, Modal, Select, StateView, Textarea } from '../../components/ui';
-import { apiRequest, getErrorMessage } from '../../lib/apiClient';
+import { Badge, Button, Card, FilterToolbar, FilterToolbarItem, Input, Modal, Select, StateView, StatusBadge, Textarea } from '../../components/ui';
+import {
+  useCreateManagerDebtorNoteMutation,
+  useCreateManagerPaymentMutation,
+  useLazyGetManagerClassroomsQuery,
+  useLazyGetManagerDebtorNotesQuery,
+  useLazyGetManagerDebtorsQuery,
+  useLazyGetManagerPaymentStudentDetailQuery,
+} from '../../services/api/managerApi';
 
 const SEARCH_DEBOUNCE_MS = 400;
 const NOTES_PAGE_LIMIT = 10;
@@ -50,14 +57,14 @@ function MonthChips({ items = [] }) {
   return (
     <div className="flex flex-wrap gap-1">
       {visible.map((item) => (
-        <span key={item} className="rounded-full bg-rose-100 px-2 py-1 text-xs font-medium text-rose-700">
+        <Badge key={item} variant="danger" className="px-2 py-1 font-medium shadow-none">
           {item}
-        </span>
+        </Badge>
       ))}
       {hiddenCount > 0 && (
-        <span className="rounded-full bg-slate-200 px-2 py-1 text-xs font-medium text-slate-700">
+        <Badge className="px-2 py-1 font-medium shadow-none">
           +{hiddenCount}
-        </span>
+        </Badge>
       )}
     </div>
   );
@@ -108,6 +115,12 @@ export default function ManagerDebtorsPage() {
     student: null,
     transactions: [],
   });
+  const [fetchManagerClassrooms] = useLazyGetManagerClassroomsQuery();
+  const [fetchManagerDebtors] = useLazyGetManagerDebtorsQuery();
+  const [fetchManagerNotes] = useLazyGetManagerDebtorNotesQuery();
+  const [createManagerNote] = useCreateManagerDebtorNoteMutation();
+  const [fetchManagerPaymentDetail] = useLazyGetManagerPaymentStudentDetailQuery();
+  const [createManagerPayment] = useCreateManagerPaymentMutation();
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -120,34 +133,31 @@ export default function ManagerDebtorsPage() {
     let active = true;
     async function run() {
       try {
-        const data = await apiRequest({ path: '/api/manager/sinflar' });
+        const data = await fetchManagerClassrooms().unwrap();
         if (!active) return;
         setClassrooms(data.classrooms || []);
       } catch (error) {
         if (!active) return;
-        toast.error(getErrorMessage(error));
+        toast.error(error?.message || t("Sinflar olinmadi"));
       }
     }
     run();
     return () => {
       active = false;
     };
-  }, []);
+  }, [fetchManagerClassrooms, t]);
 
   useEffect(() => {
     let active = true;
     async function run() {
       setStudentsState((prev) => ({ ...prev, loading: true, error: '' }));
       try {
-        const data = await apiRequest({
-          path: '/api/manager/qarzdorlar',
-          query: {
-            page: query.page,
-            limit: query.limit,
-            search: debouncedSearch || undefined,
-            classroomId: query.classroomId === 'all' ? undefined : query.classroomId,
-          },
-        });
+        const data = await fetchManagerDebtors({
+          page: query.page,
+          limit: query.limit,
+          search: debouncedSearch || undefined,
+          classroomId: query.classroomId === 'all' ? undefined : query.classroomId,
+        }).unwrap();
         if (!active) return;
         setStudentsState({
           loading: false,
@@ -165,7 +175,7 @@ export default function ManagerDebtorsPage() {
         setStudentsState((prev) => ({
           ...prev,
           loading: false,
-          error: getErrorMessage(error),
+          error: error?.message || t("Qarzdorlar olinmadi"),
         }));
       }
     }
@@ -173,7 +183,7 @@ export default function ManagerDebtorsPage() {
     return () => {
       active = false;
     };
-  }, [query.page, query.limit, query.classroomId, debouncedSearch, refreshTick]);
+  }, [query.page, query.limit, query.classroomId, debouncedSearch, refreshTick, fetchManagerDebtors, t]);
 
   const summaryCards = useMemo(
     () => [
@@ -183,6 +193,9 @@ export default function ManagerDebtorsPage() {
     ],
     [studentsState.summary, studentsState.pages, query.page, locale, t],
   );
+  const fieldLabelClass = 'text-xs font-medium uppercase tracking-wide text-slate-500';
+  const statCardClass =
+    'rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm ring-1 ring-slate-200/50';
 
   async function reloadDebtors() {
     setRefreshTick((prev) => prev + 1);
@@ -191,10 +204,7 @@ export default function ManagerDebtorsPage() {
   async function loadNotes(studentId, page = 1) {
     setNotesState((prev) => ({ ...prev, loading: true, error: '' }));
     try {
-      const data = await apiRequest({
-        path: `/api/manager/qarzdorlar/${studentId}/izohlar`,
-        query: { page, limit: NOTES_PAGE_LIMIT },
-      });
+      const data = await fetchManagerNotes({ studentId, page, limit: NOTES_PAGE_LIMIT }).unwrap();
       setNotesState({
         loading: false,
         error: '',
@@ -207,7 +217,7 @@ export default function ManagerDebtorsPage() {
       setNotesState((prev) => ({
         ...prev,
         loading: false,
-        error: getErrorMessage(error),
+        error: error?.message || t("Izohlar olinmadi"),
       }));
     }
   }
@@ -244,19 +254,18 @@ export default function ManagerDebtorsPage() {
 
     setSavingNote(true);
     try {
-      await apiRequest({
-        path: `/api/manager/qarzdorlar/${selectedStudent.id}/izohlar`,
-        method: 'POST',
-        body: {
+      await createManagerNote({
+        studentId: selectedStudent.id,
+        payload: {
           izoh,
           promisedPayDate: noteForm.promisedPayDate || undefined,
         },
-      });
+      }).unwrap();
       toast.success(t('Izoh saqlandi'));
       setNoteForm({ izoh: '', promisedPayDate: '' });
       await Promise.all([loadNotes(selectedStudent.id, 1), reloadDebtors()]);
     } catch (error) {
-      toast.error(getErrorMessage(error));
+      toast.error(error?.message || t("Izoh saqlanmadi"));
     } finally {
       setSavingNote(false);
     }
@@ -269,9 +278,7 @@ export default function ManagerDebtorsPage() {
   async function loadPaymentDetail(studentId) {
     setPaymentState((prev) => ({ ...prev, loading: true, error: '' }));
     try {
-      const data = await apiRequest({
-        path: `/api/manager/tolov/students/${studentId}`,
-      });
+      const data = await fetchManagerPaymentDetail(studentId).unwrap();
       setPaymentState({
         loading: false,
         error: '',
@@ -281,7 +288,7 @@ export default function ManagerDebtorsPage() {
     } catch (error) {
       setPaymentState({
         loading: false,
-        error: getErrorMessage(error),
+        error: error?.message || t("To'lov ma'lumotlari olinmadi"),
         student: null,
         transactions: [],
       });
@@ -315,74 +322,92 @@ export default function ManagerDebtorsPage() {
 
     setQuickPayLoadingId(row.id + mode);
     try {
-      await apiRequest({
-        path: `/api/manager/tolov/students/${row.id}`,
-        method: 'POST',
-        body: {
+      await createManagerPayment({
+        studentId: row.id,
+        payload: {
           turi: 'OYLIK',
           startMonth: firstDebtMonth(row),
           oylarSoni,
         },
-      });
+      }).unwrap();
       toast.success(mode === 'ALL' ? t("Qarz to'liq yopildi") : t("1 oy to'landi"));
       await reloadDebtors();
       if (paymentModalOpen && paymentStudent?.id === row.id) {
         await loadPaymentDetail(row.id);
       }
     } catch (error) {
-      toast.error(getErrorMessage(error));
+      toast.error(error?.message || t("To'lov saqlanmadi"));
     } finally {
       setQuickPayLoadingId('');
     }
   }
 
   return (
-      <div className="space-y-4">
+    <div className="space-y-4">
       <Card
         title={t("Qarzdorlar ro'yxati")}
         subtitle={t("Menejer faqat qarzdor o'quvchilar bilan ishlaydi va ota-ona bilan aloqa izohini yozadi.")}
       >
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           {summaryCards.map((card) => (
-            <div key={card.label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <p className="text-xs text-slate-500">{card.label}</p>
-              <p className="text-lg font-semibold text-slate-900">{card.value}</p>
+            <div key={card.label} className={statCardClass}>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{card.label}</p>
+              <p className="mt-2 text-xl font-semibold tracking-tight text-slate-900">{card.value}</p>
             </div>
           ))}
         </div>
 
-        <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-4">
-          <Input
-            type="text"
-            value={query.search}
-            onChange={(e) => setQuery((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
-            placeholder={t('Ism, username yoki ota-ona telefoni...')}
-          />
-          <Select
-            value={query.classroomId}
-            onChange={(e) => setQuery((prev) => ({ ...prev, classroomId: e.target.value, page: 1 }))}
-          >
-            <option value="all">{t('Barcha sinflar')}</option>
-            {classrooms.map((classroom) => (
-              <option key={classroom.id} value={classroom.id}>
-                {classroom.name} ({classroom.academicYear})
-              </option>
-            ))}
-          </Select>
-          <Select
-            value={String(query.limit)}
-            onChange={(e) => setQuery((prev) => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-          >
-            {[10, 20, 50].map((size) => (
-              <option key={size} value={size}>
-                {t('{{count}} ta / sahifa', { count: size })}
-              </option>
-            ))}
-          </Select>
-          <Button variant="secondary" onClick={reloadDebtors}>
-            {t('Yangilash')}
-          </Button>
-        </div>
+        <FilterToolbar
+          className="mt-4 mb-0"
+          gridClassName="grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4"
+          onReset={() => setQuery((prev) => ({ ...prev, search: '', classroomId: 'all', page: 1, limit: 20 }))}
+          resetLabel={t('Filterlarni tozalash')}
+          resetDisabled={query.search === '' && query.classroomId === 'all' && Number(query.limit) === 20}
+          actions={(
+            <Button variant="secondary" size="sm" onClick={reloadDebtors}>
+              {t('Yangilash')}
+            </Button>
+          )}
+        >
+          <FilterToolbarItem label={t('Qidiruv')}>
+            <Input
+              type="text"
+              value={query.search}
+              onChange={(e) => setQuery((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
+              placeholder={t('Ism, username yoki ota-ona telefoni...')}
+            />
+          </FilterToolbarItem>
+          <FilterToolbarItem label={t('Sinf filtri')}>
+            <Select
+              value={query.classroomId}
+              onChange={(e) => setQuery((prev) => ({ ...prev, classroomId: e.target.value, page: 1 }))}
+            >
+              <option value="all">{t('Barcha sinflar')}</option>
+              {classrooms.map((classroom) => (
+                <option key={classroom.id} value={classroom.id}>
+                  {classroom.name} ({classroom.academicYear})
+                </option>
+              ))}
+            </Select>
+          </FilterToolbarItem>
+          <FilterToolbarItem label={t('Sahifa limiti')}>
+            <Select
+              value={String(query.limit)}
+              onChange={(e) => setQuery((prev) => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+            >
+              {[10, 20, 50].map((size) => (
+                <option key={size} value={size}>
+                  {t('{{count}} ta / sahifa', { count: size })}
+                </option>
+              ))}
+            </Select>
+          </FilterToolbarItem>
+          <FilterToolbarItem label={t("Ko'rinish")}>
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-600">
+              {t("Qarzdorlar ro'yxati")}
+            </div>
+          </FilterToolbarItem>
+        </FilterToolbar>
 
         <div className="mt-3">
           {studentsState.loading && <StateView type="loading" />}
@@ -394,9 +419,18 @@ export default function ManagerDebtorsPage() {
           )}
 
           {!studentsState.loading && !studentsState.error && studentsState.items.length > 0 && (
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="w-full min-w-[980px] text-sm">
-                <thead className="bg-slate-50 text-left text-slate-600">
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                  {t('Jami')}: {studentsState.total || 0}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                  {t('Sahifa')}: {query.page} / {studentsState.pages || 1}
+                </span>
+              </div>
+              <div className="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white shadow-sm ring-1 ring-slate-200/50">
+                <table className="w-full min-w-[980px] text-sm">
+                  <thead className="bg-slate-100/80 text-left text-slate-600">
                   <tr>
                     <th className="px-3 py-2">{t("O'quvchi")}</th>
                     <th className="px-3 py-2">{t('Sinf')}</th>
@@ -407,9 +441,9 @@ export default function ManagerDebtorsPage() {
                     <th className="px-3 py-2">{t('Amallar')}</th>
                   </tr>
                 </thead>
-                <tbody>
+                  <tbody>
                   {studentsState.items.map((row) => (
-                    <tr key={row.id} className="border-t border-slate-100 align-top">
+                    <tr key={row.id} className="border-t border-slate-100 align-top hover:bg-slate-50/50">
                       <td className="px-3 py-2">
                         <p className="font-semibold text-slate-900">{row.fullName}</p>
                         <p className="text-xs text-slate-500">@{row.username}</p>
@@ -428,7 +462,11 @@ export default function ManagerDebtorsPage() {
                         )}
                       </td>
                       <td className="px-3 py-2">
-                        <p className="mb-1 font-semibold text-rose-700">{row.qarzOylarSoni} {t('ta')}</p>
+                        <p className="mb-1">
+                          <Badge variant="danger" className="shadow-none">
+                            {row.qarzOylarSoni} {t('ta')}
+                          </Badge>
+                        </p>
                         <MonthChips items={row.qarzOylarFormatted || []} />
                       </td>
                       <td className="px-3 py-2 font-semibold text-rose-700">
@@ -447,7 +485,7 @@ export default function ManagerDebtorsPage() {
                         )}
                       </td>
                       <td className="px-3 py-2">
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-wrap gap-1.5">
                           <Button
                             size="sm"
                             variant="success"
@@ -474,13 +512,14 @@ export default function ManagerDebtorsPage() {
                       </td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
 
-        <div className="mt-3 flex justify-end gap-2">
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
           <Button
             size="sm"
             variant="secondary"
@@ -510,7 +549,7 @@ export default function ManagerDebtorsPage() {
           <StateView type="empty" description={t("O'quvchi tanlanmagan.")} />
         ) : (
           <div className="space-y-4">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4 text-sm shadow-sm ring-1 ring-slate-200/50">
               <p className="font-semibold text-slate-900">{selectedStudent.fullName}</p>
               <p className="mt-1 text-slate-600">{t('Sinf')}: {selectedStudent.classroom}</p>
               <p className="text-slate-600">
@@ -532,7 +571,10 @@ export default function ManagerDebtorsPage() {
               </p>
             </div>
 
-            <form onSubmit={handleSaveNote} className="space-y-2 rounded-lg border border-slate-200 p-3">
+            <form
+              onSubmit={handleSaveNote}
+              className="space-y-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm ring-1 ring-slate-200/50"
+            >
               <p className="text-sm font-semibold text-slate-900">{t("Yangi izoh qo'shish")}</p>
               <Textarea
                 rows={3}
@@ -541,15 +583,20 @@ export default function ManagerDebtorsPage() {
                 placeholder={t("Masalan: Ota-onasi bilan gaplashildi, keyingi haftada to'lov qilishini aytdi.")}
                 required
               />
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                <Input
-                  type="date"
-                  value={noteForm.promisedPayDate}
-                  onChange={(e) => setNoteForm((prev) => ({ ...prev, promisedPayDate: e.target.value }))}
-                />
-                <Button type="submit" variant="success" disabled={savingNote}>
-                  {savingNote ? t('Saqlanmoqda...') : t("Izohni saqlash")}
-                </Button>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <p className={fieldLabelClass}>{t("Va'da qilingan sana")}</p>
+                  <Input
+                    type="date"
+                    value={noteForm.promisedPayDate}
+                    onChange={(e) => setNoteForm((prev) => ({ ...prev, promisedPayDate: e.target.value }))}
+                  />
+                </div>
+                <div className="flex items-end">
+                  <Button type="submit" variant="success" className="w-full" disabled={savingNote}>
+                    {savingNote ? t('Saqlanmoqda...') : t("Izohni saqlash")}
+                  </Button>
+                </div>
               </div>
             </form>
 
@@ -575,7 +622,7 @@ export default function ManagerDebtorsPage() {
                   ))}
                 </div>
               )}
-              <div className="mt-3 flex justify-end gap-2">
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
                 <Button
                   size="sm"
                   variant="secondary"
@@ -608,7 +655,7 @@ export default function ManagerDebtorsPage() {
           <StateView type="empty" description={t("O'quvchi tanlanmagan.")} />
         ) : (
           <div className="space-y-4">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4 text-sm shadow-sm ring-1 ring-slate-200/50">
               <p className="font-semibold text-slate-900">{paymentStudent.fullName}</p>
               <p className="mt-1 text-slate-600">{t('Sinf')}: {paymentStudent.classroom}</p>
               <p className="text-slate-600">
@@ -616,7 +663,7 @@ export default function ManagerDebtorsPage() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <Button
                 variant="success"
                 onClick={() => handleQuickPay(paymentStudent, 'ONE')}
@@ -642,9 +689,9 @@ export default function ManagerDebtorsPage() {
                 <StateView type="empty" description={t("To'lov tarixi yo'q.")} />
               )}
               {!paymentState.loading && !paymentState.error && paymentState.transactions.length > 0 && (
-                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                <div className="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white shadow-sm ring-1 ring-slate-200/50">
                   <table className="w-full min-w-[760px] text-sm">
-                    <thead className="bg-slate-50 text-left text-slate-600">
+                    <thead className="bg-slate-100/80 text-left text-slate-600">
                       <tr>
                         <th className="px-3 py-2">{t('Sana')}</th>
                         <th className="px-3 py-2">{t('Turi')}</th>
@@ -659,15 +706,7 @@ export default function ManagerDebtorsPage() {
                           <td className="px-3 py-2">{formatDateTime(tx.tolovSana, locale)}</td>
                           <td className="px-3 py-2">{t(tx.turi, { defaultValue: tx.turi })}</td>
                           <td className="px-3 py-2">
-                            {tx.holat === 'BEKOR_QILINGAN' ? (
-                              <span className="rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700">
-                                {t('Bekor qilingan')}
-                              </span>
-                            ) : (
-                              <span className="rounded bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
-                                {t('Aktiv')}
-                              </span>
-                            )}
+                            <StatusBadge domain="financeTransaction" value={tx.holat} className="shadow-none" />
                           </td>
                           <td className="px-3 py-2 font-semibold text-slate-900">{formatMoney(tx.summa, locale, t)}</td>
                           <td className="px-3 py-2">

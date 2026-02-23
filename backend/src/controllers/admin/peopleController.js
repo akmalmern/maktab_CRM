@@ -9,8 +9,8 @@ const {
   parseIntSafe,
   buildSearchWhere,
 } = require("./helpers");
-const {
-  buildPaidMonthMap,
+  const {
+  buildPaidMonthAmountMap,
   buildImtiyozMonthMap,
   buildDebtInfo,
 } = require("../../services/financeDebtService");
@@ -299,10 +299,10 @@ async function getStudents(req, res) {
   const today = new Date();
   const studentIds = items.map((row) => row.id);
   const qoplamalar = studentIds.length
-    ? await prisma.tolovQoplama.findMany({
-        where: { studentId: { in: studentIds } },
-        select: { studentId: true, yil: true, oy: true },
-      })
+      ? await prisma.tolovQoplama.findMany({
+          where: { studentId: { in: studentIds } },
+          select: { studentId: true, yil: true, oy: true, summa: true },
+        })
     : [];
   const imtiyozlar = studentIds.length
     ? await prisma.tolovImtiyozi.findMany({
@@ -311,7 +311,8 @@ async function getStudents(req, res) {
           studentId: true,
           turi: true,
           qiymat: true,
-          boshlanishOy: true,
+          boshlanishYil: true,
+          boshlanishOyRaqam: true,
           oylarSoni: true,
           isActive: true,
           bekorQilinganAt: true,
@@ -320,7 +321,7 @@ async function getStudents(req, res) {
       })
     : [];
 
-  const paidMap = buildPaidMonthMap(qoplamalar);
+  const paidMap = buildPaidMonthAmountMap(qoplamalar);
   const imtiyozGrouped = new Map();
   for (const row of imtiyozlar) {
     if (!imtiyozGrouped.has(row.studentId))
@@ -330,14 +331,14 @@ async function getStudents(req, res) {
 
   for (const item of items) {
     const startDate = item.enrollments?.[0]?.startDate || item.createdAt;
-    const paidSet = paidMap.get(item.id) || new Set();
+    const paidMonthAmounts = paidMap.get(item.id) || new Map();
     const imtiyozMonthMap = buildImtiyozMonthMap({
       imtiyozlar: imtiyozGrouped.get(item.id) || [],
       oylikSumma,
     });
     const debtInfo = buildDebtInfo({
       startDate,
-      paidMonthSet: paidSet,
+      paidMonthSet: paidMonthAmounts,
       oylikSumma,
       imtiyozMonthMap,
       now: today,

@@ -1,5 +1,6 @@
 const prisma = require("../../prisma");
 const { ApiError } = require("../../utils/apiError");
+const { getAdminScheduleList } = require("../../services/schedule/scheduleService");
 
 /**
  * Vaqt oraliqlarini olish (masalan 08:30-09:15).
@@ -74,30 +75,10 @@ async function deleteVaqtOraliq(req, res) {
  * Dars jadvalini olish (filter bilan).
  */
 async function getDarsJadvali(req, res) {
-  const { sinfId, oqituvchiId, oquvYili } = req.query;
-
-  const where = {};
-  if (sinfId) where.sinfId = sinfId;
-  if (oqituvchiId) where.oqituvchiId = oqituvchiId;
-  if (oquvYili) where.oquvYili = oquvYili;
-
-  const darslar = await prisma.darsJadvali.findMany({
-    where,
-    include: {
-      sinf: { select: { id: true, name: true, academicYear: true } },
-      oqituvchi: { select: { id: true, firstName: true, lastName: true } },
-      fan: { select: { id: true, name: true } },
-      vaqtOraliq: {
-        select: {
-          id: true,
-          nomi: true,
-          boshlanishVaqti: true,
-          tugashVaqti: true,
-          tartib: true,
-        },
-      },
-    },
-    orderBy: [{ haftaKuni: "asc" }, { vaqtOraliq: { tartib: "asc" } }],
+  const { darslar } = await getAdminScheduleList({
+    sinfId: req.query.sinfId,
+    oqituvchiId: req.query.oqituvchiId,
+    oquvYili: req.query.oquvYili,
   });
 
   res.json({ ok: true, darslar });

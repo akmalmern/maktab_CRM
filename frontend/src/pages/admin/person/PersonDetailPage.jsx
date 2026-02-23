@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
-import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import {
   Button,
   Card,
@@ -13,16 +12,17 @@ import {
   StateView,
   Tabs,
 } from '../../../components/ui';
+import { saveDownloadedFile } from '../../../lib/downloadUtils';
 import {
-  deleteAvatarThunk,
-  deleteDocumentThunk,
-  downloadDocumentThunk,
-  fetchPersonDetailThunk,
-  resetPersonPasswordThunk,
-  updateDocumentThunk,
-  uploadAvatarThunk,
-  uploadDocumentThunk,
-} from '../../../features/admin/shared';
+  useDeleteAdminAvatarMutation,
+  useDeleteAdminDocumentMutation,
+  useDownloadAdminDocumentMutation,
+  useGetAdminPersonDetailQuery,
+  useResetAdminPersonPasswordMutation,
+  useUpdateAdminDocumentMutation,
+  useUploadAdminAvatarMutation,
+  useUploadAdminDocumentMutation,
+} from '../../../services/api/personApi';
 
 const DOC_KINDS = ['PASSPORT', 'CONTRACT', 'CERTIFICATE', 'DIPLOMA', 'MEDICAL', 'OTHER'];
 
@@ -61,8 +61,6 @@ export default function PersonDetailPage() {
   const type = teacherId ? 'teacher' : 'student';
   const id = teacherId || studentId;
 
-  const dispatch = useAppDispatch();
-  const { detail, actionLoading } = useAppSelector((state) => state.admin);
   const confirmResolverRef = useRef(null);
 
   const [docForm, setDocForm] = useState({ kind: 'OTHER', title: '', file: null });
@@ -76,19 +74,30 @@ export default function PersonDetailPage() {
     message: '',
   });
 
+  const personQuery = useGetAdminPersonDetailQuery({ type, id }, { skip: !id });
+  const [uploadDocument, uploadDocumentState] = useUploadAdminDocumentMutation();
+  const [updateDocument, updateDocumentState] = useUpdateAdminDocumentMutation();
+  const [deleteDocument, deleteDocumentState] = useDeleteAdminDocumentMutation();
+  const [downloadDocument] = useDownloadAdminDocumentMutation();
+  const [uploadAvatar, uploadAvatarState] = useUploadAdminAvatarMutation();
+  const [deleteAvatar, deleteAvatarState] = useDeleteAdminAvatarMutation();
+  const [resetPersonPassword, resetPersonPasswordState] = useResetAdminPersonPasswordMutation();
+
+  const actionLoading =
+    uploadDocumentState.isLoading ||
+    updateDocumentState.isLoading ||
+    deleteDocumentState.isLoading ||
+    uploadAvatarState.isLoading ||
+    deleteAvatarState.isLoading ||
+    resetPersonPasswordState.isLoading;
+
   async function loadDetail() {
-    const result = await dispatch(fetchPersonDetailThunk({ type, id }));
-    if (fetchPersonDetailThunk.rejected.match(result)) {
-      toast.error(
-        result.payload || t('Batafsil ma`lumot olinmadi', { defaultValue: 'Batafsil ma`lumot olinmadi' }),
-      );
+    try {
+      await personQuery.refetch();
+    } catch (error) {
+      toast.error(error?.message || t('Batafsil ma`lumot olinmadi', { defaultValue: 'Batafsil ma`lumot olinmadi' }));
     }
   }
-
-  useEffect(() => {
-    loadDetail();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, id]);
 
   useEffect(
     () => () => {
@@ -100,6 +109,11 @@ export default function PersonDetailPage() {
     [],
   );
 
+  const detail = {
+    loading: personQuery.isLoading || personQuery.isFetching,
+    error: personQuery.error?.message || null,
+    data: personQuery.data?.data || null,
+  };
   const person = detail.data;
   const avatarUrl = person?.avatarPath ? resolveAssetUrl(person.avatarPath) : '';
 
@@ -131,22 +145,19 @@ export default function PersonDetailPage() {
       return;
     }
 
-    const result = await dispatch(
-      uploadDocumentThunk({
+    try {
+      await uploadDocument({
         ownerType: type,
         ownerId: id,
         file: docForm.file,
         kind: docForm.kind,
         title: docForm.title,
-      }),
-    );
-
-    if (uploadDocumentThunk.fulfilled.match(result)) {
+      }).unwrap();
       toast.success(t('Hujjat yuklandi', { defaultValue: 'Hujjat yuklandi' }));
       setDocForm({ kind: 'OTHER', title: '', file: null });
       await loadDetail();
-    } else {
-      toast.error(result.payload || t('Yuklashda xatolik', { defaultValue: 'Yuklashda xatolik' }));
+    } catch (error) {
+      toast.error(error?.message || t('Yuklashda xatolik', { defaultValue: 'Yuklashda xatolik' }));
     }
   }
 
@@ -157,34 +168,32 @@ export default function PersonDetailPage() {
     );
     if (!ok) return;
 
-    const result = await dispatch(deleteDocumentThunk(docId));
-    if (deleteDocumentThunk.fulfilled.match(result)) {
+    try {
+      await deleteDocument(docId).unwrap();
       toast.success(t('Hujjat o`chirildi', { defaultValue: 'Hujjat o`chirildi' }));
       await loadDetail();
-    } else {
-      toast.error(result.payload || t('Hujjat o`chirilmadi', { defaultValue: 'Hujjat o`chirilmadi' }));
+    } catch (error) {
+      toast.error(error?.message || t('Hujjat o`chirilmadi', { defaultValue: 'Hujjat o`chirilmadi' }));
     }
   }
 
   async function handleSaveDocument() {
-    const result = await dispatch(
-      updateDocumentThunk({ id: editDocId, kind: editForm.kind, title: editForm.title }),
-    );
-
-    if (updateDocumentThunk.fulfilled.match(result)) {
+    try {
+      await updateDocument({ id: editDocId, kind: editForm.kind, title: editForm.title }).unwrap();
       toast.success(t('Hujjat yangilandi', { defaultValue: 'Hujjat yangilandi' }));
       setEditDocId(null);
       await loadDetail();
-    } else {
-      toast.error(result.payload || t('Hujjat yangilanmadi', { defaultValue: 'Hujjat yangilanmadi' }));
+    } catch (error) {
+      toast.error(error?.message || t('Hujjat yangilanmadi', { defaultValue: 'Hujjat yangilanmadi' }));
     }
   }
 
   async function handleDownload(doc) {
-    const result = await dispatch(downloadDocumentThunk({ id: doc.id, fileName: doc.fileName }));
-
-    if (downloadDocumentThunk.rejected.match(result)) {
-      toast.error(result.payload || t('Yuklab bo`lmadi', { defaultValue: 'Yuklab bo`lmadi' }));
+    try {
+      const { blob, fileName } = await downloadDocument({ id: doc.id }).unwrap();
+      saveDownloadedFile({ blob, fileName, fallbackName: doc.fileName || 'document' });
+    } catch (error) {
+      toast.error(error?.message || t('Yuklab bo`lmadi', { defaultValue: 'Yuklab bo`lmadi' }));
     }
   }
 
@@ -194,19 +203,16 @@ export default function PersonDetailPage() {
       return;
     }
 
-    const result = await dispatch(
-      uploadAvatarThunk({
+    try {
+      const payload = await uploadAvatar({
         userId: person.user.id,
         file: avatarFile,
-      }),
-    );
-
-    if (uploadAvatarThunk.fulfilled.match(result)) {
-      toast.success(result.payload?.message || t('Avatar yangilandi', { defaultValue: 'Avatar yangilandi' }));
+      }).unwrap();
+      toast.success(payload?.message || t('Avatar yangilandi', { defaultValue: 'Avatar yangilandi' }));
       setAvatarFile(null);
       await loadDetail();
-    } else {
-      toast.error(result.payload || t('Avatar yuklanmadi', { defaultValue: 'Avatar yuklanmadi' }));
+    } catch (error) {
+      toast.error(error?.message || t('Avatar yuklanmadi', { defaultValue: 'Avatar yuklanmadi' }));
     }
   }
 
@@ -219,12 +225,12 @@ export default function PersonDetailPage() {
     );
     if (!ok) return;
 
-    const result = await dispatch(deleteAvatarThunk({ userId: person.user.id }));
-    if (deleteAvatarThunk.fulfilled.match(result)) {
-      toast.success(result.payload?.message || t('Avatar o`chirildi', { defaultValue: 'Avatar o`chirildi' }));
+    try {
+      const payload = await deleteAvatar({ userId: person.user.id }).unwrap();
+      toast.success(payload?.message || t('Avatar o`chirildi', { defaultValue: 'Avatar o`chirildi' }));
       await loadDetail();
-    } else {
-      toast.error(result.payload || t('Avatar o`chirilmadi', { defaultValue: 'Avatar o`chirilmadi' }));
+    } catch (error) {
+      toast.error(error?.message || t('Avatar o`chirilmadi', { defaultValue: 'Avatar o`chirilmadi' }));
     }
   }
 
@@ -253,13 +259,13 @@ export default function PersonDetailPage() {
     );
     if (!ok) return;
 
-    const result = await dispatch(resetPersonPasswordThunk({ type, id, newPassword }));
-    if (resetPersonPasswordThunk.fulfilled.match(result)) {
-      toast.success(result.payload?.message || t('Parol yangilandi', { defaultValue: 'Parol yangilandi' }));
+    try {
+      const payload = await resetPersonPassword({ type, id, newPassword }).unwrap();
+      toast.success(payload?.message || t('Parol yangilandi', { defaultValue: 'Parol yangilandi' }));
       return;
+    } catch (error) {
+      toast.error(error?.message || t('Parol yangilanmadi', { defaultValue: 'Parol yangilanmadi' }));
     }
-
-    toast.error(result.payload || t('Parol yangilanmadi', { defaultValue: 'Parol yangilanmadi' }));
   }
 
   if (detail.loading) return <StateView type="skeleton" />;
@@ -414,6 +420,7 @@ export default function PersonDetailPage() {
             <DataTable
               rows={person.documents || []}
               emptyText={t('Hujjatlar mavjud emas', { defaultValue: 'Hujjatlar mavjud emas' })}
+              stickyFirstColumn
               columns={[
                 {
                   key: 'title',

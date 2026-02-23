@@ -60,3 +60,13 @@ test("createClassroomSchema normalizes valid name and academicYear", () => {
   assert.equal(parsed.data.name, "7-A");
   assert.equal(parsed.data.academicYear, "2025-2026");
 });
+
+test("createClassroomSchema accepts long suffix and preserves it", () => {
+  const parsed = createClassroomSchema.safeParse({
+    name: " 10 - FizMat ",
+    academicYear: "2025-2026",
+  });
+
+  assert.equal(parsed.success, true);
+  assert.equal(parsed.data.name, "10-FizMat");
+});

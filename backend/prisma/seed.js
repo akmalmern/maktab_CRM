@@ -869,11 +869,21 @@ async function seedFinanceData() {
 
       await prisma.tolovImtiyozi.create({
         data: {
+          ...(function parseStartMonthParts(monthKey) {
+            const [y, m] = String(monthKey || "").split("-");
+            const yil = Number.parseInt(y, 10);
+            const oy = Number.parseInt(m, 10);
+            return {
+              boshlanishYil:
+                Number.isFinite(yil) && Number.isFinite(oy) ? yil : null,
+              boshlanishOyRaqam:
+                Number.isFinite(yil) && Number.isFinite(oy) ? oy : null,
+            };
+          })(recentMonths[recentMonths.length - 1].key),
           studentId,
           adminUserId: adminUser.id,
           turi,
           qiymat,
-          boshlanishOy: recentMonths[recentMonths.length - 1].key,
           oylarSoni: 1,
           oylarSnapshot: [],
           sabab,

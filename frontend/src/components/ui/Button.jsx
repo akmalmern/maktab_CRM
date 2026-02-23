@@ -4,11 +4,16 @@ import { translateNode } from '../../lib/i18nHelpers';
 import { cn } from './utils';
 
 const variantClasses = {
-  primary: 'bg-slate-900 text-white hover:bg-slate-800',
-  secondary: 'border border-slate-300 bg-white text-slate-900 hover:bg-slate-100',
-  success: 'bg-emerald-600 text-white hover:bg-emerald-700',
-  danger: 'bg-rose-600 text-white hover:bg-rose-700',
-  indigo: 'bg-indigo-600 text-white hover:bg-indigo-700',
+  primary:
+    'border border-indigo-700 bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 hover:border-indigo-800',
+  secondary:
+    'border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900 hover:border-slate-400',
+  success:
+    'border border-emerald-700 bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 hover:border-emerald-800',
+  danger:
+    'border border-rose-700 bg-rose-600 text-white shadow-sm hover:bg-rose-700 hover:border-rose-800',
+  indigo:
+    'border border-indigo-700 bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 hover:border-indigo-800',
 };
 
 const sizeClasses = {

@@ -34,11 +34,20 @@ function resolvePaymentAmount({ expectedSumma, requestedSumma }) {
   const hasRequestedSumma = Number.isFinite(requestedSumma);
   const finalSumma = hasRequestedSumma ? Number(requestedSumma) : expectedSumma;
 
-  if (finalSumma !== expectedSumma) {
+  if (finalSumma <= 0) {
     throw new ApiError(
       400,
-      "PAYMENT_AMOUNT_MISMATCH",
-      `Tanlangan oylar uchun to'lov summasi ${expectedSumma} bo'lishi kerak`,
+      "PAYMENT_AMOUNT_INVALID",
+      "To'lov summasi 0 dan katta bo'lishi kerak",
+      { requestedSumma: finalSumma },
+    );
+  }
+
+  if (finalSumma > expectedSumma) {
+    throw new ApiError(
+      400,
+      "PAYMENT_AMOUNT_EXCEEDS_REMAINING",
+      `Tanlangan oylar uchun qolgan summa ${expectedSumma} dan oshmasligi kerak`,
       {
         expectedSumma,
         requestedSumma: finalSumma,

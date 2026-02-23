@@ -1,7 +1,7 @@
 const prisma = require("../../prisma");
 const { ApiError } = require("../../utils/apiError");
 const {
-  buildPaidMonthMap,
+  buildPaidMonthAmountMap,
   buildImtiyozMonthMap,
   buildDueMonths,
   formatMonthByParts,
@@ -39,6 +39,7 @@ function buildDebtInfoByEnrollments({
   imtiyozMonthMap,
   now = new Date(),
 }) {
+  const paidMonthAmountMap = paidMonthSet instanceof Map ? paidMonthSet : null;
   const periods = [];
   for (const enrollment of enrollments || []) {
     if (!enrollment?.startDate) continue;
@@ -79,16 +80,35 @@ function buildDebtInfoByEnrollments({
   const dueMonths = [...uniqueDueMap.values()].sort((a, b) => {
     return toMonthSerial(a.yil, a.oy) - toMonthSerial(b.yil, b.oy);
   });
-  const dueMonthsWithAmount = dueMonths.map((m) => ({
-    ...m,
-    label: formatMonthByParts(m.yil, m.oy),
-    oySumma: imtiyozMonthMap.has(m.key)
-      ? Number(imtiyozMonthMap.get(m.key) || 0)
-      : Number(oylikSumma || 0),
-    isPaid: paidMonthSet.has(m.key),
-  }));
+  const dueMonthsWithAmount = dueMonths
+    .map((m) => ({
+      ...m,
+      label: formatMonthByParts(m.yil, m.oy),
+      oySumma: imtiyozMonthMap.has(m.key)
+        ? Number(imtiyozMonthMap.get(m.key) || 0)
+        : Number(oylikSumma || 0),
+    }))
+    .map((m) => {
+      const paidAmount = paidMonthAmountMap
+        ? Number(paidMonthAmountMap.get(m.key) || 0)
+        : paidMonthSet?.has?.(m.key)
+          ? Number(m.oySumma || 0)
+          : 0;
+      const tolanganSumma = Math.max(
+        0,
+        Math.min(Number(m.oySumma || 0), Number(paidAmount || 0)),
+      );
+      const qoldiqSumma = Math.max(0, Number(m.oySumma || 0) - tolanganSumma);
+      return {
+        ...m,
+        tolanganSumma,
+        qoldiqSumma,
+        isPaid: qoldiqSumma <= 0,
+        isPartial: qoldiqSumma > 0 && tolanganSumma > 0,
+      };
+    });
   const qarzOylar = dueMonthsWithAmount.filter(
-    (m) => !m.isPaid && m.oySumma > 0,
+    (m) => m.qoldiqSumma > 0,
   );
 
   return {
@@ -98,7 +118,7 @@ function buildDebtInfoByEnrollments({
     qarzOylar,
     qarzOylarSoni: qarzOylar.length,
     jamiQarzSumma: qarzOylar.reduce(
-      (sum, row) => sum + Number(row.oySumma || 0),
+      (sum, row) => sum + Number(row.qoldiqSumma || 0),
       0,
     ),
     holat: qarzOylar.length ? "QARZDOR" : "TOLAGAN",
@@ -140,14 +160,15 @@ async function getMyProfile(req, res) {
   ] = await Promise.all([
     prisma.tolovQoplama.findMany({
       where: { studentId: student.id },
-      select: { studentId: true, yil: true, oy: true },
+      select: { studentId: true, yil: true, oy: true, summa: true },
     }),
     prisma.tolovImtiyozi.findMany({
       where: { studentId: student.id },
       select: {
         turi: true,
         qiymat: true,
-        boshlanishOy: true,
+        boshlanishYil: true,
+        boshlanishOyRaqam: true,
         oylarSoni: true,
         isActive: true,
         bekorQilinganAt: true,
@@ -194,12 +215,13 @@ async function getMyProfile(req, res) {
         summa: true,
         tolovSana: true,
         qoplamalar: {
-          select: { yil: true, oy: true },
+          select: { yil: true, oy: true, summa: true },
         },
       },
     }),
   ]);
-  const paidSet = buildPaidMonthMap(qoplamalar).get(student.id) || new Set();
+  const paidSet =
+    buildPaidMonthAmountMap(qoplamalar).get(student.id) || new Map();
   const imtiyozMonthMap = buildImtiyozMonthMap({
     imtiyozlar,
     oylikSumma: settings?.oylikSumma || DEFAULT_OYLIK_SUMMA,
@@ -267,6 +289,12 @@ async function getMyProfile(req, res) {
           qoplanganOylarSoni: Array.isArray(row.qoplamalar)
             ? row.qoplamalar.length
             : 0,
+          qoplamaSummalari: Array.isArray(row.qoplamalar)
+            ? row.qoplamalar.map((q) => ({
+                key: `${q.yil}-${String(q.oy).padStart(2, "0")}`,
+                summa: Number(q.summa || 0),
+              }))
+            : [],
         })),
       },
     },

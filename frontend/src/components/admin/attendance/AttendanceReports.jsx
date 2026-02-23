@@ -74,7 +74,7 @@ export default function AttendanceReports({
   }
 
   return (
-      <div className="space-y-4">
+    <div className="space-y-4">
       <Card title={t("Davomat bo'limi")}>
         <div className="flex flex-wrap gap-2">
           {activeView === 'report' ? (
@@ -142,37 +142,49 @@ export default function AttendanceReports({
       {!loading && !error && (
         <>
           {activeView === 'report' && (
-            <>
-          <section className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-6">
-            {percentCards.map((item) => (
-              <div
-                key={item.label}
-                className="rounded-xl bg-gradient-to-br from-slate-900 to-slate-700 p-4 text-white shadow-sm"
-              >
-                <p className="text-xs uppercase tracking-widest text-slate-300">{item.label}</p>
-                <p className="mt-2 text-3xl font-bold">{item.value}%</p>
-              </div>
-            ))}
-          </section>
-            </>
+            <section className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-6">
+              {percentCards.map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-2xl border border-slate-200/90 bg-white/90 p-4 shadow-sm ring-1 ring-slate-200/60"
+                >
+                  <p className="text-xs uppercase tracking-[0.15em] text-slate-500">
+                    {item.label}
+                  </p>
+                  <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">
+                    {item.value}%
+                  </p>
+                  <div className="mt-2 h-1.5 rounded-full bg-slate-100">
+                    <div
+                      className="h-1.5 rounded-full bg-indigo-500"
+                      style={{ width: `${Math.max(0, Math.min(100, Number(item.value) || 0))}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </section>
           )}
 
           {activeView === 'history' && (
             <Card title={t('Barcha sinflar davomat tarixi')}>
-            {report?.tarix?.length ? (
-              <DataTable
-                columns={historyColumns}
-                rows={report.tarix}
-                stickyHeader
-                maxHeightClassName="max-h-[520px]"
-              />
-            ) : (
-              <StateView type="empty" description={t("Tanlangan period bo'yicha tarix topilmadi")} />
-            )}
+              {report?.tarix?.length ? (
+                <DataTable
+                  columns={historyColumns}
+                  rows={report.tarix}
+                  stickyHeader
+                  stickyFirstColumn
+                  maxHeightClassName="max-h-[520px]"
+                />
+              ) : (
+                <StateView
+                  type="empty"
+                  description={t("Tanlangan period bo'yicha tarix topilmadi")}
+                />
+              )}
             </Card>
           )}
         </>
       )}
-      </div>
+    </div>
   );
 }

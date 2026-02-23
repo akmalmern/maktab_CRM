@@ -53,8 +53,8 @@ const davomatSaqlashSchema = z
             studentId: z.string().cuid("studentId noto'g'ri"),
             holat: davomatHolatiEnum,
             izoh: z.string().trim().max(300, "izoh juda uzun").optional(),
-            bahoBall: z.number().int().min(0).max(100).optional(),
-            bahoMaxBall: z.number().int().min(1).max(100).optional(),
+            bahoBall: z.number().int().min(0).max(100).nullable().optional(),
+            bahoMaxBall: z.number().int().min(1).max(100).nullable().optional(),
             bahoTuri: bahoTuriEnum.optional(),
             bahoIzoh: z.string().trim().max(300, "baho izohi juda uzun").optional(),
           })
@@ -72,7 +72,23 @@ const davomatSaqlashSchema = z
 
       if (!hasAnyBahoField) return;
 
-      if (row.bahoBall === undefined || row.bahoMaxBall === undefined || row.bahoTuri === undefined) {
+      if (row.bahoBall === null) {
+        if (row.bahoTuri === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["davomatlar", index, "bahoTuri"],
+            message: "Bahoni o'chirish uchun bahoTuri majburiy",
+          });
+        }
+        return;
+      }
+
+      if (
+        row.bahoBall === undefined ||
+        row.bahoMaxBall === undefined ||
+        row.bahoTuri === undefined ||
+        row.bahoMaxBall === null
+      ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["davomatlar", index],

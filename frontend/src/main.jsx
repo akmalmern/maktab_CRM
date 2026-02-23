@@ -7,7 +7,8 @@ import './i18n';
 import App from './App';
 import { store } from './app/store';
 import { logout, setCredentials } from './features/auth/authSlice';
-import { apiRequest, setupApiInterceptors } from './lib/apiClient';
+import { authApi } from './services/api/authApi';
+import { setupApiInterceptors } from './lib/apiClient';
 import './index.css';
 
 setupApiInterceptors({
@@ -30,7 +31,7 @@ setupApiInterceptors({
 
 async function bootstrapAuth() {
   try {
-    const data = await apiRequest({ path: '/api/auth/refresh', method: 'POST' });
+    const data = await store.dispatch(authApi.endpoints.refreshAuth.initiate()).unwrap();
     store.dispatch(
       setCredentials({
         accessToken: data?.accessToken,

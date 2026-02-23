@@ -69,6 +69,16 @@ function monthKeyFromParts(year, month) {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
+function resolveImtiyozStartMonthKey(item) {
+  if (!item) return "";
+  const yil = Number.parseInt(String(item.boshlanishYil ?? ""), 10);
+  const oy = Number.parseInt(String(item.boshlanishOyRaqam ?? ""), 10);
+  if (Number.isFinite(yil) && Number.isFinite(oy) && oy >= 1 && oy <= 12) {
+    return monthKeyFromParts(yil, oy);
+  }
+  return String(item.boshlanishOy || "");
+}
+
 function monthKeyToSerial(monthKey) {
   try {
     const { year, month } = parseMonthKey(monthKey);
@@ -121,7 +131,7 @@ function normalizeSnapshotRows({ item, oylikSumma }) {
   // Legacy yozuvlar uchun fallback (snapshot yo'q bo'lsa).
   let months = [];
   try {
-    months = buildMonthRange(item.boshlanishOy, item.oylarSoni || 1);
+    months = buildMonthRange(resolveImtiyozStartMonthKey(item), item.oylarSoni || 1);
   } catch {
     return [];
   }
@@ -230,6 +240,20 @@ function buildPaidMonthMap(qoplamalar) {
   return paidMonthMap;
 }
 
+function buildPaidMonthAmountMap(qoplamalar) {
+  const paidAmountMap = new Map();
+  for (const row of qoplamalar || []) {
+    if (!paidAmountMap.has(row.studentId)) {
+      paidAmountMap.set(row.studentId, new Map());
+    }
+    const studentMap = paidAmountMap.get(row.studentId);
+    const key = `${row.yil}-${String(row.oy).padStart(2, "0")}`;
+    const amount = Number(row.summa ?? 0);
+    studentMap.set(key, Number(studentMap.get(key) || 0) + (Number.isFinite(amount) ? amount : 0));
+  }
+  return paidAmountMap;
+}
+
 function buildDebtInfo({
   startDate,
   paidMonthSet,
@@ -238,19 +262,37 @@ function buildDebtInfo({
   now = new Date(),
 }) {
   const dueMonths = buildDueMonths(startDate, now);
+  const paidMonthAmountMap =
+    paidMonthSet instanceof Map ? paidMonthSet : null;
   const dueMonthsWithAmount = dueMonths.map((m) => ({
     ...m,
     oySumma: imtiyozMonthMap.has(m.key)
       ? Number(imtiyozMonthMap.get(m.key) || 0)
       : Number(oylikSumma || 0),
-    isPaid: paidMonthSet.has(m.key),
-  }));
+  })).map((m) => {
+    const paidAmount = paidMonthAmountMap
+      ? Number(paidMonthAmountMap.get(m.key) || 0)
+      : paidMonthSet?.has?.(m.key)
+        ? Number(m.oySumma || 0)
+        : 0;
+    const effectivePaid = Math.max(0, Math.min(Number(m.oySumma || 0), paidAmount));
+    const qoldiqSumma = Math.max(0, Number(m.oySumma || 0) - effectivePaid);
+    const isPaid = qoldiqSumma <= 0;
+    const isPartial = !isPaid && effectivePaid > 0;
+    return {
+      ...m,
+      tolanganSumma: effectivePaid,
+      qoldiqSumma,
+      isPaid,
+      isPartial,
+    };
+  });
   const qarzOylar = dueMonthsWithAmount.filter(
-    (m) => !m.isPaid && m.oySumma > 0,
+    (m) => m.qoldiqSumma > 0,
   );
   const tolanganOylarSoni = dueMonthsWithAmount.length - qarzOylar.length;
   const jamiQarzSumma = qarzOylar.reduce(
-    (acc, row) => acc + Number(row.oySumma || 0),
+    (acc, row) => acc + Number(row.qoldiqSumma || 0),
     0,
   );
 
@@ -271,9 +313,12 @@ module.exports = {
   formatMonthByParts,
   formatMonthKey,
   monthKeyFromDate,
+  monthKeyFromParts,
+  resolveImtiyozStartMonthKey,
   buildMonthRange,
   buildDueMonths,
   buildPaidMonthMap,
+  buildPaidMonthAmountMap,
   buildImtiyozMonthMap,
   buildDebtInfo,
 };

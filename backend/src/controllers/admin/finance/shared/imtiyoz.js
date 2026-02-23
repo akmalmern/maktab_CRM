@@ -1,6 +1,8 @@
 const {
   buildMonthRange,
   buildImtiyozMonthMap,
+  parseMonthKey,
+  resolveImtiyozStartMonthKey,
 } = require("../../../../services/financeDebtService");
 
 function calculateImtiyozOySumma({ turi, qiymat, oylikSumma }) {
@@ -40,8 +42,17 @@ function buildImtiyozSnapshotRows({
   });
 }
 
+function parseImtiyozStartPartsFromKey(monthKey) {
+  try {
+    const { year, month } = parseMonthKey(monthKey);
+    return { boshlanishYil: year, boshlanishOyRaqam: month };
+  } catch {
+    return { boshlanishYil: null, boshlanishOyRaqam: null };
+  }
+}
+
 function mapImtiyozRow(row, { safeFormatMonthKey, monthKeyToSerial }) {
-  const start = String(row.boshlanishOy || "");
+  const start = resolveImtiyozStartMonthKey(row);
   let rangeLabel = safeFormatMonthKey(start);
   const snapshotKeys = Array.isArray(row.oylarSnapshot)
     ? row.oylarSnapshot
@@ -75,6 +86,8 @@ function mapImtiyozRow(row, { safeFormatMonthKey, monthKeyToSerial }) {
     turi: row.turi,
     qiymat: row.qiymat,
     boshlanishOy: start,
+    boshlanishYil: row.boshlanishYil ?? null,
+    boshlanishOyRaqam: row.boshlanishOyRaqam ?? null,
     oylarSoni: row.oylarSoni,
     oylarSnapshot: Array.isArray(row.oylarSnapshot) ? row.oylarSnapshot : [],
     sabab: row.sabab,
@@ -104,6 +117,7 @@ function buildStudentImtiyozMap(imtiyozRows, oylikSumma) {
 module.exports = {
   calculateImtiyozOySumma,
   buildImtiyozSnapshotRows,
+  parseImtiyozStartPartsFromKey,
   mapImtiyozRow,
   buildStudentImtiyozMap,
 };

@@ -1,4 +1,14 @@
-import { Button, Card, DataTable, Input, Select, StateView } from '../../../components/ui';
+import {
+  Button,
+  Card,
+  DataTable,
+  FilterToolbar,
+  FilterToolbarItem,
+  Input,
+  Select,
+  StateView,
+  StatusBadge,
+} from '../../../components/ui';
 import { useTranslation } from 'react-i18next';
 
 export default function PersonTable({
@@ -83,9 +93,18 @@ export default function PersonTable({
             key: 'paymentStatus',
             header: t("To'lov"),
             render: (row) =>
-              row.tolovHolati === 'QARZDOR'
-                ? t('Qarzdor ({{count}} oy)', { count: row.qarzOylarSoni || 0 })
-                : t("To'lagan"),
+              row.tolovHolati === 'QARZDOR' ? (
+                <StatusBadge
+                  domain="financeDebt"
+                  value={row.tolovHolati}
+                  count={row.qarzOylarSoni || 0}
+                  countTemplate={'Qarzdor ({{count}} oy)'}
+                  className="shadow-none"
+                  fallbackLabel="Qarzdor"
+                />
+              ) : (
+                <StatusBadge domain="financeDebt" value={row.tolovHolati || 'TOLANGAN'} className="shadow-none" />
+              ),
           },
         ]
       : []),
@@ -93,11 +112,11 @@ export default function PersonTable({
       key: 'actions',
       header: t('Amallar'),
       render: (row) => (
-        <div className="flex gap-2">
-          <Button size="sm" variant="indigo" onClick={() => onOpenDetail(row.id)}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="indigo" className="min-w-24" onClick={() => onOpenDetail(row.id)}>
             {t('Batafsil')}
           </Button>
-          <Button size="sm" variant="danger" onClick={() => onDelete(row.id)}>
+          <Button size="sm" variant="danger" className="min-w-24" onClick={() => onDelete(row.id)}>
             {t("O'chirish")}
           </Button>
         </div>
@@ -108,41 +127,65 @@ export default function PersonTable({
   return (
     <Card
       title={title}
-      actions={<span className="text-sm text-slate-500">{t('Sahifa')}: {page} / {pages || 1}</span>}
+      actions={(
+        <div className="inline-flex items-center rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-sm text-slate-600">
+          {t('Sahifa')}: <span className="ml-1 font-semibold text-slate-900">{page}</span>
+          <span className="mx-1 text-slate-400">/</span>
+          <span>{pages || 1}</span>
+        </div>
+      )}
     >
-      <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-4">
-        <Input
-          type="text"
-          value={searchValue}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder={t('Qidirish...')}
-        />
-        <Select value={filterValue} onChange={(e) => onFilterChange(e.target.value)}>
-          <option value="all">{t('Hammasi')}</option>
-          {filterOptions.map((item) => (
-            <option key={item.value} value={item.value}>
-              {t(item.label, { defaultValue: item.label })}
-            </option>
-          ))}
-        </Select>
-        <Select value={sortValue} onChange={(e) => onSortChange(e.target.value)}>
-          {sortOptions.map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.label}
-            </option>
-          ))}
-        </Select>
-        <Select
-          value={String(pageSize)}
-          onChange={(e) => onPageSizeChange(Number(e.target.value))}
-        >
-          {[10, 20, 50].map((size) => (
-            <option key={size} value={size}>
-              {t('{{count}} ta / sahifa', { count: size })}
-            </option>
-          ))}
-        </Select>
-      </div>
+      <FilterToolbar
+        gridClassName="grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4"
+        onReset={() => {
+          onSearchChange('');
+          onFilterChange('all');
+          onSortChange('name:asc');
+          onPageSizeChange(10);
+        }}
+        resetLabel={t('Filterlarni tozalash')}
+        resetDisabled={searchValue === '' && filterValue === 'all' && sortValue === 'name:asc' && Number(pageSize) === 10}
+      >
+        <FilterToolbarItem label={t('Qidiruv')}>
+          <Input
+            type="text"
+            value={searchValue}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder={t('Qidirish...')}
+          />
+        </FilterToolbarItem>
+        <FilterToolbarItem label={t('Filter')}>
+          <Select value={filterValue} onChange={(e) => onFilterChange(e.target.value)}>
+            <option value="all">{t('Hammasi')}</option>
+            {filterOptions.map((item) => (
+              <option key={item.value} value={item.value}>
+                {t(item.label, { defaultValue: item.label })}
+              </option>
+            ))}
+          </Select>
+        </FilterToolbarItem>
+        <FilterToolbarItem label={t('Saralash')}>
+          <Select value={sortValue} onChange={(e) => onSortChange(e.target.value)}>
+            {sortOptions.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </Select>
+        </FilterToolbarItem>
+        <FilterToolbarItem label={t('Sahifa limiti')}>
+          <Select
+            value={String(pageSize)}
+            onChange={(e) => onPageSizeChange(Number(e.target.value))}
+          >
+            {[10, 20, 50].map((size) => (
+              <option key={size} value={size}>
+                {t('{{count}} ta / sahifa', { count: size })}
+              </option>
+            ))}
+          </Select>
+        </FilterToolbarItem>
+      </FilterToolbar>
 
       {loading && <StateView type="skeleton" />}
       {error && <StateView type="error" description={error} />}
@@ -153,6 +196,8 @@ export default function PersonTable({
             columns={columns}
             rows={rows}
             stickyHeader
+            stickyFirstColumn
+            density="compact"
             maxHeightClassName="max-h-[520px]"
           />
         ) : (
@@ -160,7 +205,7 @@ export default function PersonTable({
         )
       )}
 
-      <div className="mt-3 flex justify-end gap-2">
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
         <Button
           onClick={() => onPageChange(Math.max(1, page - 1))}
           variant="secondary"

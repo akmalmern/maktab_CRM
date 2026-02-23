@@ -5,13 +5,15 @@ import { toast } from 'react-toastify';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import { Button, Card, Input } from '../components/ui';
-import { clearAuthError, loginThunk } from '../features/auth/authSlice';
+import { setCredentials } from '../features/auth/authSlice';
+import { useLoginAuthMutation } from '../services/api/authApi';
 
 export default function LoginPage() {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
-  const { loading, error, isAuthenticated, role } = useAppSelector((state) => state.auth);
+  const { isAuthenticated, role } = useAppSelector((state) => state.auth);
+  const [loginAuth, loginAuthState] = useLoginAuthMutation();
 
   const [form, setForm] = useState({ username: '', password: '' });
 
@@ -21,20 +23,21 @@ export default function LoginPage() {
     }
   }, [isAuthenticated, role, navigate]);
 
-  useEffect(() => {
-    if (error) {
-      toast.error(error);
-      dispatch(clearAuthError());
-    }
-  }, [error, dispatch]);
-
   async function onSubmit(e) {
     e.preventDefault();
 
-    const result = await dispatch(loginThunk(form));
-    if (loginThunk.fulfilled.match(result)) {
+    try {
+      const data = await loginAuth(form).unwrap();
+      dispatch(
+        setCredentials({
+          accessToken: data?.accessToken,
+          role: data?.role,
+        }),
+      );
       toast.success(t('Xush kelibsiz'));
       navigate('/', { replace: true });
+    } catch (error) {
+      toast.error(error?.message || t('Login amalga oshmadi'));
     }
   }
 
@@ -73,11 +76,11 @@ export default function LoginPage() {
 
           <Button
             type="submit"
-            disabled={loading}
+            disabled={loginAuthState.isLoading}
             variant="success"
             className="w-full"
           >
-            {loading ? t('Kirish...') : t('Kirish')}
+            {loginAuthState.isLoading ? t('Kirish...') : t('Kirish')}
           </Button>
         </form>
       </Card>

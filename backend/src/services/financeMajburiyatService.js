@@ -57,7 +57,7 @@ async function syncStudentOyMajburiyatlar({
   const [qoplamalar, imtiyozlar] = await Promise.all([
     prisma.tolovQoplama.findMany({
       where: { studentId: { in: students.map((s) => s.id) } },
-      select: { studentId: true, yil: true, oy: true },
+      select: { studentId: true, yil: true, oy: true, summa: true },
     }),
     prisma.tolovImtiyozi.findMany({
       where: { studentId: { in: students.map((s) => s.id) } },
@@ -65,7 +65,8 @@ async function syncStudentOyMajburiyatlar({
         studentId: true,
         turi: true,
         qiymat: true,
-        boshlanishOy: true,
+        boshlanishYil: true,
+        boshlanishOyRaqam: true,
         oylarSoni: true,
         isActive: true,
         bekorQilinganAt: true,
@@ -76,8 +77,13 @@ async function syncStudentOyMajburiyatlar({
 
   const paidMap = new Map();
   for (const row of qoplamalar) {
-    if (!paidMap.has(row.studentId)) paidMap.set(row.studentId, new Set());
-    paidMap.get(row.studentId).add(monthKey(row.yil, row.oy));
+    if (!paidMap.has(row.studentId)) paidMap.set(row.studentId, new Map());
+    const key = monthKey(row.yil, row.oy);
+    const studentPaidMap = paidMap.get(row.studentId);
+    studentPaidMap.set(
+      key,
+      Number(studentPaidMap.get(key) || 0) + Number(row.summa || 0),
+    );
   }
 
   const imtiyozGrouped = new Map();
@@ -95,15 +101,22 @@ async function syncStudentOyMajburiyatlar({
       imtiyozlar: imtiyozGrouped.get(student.id) || [],
       oylikSumma,
     });
-    const paidSet = paidMap.get(student.id) || new Set();
+    const paidAmountMap = paidMap.get(student.id) || new Map();
 
     for (const row of dueMonths) {
       const key = monthKey(row.yil, row.oy);
       const baza = Number(oylikSumma || 0);
       const net = Number(imtiyozMap.has(key) ? imtiyozMap.get(key) : baza);
       const imtiyozSumma = Math.max(0, baza - net);
-      const holat =
-        paidSet.has(key) || net <= 0 ? "TOLANGAN" : "BELGILANDI";
+      const rawPaid = Number(paidAmountMap.get(key) || 0);
+      const tolanganSumma = Math.max(0, Math.min(net, rawPaid));
+      const qoldiqSumma = Math.max(0, net - tolanganSumma);
+      let holat = "BELGILANDI";
+      if (net <= 0 || qoldiqSumma <= 0) {
+        holat = "TOLANGAN";
+      } else if (tolanganSumma > 0) {
+        holat = "QISMAN_TOLANGAN";
+      }
 
       await prisma.studentOyMajburiyat.upsert({
         where: {
@@ -116,6 +129,8 @@ async function syncStudentOyMajburiyatlar({
           bazaSumma: baza,
           imtiyozSumma,
           netSumma: net,
+          tolanganSumma,
+          qoldiqSumma,
           holat,
           source: imtiyozSumma > 0 ? "IMTIYOZ" : "BAZA",
         },
@@ -123,6 +138,8 @@ async function syncStudentOyMajburiyatlar({
           bazaSumma: baza,
           imtiyozSumma,
           netSumma: net,
+          tolanganSumma,
+          qoldiqSumma,
           holat,
           source: imtiyozSumma > 0 ? "IMTIYOZ" : "BAZA",
         },
@@ -138,16 +155,21 @@ function summarizeDebtFromMajburiyatRows(rows) {
   const dueMonths = allRows.map((r) => ({
     key: monthKey(r.yil, r.oy),
     oySumma: Number(r.netSumma || 0),
+    tolanganSumma: Number(r.tolanganSumma || 0),
+    qoldiqSumma: Number((r.qoldiqSumma ?? r.netSumma) || 0),
     label: `${r.yil}-${String(r.oy).padStart(2, "0")}`,
     isPaid: r.holat === "TOLANGAN",
+    isPartial: r.holat === "QISMAN_TOLANGAN",
   }));
   const debtRows = (rows || []).filter(
-    (r) => r.holat === "BELGILANDI" && Number(r.netSumma || 0) > 0,
+    (r) =>
+      (r.holat === "BELGILANDI" || r.holat === "QISMAN_TOLANGAN") &&
+      Number((r.qoldiqSumma ?? r.netSumma) || 0) > 0,
   );
   const qarzOylar = debtRows
     .map((r) => ({
       key: monthKey(r.yil, r.oy),
-      oySumma: Number(r.netSumma || 0),
+      oySumma: Number((r.qoldiqSumma ?? r.netSumma) || 0),
       label: `${r.yil}-${String(r.oy).padStart(2, "0")}`,
     }))
     .sort((a, b) => {

@@ -1,10 +1,33 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { useAppDispatch, useAppSelector } from '../../../app/hooks';
-import { apiDownload, getErrorMessage } from '../../../lib/apiClient';
+import { getErrorMessage } from '../../../lib/apiClient';
+import { saveDownloadedFile } from '../../../lib/downloadUtils';
 import { ConfirmModal } from '../../../components/ui';
+import {
+  useCreateFinanceImtiyozMutation,
+  useCreateFinancePaymentMutation,
+  useDeactivateFinanceImtiyozMutation,
+  useGetFinanceSettingsQuery,
+  useGetFinanceStudentsQuery,
+  useLazyGetFinanceStudentDetailQuery,
+  useRevertFinancePaymentMutation,
+  useRollbackFinanceTarifMutation,
+  useUpdateFinanceSettingsMutation,
+} from '../../../services/api/financeApi';
+import {
+  useExportAttendanceReportMutation,
+  useExportFinanceDebtorsMutation,
+} from '../../../services/api/exportApi';
+import {
+  useCreateStudentMutation,
+  useCreateTeacherMutation,
+  useDeleteStudentMutation,
+  useGetTeachersQuery,
+} from '../../../services/api/peopleApi';
+import { useGetSubjectsQuery } from '../../../services/api/subjectsApi';
+import { useGetClassroomsQuery } from '../../../services/api/classroomsApi';
 import {
   AttendanceSection,
   ClassroomsSection,
@@ -15,38 +38,6 @@ import {
   SubjectsSection,
   TeachersSection,
 } from './sections';
-import {
-  createClassroomThunk,
-  previewPromoteClassroomThunk,
-  promoteClassroomThunk,
-  previewAnnualClassPromotionThunk,
-  runAnnualClassPromotionThunk,
-  createDarsJadvaliThunk,
-  createStudentThunk,
-  createSubjectThunk,
-  createTeacherThunk,
-  createVaqtOraliqThunk,
-  deleteDarsJadvaliThunk,
-  deleteSubjectThunk,
-  deleteStudentThunk,
-  deleteTeacherThunk,
-  deleteVaqtOraliqThunk,
-  fetchClassroomsThunk,
-  fetchDarsJadvaliThunk,
-  fetchSubjectsThunk,
-  fetchStudentsThunk,
-  fetchTeachersThunk,
-  fetchVaqtOraliqlariThunk,
-  fetchAttendanceReportThunk,
-  fetchFinanceSettingsThunk,
-  fetchFinanceStudentsThunk,
-  fetchFinanceStudentDetailThunk,
-  createFinancePaymentThunk,
-  createFinanceImtiyozThunk,
-  deactivateFinanceImtiyozThunk,
-  updateFinanceSettingsThunk,
-  updateDarsJadvaliThunk,
-} from './index';
 
 const DEFAULT_LIST_QUERY = {
   search: '',
@@ -59,19 +50,9 @@ const FINANCE_SEARCH_DEBOUNCE_MS = 350;
 
 export default function AdminWorkspace({ section }) {
   const { t } = useTranslation();
-  const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const confirmResolverRef = useRef(null);
 
-  const teachers = useAppSelector((state) => state.admin.teachers);
-  const students = useAppSelector((state) => state.admin.students);
-  const subjects = useAppSelector((state) => state.admin.subjects);
-  const classrooms = useAppSelector((state) => state.admin.classrooms);
-  const vaqtOraliqlari = useAppSelector((state) => state.admin.schedule.vaqtOraliqlari);
-  const darsJadvali = useAppSelector((state) => state.admin.schedule.darsJadvali);
-  const attendance = useAppSelector((state) => state.admin.attendance);
-  const finance = useAppSelector((state) => state.admin.finance);
-  const actionLoading = useAppSelector((state) => state.admin.ui.actionLoading);
 
   const [teacherQuery, setTeacherQuery] = useState(DEFAULT_LIST_QUERY);
   const [studentQuery, setStudentQuery] = useState(DEFAULT_LIST_QUERY);
@@ -102,67 +83,136 @@ export default function AdminWorkspace({ section }) {
   const isAttendanceSection = section === 'attendance';
   const isFinanceSection = section === 'finance';
 
-  const teacherQueryForRequest = teacherQuery;
-  const studentQueryForRequest = studentQuery;
+  const financeStudentsParams = {
+    page: financeQuery.page,
+    limit: financeQuery.limit,
+    status: financeQuery.status,
+    debtMonth: financeQuery.debtMonth,
+    debtTargetMonth: financeQuery.debtTargetMonth || undefined,
+    cashflowMonth: financeQuery.cashflowMonth || undefined,
+    search: debouncedFinanceSearch,
+    classroomId: financeQuery.classroomId === 'all' ? undefined : financeQuery.classroomId,
+  };
+  const financeSettingsQuery = useGetFinanceSettingsQuery(undefined, { skip: !isFinanceSection });
+  const financeStudentsQuery = useGetFinanceStudentsQuery(financeStudentsParams, { skip: !isFinanceSection });
+  const shouldLoadSubjects = isTeachersSection || isStudentsSection || isJadvalSection;
+  const shouldLoadClassrooms = isTeachersSection || isStudentsSection || isJadvalSection || isAttendanceSection || isFinanceSection;
+  const subjectsQuery = useGetSubjectsQuery(undefined, { skip: !shouldLoadSubjects });
+  const classroomsQuery = useGetClassroomsQuery(undefined, { skip: !shouldLoadClassrooms });
+  const scheduleTeachersQuery = useGetTeachersQuery(
+    { ...DEFAULT_LIST_QUERY, limit: 100, page: 1 },
+    { skip: !isJadvalSection },
+  );
+  const [createTeacherMutation, createTeacherMutationState] = useCreateTeacherMutation();
+  const [createStudentMutation, createStudentMutationState] = useCreateStudentMutation();
+  const [deleteStudentMutation, deleteStudentMutationState] = useDeleteStudentMutation();
+  const [fetchFinanceDetail, financeDetailQuery] = useLazyGetFinanceStudentDetailQuery();
+  const [updateFinanceSettings, updateFinanceSettingsState] = useUpdateFinanceSettingsMutation();
+  const [createFinancePayment, createFinancePaymentState] = useCreateFinancePaymentMutation();
+  const [createFinanceImtiyoz, createFinanceImtiyozState] = useCreateFinanceImtiyozMutation();
+  const [deactivateFinanceImtiyoz, deactivateFinanceImtiyozState] = useDeactivateFinanceImtiyozMutation();
+  const [rollbackFinanceTarif, rollbackFinanceTarifState] = useRollbackFinanceTarifMutation();
+  const [revertFinancePayment, revertFinancePaymentState] = useRevertFinancePaymentMutation();
+  const [exportAttendanceReport] = useExportAttendanceReportMutation();
+  const [exportFinanceDebtors] = useExportFinanceDebtorsMutation();
 
-  useEffect(() => {
-    if (isTeachersSection) {
-      dispatch(fetchTeachersThunk(teacherQueryForRequest));
-    }
-  }, [dispatch, teacherQueryForRequest, isTeachersSection]);
-
-  useEffect(() => {
-    if (isStudentsSection) {
-      dispatch(fetchStudentsThunk(studentQueryForRequest));
-    }
-  }, [dispatch, studentQueryForRequest, isStudentsSection]);
-
-  useEffect(() => {
-    if (isDashboardSection) {
-      dispatch(fetchTeachersThunk({ ...DEFAULT_LIST_QUERY, limit: 1, page: 1 }));
-      dispatch(fetchStudentsThunk({ ...DEFAULT_LIST_QUERY, limit: 1, page: 1 }));
-      dispatch(fetchDarsJadvaliThunk());
-      const sana = new Date().toISOString().slice(0, 10);
-      dispatch(fetchAttendanceReportThunk({ sana }));
-    }
-  }, [dispatch, isDashboardSection]);
-
-  useEffect(() => {
-    if (isTeachersSection || isJadvalSection || isSubjectsSection) {
-      dispatch(fetchSubjectsThunk());
-    }
-  }, [dispatch, isTeachersSection, isJadvalSection, isSubjectsSection]);
+  const financeSettings = financeSettingsQuery.data?.settings || {
+    oylikSumma: 0,
+    yillikSumma: 0,
+    faolTarifId: null,
+  };
+  const financeSettingsMeta = {
+    constraints: financeSettingsQuery.data?.constraints || {
+      minSumma: 50000,
+      maxSumma: 50000000,
+    },
+    preview: financeSettingsQuery.data?.preview || {
+      studentCount: 0,
+      debtorCount: 0,
+      tolayotganlar: 0,
+      expectedMonthly: 0,
+      expectedYearly: 0,
+      gapMonthly: 0,
+      gapYearly: 0,
+      thisMonthPaidAmount: 0,
+      thisYearPaidAmount: 0,
+      cashflowDiffAmount: 0,
+    },
+    tarifHistory: financeSettingsQuery.data?.tarifHistory || [],
+    tarifAudit: financeSettingsQuery.data?.tarifAudit || [],
+  };
+  const financeStudentsState = {
+    items: financeStudentsQuery.data?.students || [],
+    page: financeStudentsQuery.data?.page || 1,
+    limit: financeStudentsQuery.data?.limit || financeQuery.limit,
+    total: financeStudentsQuery.data?.total || 0,
+    pages: financeStudentsQuery.data?.pages || 0,
+    summary: financeStudentsQuery.data?.summary || {
+      totalRows: 0,
+      totalDebtors: 0,
+      totalDebtAmount: 0,
+      thisMonthDebtors: 0,
+      previousMonthDebtors: 0,
+      selectedMonthDebtors: 0,
+      thisMonthDebtAmount: 0,
+      previousMonthDebtAmount: 0,
+      selectedMonthDebtAmount: 0,
+      thisMonthPaidAmount: 0,
+      thisYearPaidAmount: 0,
+      monthlyPlanAmount: 0,
+      yearlyPlanAmount: 0,
+      tarifOylikSumma: 0,
+      tarifYillikSumma: 0,
+      cashflow: {
+        month: null,
+        monthFormatted: '',
+        planAmount: 0,
+        collectedAmount: 0,
+        debtAmount: 0,
+        diffAmount: 0,
+      },
+      selectedMonth: null,
+    },
+    loading: financeStudentsQuery.isLoading || financeStudentsQuery.isFetching,
+    error: financeStudentsQuery.error?.message || null,
+  };
+  const financeDetailState = {
+    student: financeDetailQuery.data?.student || null,
+    imtiyozlar: financeDetailQuery.data?.imtiyozlar || [],
+    transactions: financeDetailQuery.data?.transactions || [],
+    loading: financeDetailQuery.isLoading || financeDetailQuery.isFetching,
+    error: financeDetailQuery.error?.message || null,
+  };
+  const financeActionLoading =
+    updateFinanceSettingsState.isLoading ||
+    createFinancePaymentState.isLoading ||
+    createFinanceImtiyozState.isLoading ||
+    deactivateFinanceImtiyozState.isLoading ||
+    rollbackFinanceTarifState.isLoading ||
+    revertFinancePaymentState.isLoading;
+  const peopleMutationLoading =
+    createTeacherMutationState.isLoading ||
+    createStudentMutationState.isLoading ||
+    deleteStudentMutationState.isLoading;
+  const subjects = { items: subjectsQuery.data?.subjects || [] };
+  const classrooms = { items: classroomsQuery.data?.classrooms || [] };
+  const teachers = {
+    items: isJadvalSection
+      ? (scheduleTeachersQuery.data?.teachers || [])
+      : [],
+  };
 
   useEffect(() => {
     if (isJadvalSection) {
-      dispatch(fetchTeachersThunk({ ...DEFAULT_LIST_QUERY, limit: 100, page: 1 }));
+      // Schedule section reads/writes via RTK Query
     }
-  }, [dispatch, isJadvalSection]);
-
-  useEffect(() => {
-    if (isStudentsSection || isClassroomsSection || isJadvalSection || isDashboardSection || isAttendanceSection || isFinanceSection) {
-      dispatch(fetchClassroomsThunk());
-    }
-  }, [dispatch, isStudentsSection, isClassroomsSection, isJadvalSection, isDashboardSection, isAttendanceSection, isFinanceSection]);
-
-  useEffect(() => {
-    if (isJadvalSection) {
-      dispatch(fetchVaqtOraliqlariThunk());
-      dispatch(fetchDarsJadvaliThunk());
-    }
-  }, [dispatch, isJadvalSection]);
+  }, [isJadvalSection]);
 
   useEffect(() => {
     if (isAttendanceSection) {
-      const sana = new Date().toISOString().slice(0, 10);
-      dispatch(fetchAttendanceReportThunk({ sana }));
+      // Attendance section now reads via RTK Query in AttendanceSection
     }
-  }, [dispatch, isAttendanceSection]);
-
-  useEffect(() => {
-    if (!isFinanceSection) return;
-    dispatch(fetchFinanceSettingsThunk());
-  }, [dispatch, isFinanceSection]);
+  }, [isAttendanceSection]);
 
   useEffect(() => {
     if (!isFinanceSection) return;
@@ -171,31 +221,6 @@ export default function AdminWorkspace({ section }) {
     }, FINANCE_SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [financeQuery.search, isFinanceSection]);
-
-  useEffect(() => {
-    if (!isFinanceSection) return;
-    dispatch(fetchFinanceStudentsThunk({
-      page: financeQuery.page,
-      limit: financeQuery.limit,
-      status: financeQuery.status,
-      debtMonth: financeQuery.debtMonth,
-      debtTargetMonth: financeQuery.debtTargetMonth || undefined,
-      cashflowMonth: financeQuery.cashflowMonth || undefined,
-      search: debouncedFinanceSearch,
-      classroomId: financeQuery.classroomId === 'all' ? undefined : financeQuery.classroomId,
-    }));
-  }, [
-    dispatch,
-    isFinanceSection,
-    financeQuery.page,
-    financeQuery.limit,
-    financeQuery.status,
-    financeQuery.classroomId,
-    financeQuery.debtMonth,
-    financeQuery.debtTargetMonth,
-    financeQuery.cashflowMonth,
-    debouncedFinanceSearch,
-  ]);
 
   useEffect(
     () => () => {
@@ -222,214 +247,47 @@ export default function AdminWorkspace({ section }) {
     }
   }
 
-  async function handleDeleteTeacher(id) {
-    const ok = await askConfirm(t('Teacher ni o`chirmoqchimisiz?'), t("Teacherni o'chirish"));
-    if (!ok) return;
-
-    const result = await dispatch(deleteTeacherThunk(id));
-    if (deleteTeacherThunk.fulfilled.match(result)) {
-      toast.success(t('Teacher o`chirildi'));
-      dispatch(fetchTeachersThunk(teacherQueryForRequest));
-      return;
-    }
-    toast.error(result.payload || t('Teacher o`chirilmadi'));
-  }
-
   async function handleDeleteStudent(id) {
     const ok = await askConfirm(t('Student ni o`chirmoqchimisiz?'), t("Studentni o'chirish"));
     if (!ok) return false;
 
-    const result = await dispatch(deleteStudentThunk(id));
-    if (deleteStudentThunk.fulfilled.match(result)) {
+    try {
+      await deleteStudentMutation(id).unwrap();
       toast.success(t('Student o`chirildi'));
-      dispatch(fetchStudentsThunk(studentQueryForRequest));
-      dispatch(fetchClassroomsThunk());
       return true;
+    } catch (error) {
+      toast.error(error?.message || t('Student o`chirilmadi'));
+      return false;
     }
-
-    toast.error(result.payload || t('Student o`chirilmadi'));
-    return false;
   }
 
   async function handleCreateTeacher(form) {
-    const result = await dispatch(createTeacherThunk(form));
-    if (createTeacherThunk.fulfilled.match(result)) {
-      const teacherId = result.payload?.teacherId;
+    try {
+      const payload = await createTeacherMutation(form).unwrap();
+      const teacherId = payload?.teacherId;
       toast.success(t('Teacher muvaffaqiyatli yaratildi'));
       if (teacherId) {
         navigate(`/admin/teachers/${teacherId}`);
-      } else {
-        dispatch(fetchTeachersThunk({ ...teacherQueryForRequest, page: 1 }));
       }
       return true;
+    } catch (error) {
+      toast.error(error?.message || t('Teacher yaratilmadi'));
+      return false;
     }
-
-    toast.error(result.payload || t('Teacher yaratilmadi'));
-    return false;
   }
 
   async function handleCreateStudent(form) {
-    const result = await dispatch(createStudentThunk(form));
-    if (createStudentThunk.fulfilled.match(result)) {
-      const studentId = result.payload?.studentId;
+    try {
+      const payload = await createStudentMutation(form).unwrap();
+      const studentId = payload?.studentId;
       toast.success(t('Student muvaffaqiyatli yaratildi'));
       if (studentId) {
         navigate(`/admin/students/${studentId}`);
-      } else {
-        dispatch(fetchStudentsThunk({ ...studentQueryForRequest, page: 1 }));
       }
       return true;
-    }
-
-    toast.error(result.payload || t('Student yaratilmadi'));
-    return false;
-  }
-
-  async function handleCreateSubject(name) {
-    const result = await dispatch(createSubjectThunk({ name }));
-    if (createSubjectThunk.fulfilled.match(result)) {
-      toast.success(t('Fan qo`shildi'));
-      dispatch(fetchSubjectsThunk());
-      return true;
-    }
-
-    toast.error(result.payload || t('Fan qo`shilmadi'));
-    return false;
-  }
-
-  async function handleDeleteSubject(id) {
-    const ok = await askConfirm(t('Fanni o`chirmoqchimisiz?'), t("Fanni o'chirish"));
-    if (!ok) return;
-
-    const result = await dispatch(deleteSubjectThunk(id));
-    if (deleteSubjectThunk.fulfilled.match(result)) {
-      toast.success(t('Fan o`chirildi'));
-      dispatch(fetchSubjectsThunk());
-      return;
-    }
-    toast.error(result.payload || t('Fan o`chirilmadi'));
-  }
-
-  async function handleCreateClassroom(payload) {
-    const result = await dispatch(createClassroomThunk(payload));
-    if (createClassroomThunk.fulfilled.match(result)) {
-      toast.success(t('Sinf qo`shildi'));
-      dispatch(fetchClassroomsThunk());
-      return true;
-    }
-
-    toast.error(result.payload || t('Sinf qo`shilmadi'));
-    return false;
-  }
-
-  async function handlePreviewPromoteClassroom(sourceClassroomId, targetClassroomId) {
-    const result = await dispatch(previewPromoteClassroomThunk({ sourceClassroomId, targetClassroomId }));
-    if (previewPromoteClassroomThunk.fulfilled.match(result)) {
-      return { ok: true, data: result.payload };
-    }
-    return { ok: false, message: result.payload || "Ko'chirish preview olinmadi" };
-  }
-
-  async function handlePromoteClassroom(sourceClassroomId, targetClassroomId) {
-    const result = await dispatch(promoteClassroomThunk({ sourceClassroomId, targetClassroomId }));
-    if (promoteClassroomThunk.fulfilled.match(result)) {
-      toast.success(result.payload?.message || t("Sinf muvaffaqiyatli ko'chirildi"));
-      dispatch(fetchClassroomsThunk());
-      return { ok: true, data: result.payload };
-    }
-    return { ok: false, message: result.payload || t("Sinfni ko'chirib bo'lmadi") };
-  }
-
-  async function handlePreviewAnnualClassPromotion() {
-    const result = await dispatch(previewAnnualClassPromotionThunk());
-    if (previewAnnualClassPromotionThunk.fulfilled.match(result)) {
-      return { ok: true, data: result.payload };
-    }
-    return { ok: false, message: result.payload || "Yillik o'tkazish preview olinmadi" };
-  }
-
-  async function handleRunAnnualClassPromotion(payload = {}) {
-    const result = await dispatch(runAnnualClassPromotionThunk(payload));
-    if (runAnnualClassPromotionThunk.fulfilled.match(result)) {
-      toast.success(result.payload?.message || t("Yillik sinf o'tkazish bajarildi"));
-      dispatch(fetchClassroomsThunk());
-      return { ok: true, data: result.payload };
-    }
-    return { ok: false, message: result.payload || t("Yillik sinf o'tkazish bajarilmadi") };
-  }
-
-  async function handleCreateVaqtOraliq(payload) {
-    const result = await dispatch(createVaqtOraliqThunk(payload));
-    if (createVaqtOraliqThunk.fulfilled.match(result)) {
-      toast.success(t('Vaqt oralig`i qo`shildi'));
-      dispatch(fetchVaqtOraliqlariThunk());
-      return true;
-    }
-
-    toast.error(result.payload || t('Vaqt oralig`i qo`shilmadi'));
-    return false;
-  }
-
-  async function handleDeleteVaqtOraliq(id) {
-    const ok = await askConfirm(t("Vaqt oralig`ini o`chirmoqchimisiz?"), t("Vaqt oralig'ini o'chirish"));
-    if (!ok) return;
-
-    const result = await dispatch(deleteVaqtOraliqThunk(id));
-    if (deleteVaqtOraliqThunk.fulfilled.match(result)) {
-      toast.success(t('Vaqt oralig`i o`chirildi'));
-      dispatch(fetchVaqtOraliqlariThunk());
-      return;
-    }
-    toast.error(result.payload || t('Vaqt oralig`i o`chirilmadi'));
-  }
-
-  async function handleCreateDars(payload) {
-    const result = await dispatch(createDarsJadvaliThunk(payload));
-    if (createDarsJadvaliThunk.fulfilled.match(result)) {
-      toast.success(t('Dars jadvalga qo`shildi'));
-      dispatch(fetchDarsJadvaliThunk());
-      return { ok: true };
-    }
-
-    const message = result.payload || t('Dars qo`shilmadi');
-    const isConflict = /conflict|to'qnash|to`qnash|shu vaqtda|band|mavjud/i.test(message);
-    if (!isConflict) toast.error(message);
-    else toast.warning(message);
-    return { ok: false, isConflict, message };
-  }
-
-  async function handleDeleteDars(id) {
-    const ok = await askConfirm(t('Darsni jadvaldan o`chirmoqchimisiz?'), t("Darsni o'chirish"));
-    if (!ok) return;
-
-    const result = await dispatch(deleteDarsJadvaliThunk(id));
-    if (deleteDarsJadvaliThunk.fulfilled.match(result)) {
-      toast.success(t('Dars jadvaldan o`chirildi'));
-      dispatch(fetchDarsJadvaliThunk());
-      return;
-    }
-    toast.error(result.payload || t('Dars o`chirilmadi'));
-  }
-
-  async function handleMoveDars(id, payload) {
-    const result = await dispatch(updateDarsJadvaliThunk({ id, payload }));
-    if (updateDarsJadvaliThunk.fulfilled.match(result)) {
-      dispatch(fetchDarsJadvaliThunk());
-      toast.success(t("Dars muvaffaqiyatli ko'chirildi"));
-      return { ok: true };
-    }
-
-    const message = result.payload || t('Dars ko`chirilmadi');
-    const isConflict = /conflict|to'qnash|to`qnash|shu vaqtda|band|mavjud/i.test(message);
-    if (!isConflict) toast.error(message);
-    else toast.warning(message);
-    return { ok: false, isConflict, message };
-  }
-
-  async function handleFetchAttendanceReport(params) {
-    const result = await dispatch(fetchAttendanceReportThunk(params));
-    if (fetchAttendanceReportThunk.rejected.match(result)) {
-      toast.error(result.payload || t('Davomat hisoboti olinmadi'));
+    } catch (error) {
+      toast.error(error?.message || t('Student yaratilmadi'));
+      return false;
     }
   }
 
@@ -437,22 +295,10 @@ export default function AdminWorkspace({ section }) {
     const safeFormat = format === 'xlsx' ? 'xlsx' : 'pdf';
     setExporting(safeFormat);
     try {
-      const { blob, fileName } = await apiDownload({
-        path: `/api/admin/davomat/hisobot/export/${safeFormat}`,
-        query: params,
-      });
-
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
+      const { blob, fileName } = await exportAttendanceReport({ format: safeFormat, params }).unwrap();
       const datePart = params?.sana || new Date().toISOString().slice(0, 10);
       const fallbackName = `davomat-hisobot-${datePart}.${safeFormat}`;
-      const safeName = fileName && !fileName.endsWith('.bin') ? fileName : fallbackName;
-      anchor.download = safeName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
+      saveDownloadedFile({ blob, fileName, fallbackName });
       toast.success(t('{{format}} fayl yuklab olindi', { format: safeFormat.toUpperCase() }));
     } catch (error) {
       toast.error(getErrorMessage(error));
@@ -462,74 +308,107 @@ export default function AdminWorkspace({ section }) {
   }
 
   async function handleSaveFinanceSettings(payload) {
-    const result = await dispatch(updateFinanceSettingsThunk(payload));
-    if (updateFinanceSettingsThunk.fulfilled.match(result)) {
+    try {
+      await updateFinanceSettings(payload).unwrap();
       toast.success(t('Tarif rejalandi'));
-      dispatch(fetchFinanceSettingsThunk());
+      financeSettingsQuery.refetch();
       return true;
+    } catch (error) {
+      toast.error(error?.message || t('Tarif saqlanmadi'));
+      financeSettingsQuery.refetch();
+      return false;
     }
-    toast.error(result.payload || t('Tarif saqlanmadi'));
-    dispatch(fetchFinanceSettingsThunk());
-    return false;
   }
 
   async function handleOpenFinanceDetail(studentId) {
-    const result = await dispatch(fetchFinanceStudentDetailThunk(studentId));
-    if (fetchFinanceStudentDetailThunk.rejected.match(result)) {
-      toast.error(result.payload || t("Student to'lov ma'lumotlari olinmadi"));
+    try {
+      await fetchFinanceDetail(studentId).unwrap();
+    } catch (error) {
+      toast.error(error?.message || t("Student to'lov ma'lumotlari olinmadi"));
     }
   }
 
   async function handleCreateFinancePayment(studentId, payload) {
-    const result = await dispatch(createFinancePaymentThunk({ studentId, payload }));
-    if (createFinancePaymentThunk.fulfilled.match(result)) {
+    try {
+      await createFinancePayment({ studentId, payload }).unwrap();
       toast.success(t("To'lov saqlandi"));
       return true;
+    } catch (error) {
+      toast.error(error?.message || t("To'lov saqlanmadi"));
+      return false;
     }
-    toast.error(result.payload || t("To'lov saqlanmadi"));
-    return false;
   }
 
   async function handleCreateFinanceImtiyoz(studentId, payload) {
-    const result = await dispatch(createFinanceImtiyozThunk({ studentId, payload }));
-    if (createFinanceImtiyozThunk.fulfilled.match(result)) {
+    try {
+      await createFinanceImtiyoz({ studentId, payload }).unwrap();
       toast.success(t("Imtiyoz saqlandi"));
       return true;
+    } catch (error) {
+      toast.error(error?.message || t("Imtiyoz saqlanmadi"));
+      return false;
     }
-    toast.error(result.payload || t("Imtiyoz saqlanmadi"));
-    return false;
   }
 
   async function handleDeactivateFinanceImtiyoz(imtiyozId, payload) {
-    const result = await dispatch(deactivateFinanceImtiyozThunk({ imtiyozId, payload }));
-    if (deactivateFinanceImtiyozThunk.fulfilled.match(result)) {
+    try {
+      await deactivateFinanceImtiyoz({ imtiyozId, payload }).unwrap();
       toast.success(t("Imtiyoz bekor qilindi"));
       return true;
+    } catch (error) {
+      toast.error(error?.message || t("Imtiyoz bekor qilinmadi"));
+      return false;
     }
-    toast.error(result.payload || t("Imtiyoz bekor qilinmadi"));
-    return false;
+  }
+
+  async function handleRollbackFinanceTarif(tarifId) {
+    const ok = await askConfirm(
+      t("Tanlangan tarifni rollback qilmoqchimisiz?"),
+      t('Tarif rollback'),
+    );
+    if (!ok) return false;
+    try {
+      await rollbackFinanceTarif({ tarifId }).unwrap();
+      toast.success(t('Tarif rollback qilindi'));
+      financeSettingsQuery.refetch();
+      financeStudentsQuery.refetch();
+      return true;
+    } catch (error) {
+      toast.error(error?.message || t('Tarif rollback qilinmadi'));
+      return false;
+    }
+  }
+
+  async function handleRevertFinancePayment(tolovId) {
+    const ok = await askConfirm(
+      t("To'lov tranzaksiyasini bekor qilmoqchimisiz?"),
+      t("To'lovni bekor qilish"),
+    );
+    if (!ok) return false;
+    try {
+      await revertFinancePayment(tolovId).unwrap();
+      toast.success(t("To'lov bekor qilindi"));
+      financeStudentsQuery.refetch();
+      return true;
+    } catch (error) {
+      toast.error(error?.message || t("To'lov bekor qilinmadi"));
+      return false;
+    }
   }
 
   async function handleExportFinanceDebtors(format) {
     const safeFormat = format === 'xlsx' ? 'xlsx' : 'pdf';
     setExporting(safeFormat);
     try {
-      const { blob, fileName } = await apiDownload({
-        path: `/api/admin/moliya/students/export/${safeFormat}`,
-        query: {
+      const { blob, fileName } = await exportFinanceDebtors({
+        format: safeFormat,
+        params: {
           search: financeQuery.search || undefined,
           classroomId: financeQuery.classroomId === 'all' ? undefined : financeQuery.classroomId,
         },
-      });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
+      }).unwrap();
       const fallbackName = `moliya-qarzdorlar.${safeFormat}`;
-      anchor.download = fileName && !fileName.endsWith('.bin') ? fileName : fallbackName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
+      saveDownloadedFile({ blob, fileName, fallbackName });
       toast.success(t('{{format}} fayl yuklab olindi', { format: safeFormat.toUpperCase() }));
     } catch (error) {
       toast.error(getErrorMessage(error));
@@ -538,37 +417,14 @@ export default function AdminWorkspace({ section }) {
     }
   }
 
-  const headerStats = useMemo(
-    () => [
-      { label: t('Teacherlar'), value: teachers.total || 0 },
-      { label: t('Studentlar'), value: students.total || 0 },
-      { label: t('Sinflar'), value: classrooms.items.length || 0 },
-    ],
-    [teachers.total, students.total, classrooms.items.length, t],
-  );
-
   return (
     <div className="space-y-6">
       {isSubjectsSection && (
-        <SubjectsSection
-          subjects={subjects.items}
-          loading={subjects.loading}
-          actionLoading={actionLoading}
-          onCreateSubject={handleCreateSubject}
-          onDeleteSubject={handleDeleteSubject}
-        />
+        <SubjectsSection />
       )}
 
       {isClassroomsSection && (
         <ClassroomsSection
-          classrooms={classrooms.items}
-          loading={classrooms.loading}
-          actionLoading={actionLoading}
-          onCreateClassroom={handleCreateClassroom}
-          onPreviewPromoteClassroom={handlePreviewPromoteClassroom}
-          onPromoteClassroom={handlePromoteClassroom}
-          onPreviewAnnualClassPromotion={handlePreviewAnnualClassPromotion}
-          onRunAnnualClassPromotion={handleRunAnnualClassPromotion}
           onOpenStudentDetail={(id) => navigate(`/admin/students/${id}`)}
           onDeleteStudent={handleDeleteStudent}
         />
@@ -576,28 +432,15 @@ export default function AdminWorkspace({ section }) {
 
       {isJadvalSection && (
         <ScheduleSection
-          actionLoading={actionLoading}
           classrooms={classrooms.items}
           subjects={subjects.items}
           teachers={teachers.items}
-          vaqtOraliqlari={vaqtOraliqlari.items}
-          darslar={darsJadvali.items}
-          darslarLoading={darsJadvali.loading}
-          onCreateVaqtOraliq={handleCreateVaqtOraliq}
-          onDeleteVaqtOraliq={handleDeleteVaqtOraliq}
-          onCreateDars={handleCreateDars}
-          onDeleteDars={handleDeleteDars}
-          onMoveDars={handleMoveDars}
         />
       )}
 
       {isAttendanceSection && (
         <AttendanceSection
           classrooms={classrooms.items}
-          loading={attendance.loading}
-          error={attendance.error}
-          report={attendance.report}
-          onFetch={handleFetchAttendanceReport}
           onExport={handleExportAttendance}
           exporting={exporting}
         />
@@ -606,27 +449,22 @@ export default function AdminWorkspace({ section }) {
       {isFinanceSection && (
         <FinanceSection
           classrooms={classrooms.items}
-          settings={finance.settings}
-          settingsMeta={finance.settingsMeta}
-          studentsState={finance.students}
-          studentsSummary={finance.students.summary}
-          detailState={finance.detail}
+          settings={financeSettings}
+          settingsMeta={financeSettingsMeta}
+          studentsState={financeStudentsState}
+          studentsSummary={financeStudentsState.summary}
+          detailState={financeDetailState}
           query={financeQuery}
-          actionLoading={actionLoading}
+          actionLoading={financeActionLoading}
           onChangeQuery={(patch) => setFinanceQuery((prev) => ({ ...prev, ...patch }))}
-          onRefresh={() =>
-            dispatch(fetchFinanceStudentsThunk({
-              ...financeQuery,
-              debtTargetMonth: financeQuery.debtTargetMonth || undefined,
-              cashflowMonth: financeQuery.cashflowMonth || undefined,
-              classroomId: financeQuery.classroomId === 'all' ? undefined : financeQuery.classroomId,
-            }))
-          }
+          onRefresh={() => financeStudentsQuery.refetch()}
           onSaveSettings={handleSaveFinanceSettings}
           onOpenDetail={handleOpenFinanceDetail}
           onCreatePayment={handleCreateFinancePayment}
           onCreateImtiyoz={handleCreateFinanceImtiyoz}
           onDeactivateImtiyoz={handleDeactivateFinanceImtiyoz}
+          onRollbackTarif={handleRollbackFinanceTarif}
+          onRevertPayment={handleRevertFinancePayment}
           onExportDebtors={handleExportFinanceDebtors}
           exporting={exporting}
         />
@@ -634,40 +472,32 @@ export default function AdminWorkspace({ section }) {
 
       {isTeachersSection && (
         <TeachersSection
-          actionLoading={actionLoading}
+          actionLoading={peopleMutationLoading}
           subjects={subjects.items}
           classrooms={classrooms.items}
           onCreateTeacher={handleCreateTeacher}
           onCreateStudent={handleCreateStudent}
-          teachers={teachers}
           teacherQuery={teacherQuery}
           setTeacherQuery={setTeacherQuery}
-          onDeleteTeacher={handleDeleteTeacher}
           onOpenDetail={(id) => navigate(`/admin/teachers/${id}`)}
         />
       )}
 
       {isStudentsSection && (
         <StudentsSection
-          actionLoading={actionLoading}
+          actionLoading={peopleMutationLoading}
           subjects={subjects.items}
           classrooms={classrooms.items}
           onCreateTeacher={handleCreateTeacher}
           onCreateStudent={handleCreateStudent}
-          students={students}
           studentQuery={studentQuery}
           setStudentQuery={setStudentQuery}
-          onDeleteStudent={handleDeleteStudent}
           onOpenDetail={(id) => navigate(`/admin/students/${id}`)}
         />
       )}
 
       {isDashboardSection && (
-        <DashboardSection
-          headerStats={headerStats}
-          attendanceReport={attendance.report}
-          darslar={darsJadvali.items}
-        />
+        <DashboardSection />
       )}
 
       <ConfirmModal

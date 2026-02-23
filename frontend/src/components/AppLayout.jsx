@@ -10,7 +10,7 @@ import {
 import { toast } from "react-toastify";
 import { useAppDispatch, useAppSelector } from "../app/hooks";
 import { logout } from "../features/auth/authSlice";
-import { apiRequest } from "../lib/apiClient";
+import { useGetAuthMeQuery, useLogoutAuthMutation } from "../services/api/authApi";
 import LanguageSwitcher from "./LanguageSwitcher";
 import { Button } from "./ui";
 
@@ -77,8 +77,8 @@ function SidebarContent({
   return (
     <>
       <div>
-        <div className="mb-3 flex items-center gap-3">
-          <div className="h-12 w-12 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+        <div className="mb-4 flex items-center gap-3 rounded-2xl border border-slate-200/90 bg-white/80 p-3 shadow-sm ring-1 ring-slate-200/60">
+          <div className="h-12 w-12 overflow-hidden rounded-full border border-slate-300/80 bg-slate-100 shadow-inner">
             {avatarUrl ? (
               <img
                 src={avatarUrl}
@@ -100,10 +100,12 @@ function SidebarContent({
             </p>
           </div>
         </div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
           {t("Maktab CRM")}
         </p>
-        <h1 className="mt-1 text-2xl font-bold text-slate-900">{t("Panel")}</h1>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+          {t("Panel")}
+        </h1>
         <p className="mt-1 text-xs text-slate-500">
           {t("Rol")}: {t(`roles.${role}`, { defaultValue: role })}
         </p>
@@ -121,11 +123,11 @@ function SidebarContent({
               item.to === "/manager"
             }
             onClick={onNavigate}
-            className={({ isActive }) =>
-              `flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 ${
+          className={({ isActive }) =>
+              `flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${
                 isActive
-                  ? "bg-slate-900 text-white"
-                  : "text-slate-700 hover:bg-slate-100"
+                  ? "border border-indigo-300/80 bg-indigo-50 text-indigo-700 shadow-sm shadow-indigo-100"
+                  : "border border-transparent text-slate-700 hover:border-slate-200 hover:bg-white hover:shadow-sm"
               }`
             }
           >
@@ -135,7 +137,7 @@ function SidebarContent({
         ))}
       </nav>
 
-      <div className="mt-8 space-y-2">
+      <div className="mt-8 space-y-2 border-t border-slate-200/80 pt-4">
         <Button onClick={onLogout} variant="danger" className="w-full">
           {t("Logout")}
         </Button>
@@ -152,7 +154,9 @@ export default function AppLayout() {
   const role = useAppSelector((state) => state.auth.role);
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
+  const currentUserQuery = useGetAuthMeQuery(undefined, { skip: !isAuthenticated });
+  const [logoutAuth] = useLogoutAuthMutation();
+  const currentUser = currentUserQuery.data?.user || null;
 
   const menuByRole = useMemo(
     () => ({
@@ -284,7 +288,7 @@ export default function AppLayout() {
     const segments = location.pathname.split("/").filter(Boolean);
     const crumbs = [
       {
-        path: `/${segments[0] || ""}`.replace(/\/$/, "") || "/",
+        path: "/",
         label: t("Bosh sahifa"),
       },
     ];
@@ -329,38 +333,14 @@ export default function AppLayout() {
     return undefined;
   }, [sidebarOpen]);
 
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    let isCancelled = false;
-
-    async function loadMe() {
-      try {
-        const data = await apiRequest({ path: "/api/auth/me" });
-        if (!isCancelled) {
-          setCurrentUser(data?.user || null);
-        }
-      } catch {
-        if (!isCancelled) {
-          setCurrentUser(null);
-        }
-      }
-    }
-
-    loadMe();
-    return () => {
-      isCancelled = true;
-    };
-  }, [isAuthenticated, role]);
-
   async function handleLogout() {
     try {
-      await apiRequest({ path: "/api/auth/logout", method: "POST" });
+      await logoutAuth().unwrap();
     } catch {
       // intentionally ignored
     }
 
     dispatch(logout());
-    setCurrentUser(null);
     toast.info(t("Tizimdan chiqdingiz"));
     navigate("/login", { replace: true });
   }
@@ -369,41 +349,45 @@ export default function AppLayout() {
     <div className="min-h-screen bg-slate-100">
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-slate-900/50 lg:hidden"
+          className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      <div className="mx-auto flex w-full max-w-[1600px]">
-        <aside className="sticky top-0 hidden h-screen w-72 border-r border-slate-200 bg-white p-5 lg:block">
-          <SidebarContent
-            role={role}
-            menuItems={menuItems}
-            onLogout={handleLogout}
-            t={t}
-            currentUser={currentUser}
-          />
+      <div className="mx-auto flex w-full max-w-[1680px] gap-4 px-2 py-2 lg:px-4 lg:py-4">
+        <aside className="sticky top-4 hidden h-[calc(100vh-2rem)] w-72 rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-[0_10px_36px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/50 backdrop-blur lg:block">
+          <div className="h-full overflow-y-auto pr-1">
+            <SidebarContent
+              role={role}
+              menuItems={menuItems}
+              onLogout={handleLogout}
+              t={t}
+              currentUser={currentUser}
+            />
+          </div>
         </aside>
 
         <aside
-          className={`fixed inset-y-0 left-0 z-50 w-72 border-r border-slate-200 bg-white p-5 transition-transform lg:hidden ${
+          className={`fixed inset-y-0 left-0 z-50 w-72 border-r border-slate-200/80 bg-white/95 p-5 shadow-2xl backdrop-blur transition-transform lg:hidden ${
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
           aria-hidden={!sidebarOpen}
         >
-          <SidebarContent
-            role={role}
-            menuItems={menuItems}
-            onLogout={handleLogout}
-            onNavigate={() => setSidebarOpen(false)}
-            t={t}
-            currentUser={currentUser}
-          />
+          <div className="h-full overflow-y-auto pr-1">
+            <SidebarContent
+              role={role}
+              menuItems={menuItems}
+              onLogout={handleLogout}
+              onNavigate={() => setSidebarOpen(false)}
+              t={t}
+              currentUser={currentUser}
+            />
+          </div>
         </aside>
 
-        <main className="w-full p-4 lg:p-6">
-          <header className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-3">
+        <main className="w-full p-2 lg:p-0">
+          <header className="mb-4 rounded-3xl border border-slate-200/90 bg-white/90 p-4 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/50 backdrop-blur">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="mb-1 flex items-center gap-2 lg:hidden">
                   <Button
@@ -415,13 +399,13 @@ export default function AppLayout() {
                     <HamburgerIcon />
                   </Button>
                 </div>
-                <h2 className="text-xl font-bold text-slate-900">
-                  {pageTitle}
-                </h2>
-                <nav
-                  className="mt-1 flex flex-wrap items-center gap-1 text-sm text-slate-500"
-                  aria-label="Breadcrumb"
-                >
+                  <h2 className="text-xl font-semibold tracking-tight text-slate-900">
+                    {pageTitle}
+                  </h2>
+                  <nav
+                    className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-slate-500"
+                    aria-label="Breadcrumb"
+                  >
                   {breadcrumbs.map((crumb, index) => (
                     <span
                       key={crumb.path}
@@ -435,7 +419,7 @@ export default function AppLayout() {
                       ) : (
                         <Link
                           to={crumb.path}
-                          className="hover:text-slate-700 hover:underline"
+                          className="rounded-md px-1.5 py-0.5 hover:bg-slate-100 hover:text-slate-800"
                         >
                           {crumb.label}
                         </Link>
@@ -444,12 +428,14 @@ export default function AppLayout() {
                   ))}
                 </nav>
               </div>
-              <div className="flex items-center gap-2">
-                <LanguageSwitcher compact />
-              </div>
-            </div>
-          </header>
-          <Outlet />
+               <div className="flex w-full items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/80 px-2 py-1 shadow-sm ring-1 ring-slate-200/60 sm:w-auto">
+                 <LanguageSwitcher compact />
+               </div>
+             </div>
+           </header>
+          <div className="space-y-4">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

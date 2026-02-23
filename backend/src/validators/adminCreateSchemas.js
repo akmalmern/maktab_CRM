@@ -67,13 +67,16 @@ const createSubjectSchema = z
   .strict();
 
 const classroomNameSchema = requiredText("name")
-  .regex(/^\d{1,2}\s*-\s*[A-Za-z]$/, "name formati 7-A bo'lishi kerak")
+  .regex(/^\d{1,2}\s*-\s*.+$/u, "name formati 7-A yoki 10-FizMat bo'lishi kerak")
   .transform((value) => {
-    const [gradeRaw, suffixRaw] = value.split("-");
+    const dashIndex = value.indexOf("-");
+    const gradeRaw = dashIndex >= 0 ? value.slice(0, dashIndex) : value;
+    const suffixRaw = dashIndex >= 0 ? value.slice(dashIndex + 1) : "";
     const grade = Number.parseInt(String(gradeRaw).trim(), 10);
-    const suffix = String(suffixRaw || "")
-      .trim()
-      .toUpperCase();
+    let suffix = String(suffixRaw || "").trim().replace(/\s{2,}/g, " ");
+    if (suffix.length === 1) {
+      suffix = suffix.toUpperCase();
+    }
     return `${grade}-${suffix}`;
   })
   .refine(
@@ -82,7 +85,8 @@ const classroomNameSchema = requiredText("name")
       return Number.isFinite(grade) && grade >= 1 && grade <= 11;
     },
     "name noto'g'ri: sinf darajasi 1 dan 11 gacha bo'lishi kerak",
-  );
+  )
+  .refine((value) => String(value.split("-").slice(1).join("-") || "").trim().length > 0, "name suffix bo'sh bo'lishi mumkin emas");
 
 const academicYearSchema = requiredText("academicYear")
   .regex(

@@ -8,8 +8,8 @@ export default function ConfirmModal({ open, title = 'Tasdiqlash', message, onCo
 
   return (
     <Modal open={open} onClose={onCancel} maxWidth="max-w-md" title={translateText(t, title)}>
-      <p className="text-sm text-slate-600">{translateText(t, message)}</p>
-      <div className="mt-4 flex justify-end gap-2">
+      <p className="text-sm leading-6 text-slate-600">{translateText(t, message)}</p>
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
         <Button variant="secondary" onClick={onCancel} disabled={loading}>
           {t('Bekor qilish')}
         </Button>

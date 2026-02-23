@@ -98,6 +98,12 @@ router.get(
   asyncHandler(classrooms.getClassrooms),
 );
 router.get(
+  "/classrooms/meta",
+  requireAuth,
+  requireRole("ADMIN"),
+  asyncHandler(classrooms.getClassroomsMeta),
+);
+router.get(
   "/classrooms/:id/students",
   requireAuth,
   requireRole("ADMIN"),

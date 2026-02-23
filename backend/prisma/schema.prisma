@@ -70,6 +70,7 @@ enum ImtiyozTuri {
 
 enum StudentOyMajburiyatHolati {
   BELGILANDI
+  QISMAN_TOLANGAN
   TOLANGAN
 }
 
@@ -81,6 +82,8 @@ model User {
   password String
 
   email String? @unique
+  /// NOTE: `phone` Prisma-level optional because `User` is shared by ADMIN/TEACHER/STUDENT/MANAGER.
+  /// DB-level role-specific CHECK constraint (custom SQL migration) enforces phone for TEACHER/STUDENT.
   phone String? @unique
 
   isActive Boolean @default(true)
@@ -159,6 +162,7 @@ model Student {
   birthDate      DateTime?
   yashashManzili String?
 
+  /// NOTE: DB-level CHECK constraint (custom SQL migration) enforces non-empty `parentPhone`.
   parentPhone String?
 
   avatarName String?
@@ -450,6 +454,7 @@ model TolovQoplama {
   tranzaksiyaId String
   yil Int
   oy Int
+  summa Int @default(0)
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
   tranzaksiya TolovTranzaksiya @relation(fields: [tranzaksiyaId], references: [id], onDelete: Cascade)
@@ -458,7 +463,7 @@ model TolovQoplama {
 
   @@index([studentId, yil, oy])
   @@index([tranzaksiyaId])
-  @@unique([studentId, yil, oy])
+  @@unique([tranzaksiyaId, yil, oy])
 }
 
 model StudentOyMajburiyat {
@@ -471,6 +476,8 @@ model StudentOyMajburiyat {
   bazaSumma Int
   imtiyozSumma Int @default(0)
   netSumma Int
+  tolanganSumma Int @default(0)
+  qoldiqSumma Int @default(0)
 
   holat StudentOyMajburiyatHolati @default(BELGILANDI)
   source String @default("BAZA")
@@ -493,7 +500,8 @@ model TolovImtiyozi {
 
   turi ImtiyozTuri
   qiymat Int?
-  boshlanishOy String
+  boshlanishYil Int
+  boshlanishOyRaqam Int
   oylarSoni Int
   oylarSnapshot Json?
   sabab String
@@ -511,6 +519,7 @@ model TolovImtiyozi {
   updatedAt DateTime @updatedAt
 
   @@index([studentId, isActive, createdAt])
+  @@index([studentId, isActive, boshlanishYil, boshlanishOyRaqam])
   @@index([adminUserId, createdAt])
   @@index([bekorQilinganAdminUserId, bekorQilinganAt])
 }

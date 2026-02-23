@@ -27,7 +27,7 @@ export default function StateView({ type = 'empty', title, description, classNam
 
   if (type === 'skeleton') {
     return (
-      <div className={cn('rounded-lg border border-slate-200 bg-white p-4', className)}>
+      <div className={cn('rounded-xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-200/40', className)}>
         <div className="animate-pulse space-y-3">
           <div className="h-4 w-40 rounded bg-slate-200" />
           <div className="h-3 w-56 rounded bg-slate-200" />
@@ -42,7 +42,12 @@ export default function StateView({ type = 'empty', title, description, classNam
   }
 
   return (
-    <div className={cn('rounded-lg border border-slate-200 bg-white p-6 text-center', className)}>
+    <div
+      className={cn(
+        'rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm ring-1 ring-slate-200/40',
+        className,
+      )}
+    >
       <p className="text-base font-semibold text-slate-800">
         {translateText(t, title || content.title)}
       </p>
