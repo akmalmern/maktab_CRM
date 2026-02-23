@@ -7,7 +7,10 @@ function sumFormat(value) {
 }
 
 function todayMonth() {
-  return new Date().toISOString().slice(0, 7);
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
 }
 
 function toMonthNumber(monthKey) {
@@ -122,6 +125,430 @@ function MiniStatCard({ label, value, tone = 'default' }) {
   );
 }
 
+function buildFinancePaymentPreview({ detailStudent, paymentForm, oylikTarif }) {
+  if (!detailStudent) return null;
+
+  const detailDebtMonths = detailStudent.qarzOylar || [];
+  const debtAmountMap = new Map(
+    (detailStudent?.qarzOylarDetal || []).map((item) => [item.key, Number(item.oySumma || 0)]),
+  );
+  const detailDebtCount = detailStudent.qarzOylarSoni || 0;
+  const detailDebtAmount = Number(detailStudent.jamiQarzSumma || 0);
+  const startMonth = paymentForm.startMonth || todayMonth();
+  const currentOylikTarif = Number(oylikTarif || 0);
+
+  const monthsToClose =
+    paymentForm.turi === 'YILLIK'
+      ? buildMonthRange(startMonth, 12)
+      : buildMonthRange(startMonth, Number(paymentForm.oylarSoni || 1));
+
+  const debtClosingMonths = monthsToClose.filter((key) => debtAmountMap.has(key));
+  const prepaymentMonths = monthsToClose.filter((key) => !debtAmountMap.has(key));
+  const debtExpectedSumma = debtClosingMonths.reduce(
+    (acc, key) => acc + Number(debtAmountMap.get(key) || 0),
+    0,
+  );
+  const prepaymentExpectedSumma = prepaymentMonths.length * Math.max(currentOylikTarif, 0);
+  const expectedSumma = debtExpectedSumma + prepaymentExpectedSumma;
+  const remainDebtCount = Math.max(detailDebtCount - debtClosingMonths.length, 0);
+  const remainDebtAmount = Math.max(detailDebtAmount - debtExpectedSumma, 0);
+  const previewMonthsCount = monthsToClose.length;
+  const firstMonth = monthsToClose[0] || null;
+  const lastMonth = monthsToClose[monthsToClose.length - 1] || null;
+  const enteredSumma = Number(paymentForm.summa || 0);
+  const requireManualSumma = paymentForm.turi === 'IXTIYORIY';
+  const hasEnteredSumma = enteredSumma > 0;
+  const finalSumma = hasEnteredSumma ? enteredSumma : expectedSumma;
+  const hasAnyDebtMonth = debtClosingMonths.length > 0;
+  const hasAnyPrepaymentMonth = prepaymentMonths.length > 0;
+  const hasAnyPayableMonth = hasAnyDebtMonth || (hasAnyPrepaymentMonth && currentOylikTarif > 0);
+  const exceedsExpectedSumma = hasEnteredSumma && hasAnyPayableMonth && enteredSumma > expectedSumma;
+  const missingManualSumma = requireManualSumma && !hasEnteredSumma;
+  const summaMatches = requireManualSumma
+    ? hasEnteredSumma && hasAnyPayableMonth && enteredSumma <= expectedSumma
+    : !hasEnteredSumma || (hasAnyPayableMonth && enteredSumma <= expectedSumma);
+  const isPartialPayment = hasEnteredSumma && hasAnyPayableMonth && enteredSumma < expectedSumma;
+
+  return {
+    monthsToClose,
+    actuallyClosing: debtClosingMonths,
+    debtClosingMonths,
+    prepaymentMonths,
+    remainDebtCount,
+    remainDebtAmount,
+    previewMonthsCount,
+    firstMonth,
+    lastMonth,
+    expectedSumma,
+    debtExpectedSumma,
+    prepaymentExpectedSumma,
+    finalSumma,
+    valid: hasAnyPayableMonth && summaMatches,
+    hasAnyDebtMonth,
+    hasAnyPrepaymentMonth,
+    hasAnyPayableMonth,
+    summaMatches,
+    exceedsExpectedSumma,
+    missingManualSumma,
+    isPartialPayment,
+    usesEstimatedPrepayment: hasAnyPrepaymentMonth,
+    currentOylikTarif,
+    requireManualSumma,
+    hasEnteredSumma,
+    selectedDebtAmounts: debtClosingMonths.map((key) => ({
+      key,
+      amount: Number(debtAmountMap.get(key) || 0),
+    })),
+    detailDebtMonths,
+  };
+}
+
+function useFinancePaymentPreview({ detailStudent, isSelectedDetailReady, paymentForm, oylikTarif }) {
+  return useMemo(() => {
+    if (!detailStudent || !isSelectedDetailReady) return null;
+    return buildFinancePaymentPreview({ detailStudent, paymentForm, oylikTarif });
+  }, [detailStudent, isSelectedDetailReady, paymentForm, oylikTarif]);
+}
+
+function PaymentPreviewCard({ paymentPreview, paymentForm, detailState, selectedStudentId, isSelectedDetailReady }) {
+  return (
+    <Card title="To'lov preview">
+      {!paymentPreview ? (
+        <StateView
+          type={detailState.loading || (selectedStudentId && !isSelectedDetailReady) ? 'loading' : 'empty'}
+          description={
+            detailState.loading || (selectedStudentId && !isSelectedDetailReady)
+              ? "Student to'lov ma'lumoti yuklanmoqda"
+              : 'Preview mavjud emas'
+          }
+        />
+      ) : (
+        <div className="space-y-2 text-sm">
+          {!paymentPreview.hasAnyPayableMonth && (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700">
+              Tanlangan davr bo'yicha to'lov hisoblab bo'lmadi (tarif yoki qarz ma'lumoti yetarli emas).
+            </p>
+          )}
+          {paymentPreview.hasAnyPrepaymentMonth && (
+            <p className="rounded-xl border border-sky-200 bg-sky-50 px-2 py-1 text-sky-700">
+              Tanlangan davrda qarz bo'lmagan oylar ham bor. Ular oldindan to'lov sifatida hisoblanadi
+              {paymentPreview.currentOylikTarif > 0 ? ` (oylik tarif: ${sumFormat(paymentPreview.currentOylikTarif)} so'm)` : ''}.
+            </p>
+          )}
+          {!paymentPreview.summaMatches && (
+            <p className="rounded-xl border border-rose-200 bg-rose-50 px-2 py-1 text-rose-700">
+              {paymentPreview.missingManualSumma
+                ? "Ixtiyoriy to'lovda summa majburiy."
+                : paymentPreview.exceedsExpectedSumma
+                  ? "Yuboriladigan summa tanlangan qarz oylaridan katta bo'lmasligi kerak."
+                  : "Yuboriladigan summa noto'g'ri kiritilgan."}
+            </p>
+          )}
+          {paymentPreview.isPartialPayment && (
+            <p className="rounded-xl border border-indigo-200 bg-indigo-50 px-2 py-1 text-indigo-700">
+              Qisman to'lov: tanlangan qarz oylarining bir qismi yopiladi.
+            </p>
+          )}
+          <div className="grid grid-cols-1 gap-2 rounded-xl border border-slate-200/80 bg-slate-50/60 p-3 md:grid-cols-2">
+            <p className="text-slate-700">To'lov turi: <b>{paymentTypeLabel(paymentForm.turi)}</b></p>
+            <p className="text-slate-700">Yopiladigan oylar soni: <b>{paymentPreview.previewMonthsCount}</b></p>
+            <p className="text-slate-700 md:col-span-2">
+              Davr:{' '}
+              <b>
+                {paymentPreview.firstMonth
+                  ? `${formatMonthKey(paymentPreview.firstMonth)} - ${formatMonthKey(paymentPreview.lastMonth)}`
+                  : '-'}
+              </b>
+            </p>
+            <p className="text-slate-700">Kutilgan summa: <b>{sumFormat(paymentPreview.expectedSumma)} so'm</b></p>
+            <p className="text-slate-700">Yuboriladigan summa: <b>{sumFormat(paymentPreview.finalSumma)} so'm</b></p>
+            <p className="text-slate-700">
+              Qarzdan yopiladigan summa: <b>{sumFormat(paymentPreview.debtExpectedSumma)} so'm</b>
+            </p>
+            <p className="text-slate-700">
+              Oldindan to'lov (taxminiy): <b>{sumFormat(paymentPreview.prepaymentExpectedSumma)} so'm</b>
+            </p>
+          </div>
+          <div>
+            <p className="mb-1 text-slate-600">Yopilishi rejalangan oylar:</p>
+            <MonthChips months={paymentPreview.monthsToClose.map(formatMonthKey)} maxVisible={6} />
+          </div>
+          <div>
+            <p className="mb-1 text-slate-600">Qarzdan yopiladigan oylar:</p>
+            <MonthChips months={paymentPreview.actuallyClosing.map(formatMonthKey)} maxVisible={6} />
+          </div>
+          <div>
+            <p className="mb-1 text-slate-600">Oldindan to'lanadigan oylar:</p>
+            <MonthChips months={paymentPreview.prepaymentMonths.map(formatMonthKey)} maxVisible={6} />
+          </div>
+          {!!paymentPreview.selectedDebtAmounts?.length && (
+            <div>
+              <p className="mb-1 text-slate-600">Oylar kesimida summa:</p>
+              <div className="flex flex-wrap gap-1">
+                {paymentPreview.selectedDebtAmounts.map((item) => (
+                  <span
+                    key={item.key}
+                    className="rounded-full border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm"
+                  >
+                    {formatMonthKey(item.key)}: {sumFormat(item.amount)} so'm
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <p className="text-slate-700">
+            Qoladigan qarz: <b>{paymentPreview.remainDebtCount}</b> oy / <b>{sumFormat(paymentPreview.remainDebtAmount)} so'm</b>
+          </p>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ImtiyozFormCard({
+  actionLoading,
+  imtiyozForm,
+  setImtiyozForm,
+  handleCreateImtiyoz,
+  detailImtiyozlar,
+  handleDeactivateImtiyoz,
+}) {
+  return (
+    <Card title="Imtiyoz berish">
+      <form
+        onSubmit={handleCreateImtiyoz}
+        className="grid grid-cols-1 gap-2 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3 ring-1 ring-slate-200/50 lg:grid-cols-3"
+      >
+        <div>
+          <FieldLabel>Imtiyoz turi</FieldLabel>
+          <Select
+            value={imtiyozForm.turi}
+            onChange={(e) =>
+              setImtiyozForm((p) => ({
+                ...p,
+                turi: e.target.value,
+                qiymat: e.target.value === 'TOLIQ_OZOD' ? '' : p.qiymat,
+              }))
+            }
+          >
+            <option value="FOIZ">Foiz</option>
+            <option value="SUMMA">Summa</option>
+            <option value="TOLIQ_OZOD">To'liq ozod</option>
+          </Select>
+        </div>
+        <div>
+          <FieldLabel>Boshlanish oyi</FieldLabel>
+          <Input
+            type="month"
+            value={imtiyozForm.boshlanishOy}
+            onChange={(e) => setImtiyozForm((p) => ({ ...p, boshlanishOy: e.target.value }))}
+          />
+        </div>
+        <div>
+          <FieldLabel>Necha oyga</FieldLabel>
+          <Input
+            type="number"
+            min={1}
+            value={imtiyozForm.oylarSoni}
+            onChange={(e) => setImtiyozForm((p) => ({ ...p, oylarSoni: e.target.value }))}
+            placeholder="Oylar soni"
+          />
+        </div>
+        {imtiyozForm.turi !== 'TOLIQ_OZOD' && (
+          <div>
+            <FieldLabel>{imtiyozForm.turi === 'FOIZ' ? 'Foiz qiymati' : "Chegirma summasi"}</FieldLabel>
+            <Input
+              type="number"
+              min={1}
+              value={imtiyozForm.qiymat}
+              onChange={(e) => setImtiyozForm((p) => ({ ...p, qiymat: e.target.value }))}
+              placeholder={imtiyozForm.turi === 'FOIZ' ? 'Foiz (1-99)' : "Summa (so'm)"}
+              required
+            />
+          </div>
+        )}
+        <div className={imtiyozForm.turi === 'TOLIQ_OZOD' ? 'lg:col-span-2' : ''}>
+          <FieldLabel>Sabab</FieldLabel>
+          <Input
+            type="text"
+            value={imtiyozForm.sabab}
+            onChange={(e) => setImtiyozForm((p) => ({ ...p, sabab: e.target.value }))}
+            placeholder="Masalan: yutuq, ijtimoiy holat"
+            required
+          />
+        </div>
+        <div className="lg:col-span-3">
+          <FieldLabel>Izoh (ixtiyoriy)</FieldLabel>
+          <Textarea
+            rows={2}
+            value={imtiyozForm.izoh}
+            onChange={(e) => setImtiyozForm((p) => ({ ...p, izoh: e.target.value }))}
+            placeholder="Izoh (ixtiyoriy)"
+          />
+        </div>
+        <div className="lg:col-span-3 flex justify-end border-t border-slate-200/80 pt-2">
+          <Button type="submit" variant="indigo" disabled={actionLoading}>
+            Imtiyozni saqlash
+          </Button>
+        </div>
+      </form>
+
+      <div className="mt-3 space-y-2">
+        <p className="text-sm font-semibold text-slate-700">Berilgan imtiyozlar</p>
+        {!detailImtiyozlar.length ? (
+          <p className="text-sm text-slate-500">Imtiyozlar yo'q</p>
+        ) : (
+          <div className="space-y-2">
+            {detailImtiyozlar.map((item) => (
+              <div
+                key={item.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-2 shadow-sm"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">
+                    {imtiyozTypeLabel(item.turi)}
+                    {item.turi === 'FOIZ' && ` (${item.qiymat}%)`}
+                    {item.turi === 'SUMMA' && ` (${sumFormat(item.qiymat)} so'm)`}
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    {item.davrLabel} | {item.sabab}
+                  </p>
+                </div>
+                {item.isActive ? (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    className="min-w-24"
+                    onClick={() => handleDeactivateImtiyoz(item.id)}
+                    disabled={actionLoading}
+                  >
+                    Bekor qilish
+                  </Button>
+                ) : (
+                  <Badge>Bekor qilingan</Badge>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function PaymentFormCard({
+  actionLoading,
+  detailState,
+  selectedStudentId,
+  isSelectedDetailReady,
+  paymentForm,
+  setPaymentForm,
+  handleCreatePayment,
+  setModalOpen,
+  paymentPreview,
+}) {
+  return (
+    <>
+      <form
+        onSubmit={handleCreatePayment}
+        className="grid grid-cols-1 gap-2 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3 ring-1 ring-slate-200/50 md:grid-cols-2"
+      >
+        <div>
+          <FieldLabel>To'lov turi</FieldLabel>
+          <Select
+            value={paymentForm.turi}
+            onChange={(e) =>
+              setPaymentForm((p) => {
+                const nextType = e.target.value;
+                if (nextType === 'YILLIK') {
+                  return { ...p, turi: nextType, oylarSoni: 12 };
+                }
+                return { ...p, turi: nextType, oylarSoni: p.oylarSoni || 1 };
+              })
+            }
+          >
+            <option value="OYLIK">Oylik</option>
+            <option value="YILLIK">Yillik</option>
+            <option value="IXTIYORIY">Ixtiyoriy</option>
+          </Select>
+        </div>
+        <div>
+          <FieldLabel>Boshlanish oyi</FieldLabel>
+          <Input
+            type="month"
+            value={paymentForm.startMonth}
+            onChange={(e) => setPaymentForm((p) => ({ ...p, startMonth: e.target.value }))}
+          />
+        </div>
+        <div>
+          <FieldLabel>Oylar soni</FieldLabel>
+          <Input
+            type="number"
+            min={1}
+            value={paymentForm.oylarSoni}
+            onChange={(e) => setPaymentForm((p) => ({ ...p, oylarSoni: e.target.value }))}
+            placeholder="Oylar soni"
+            disabled={paymentForm.turi === 'YILLIK'}
+          />
+        </div>
+        <div>
+          <FieldLabel>
+            {paymentForm.turi === 'IXTIYORIY' ? "Yuboriladigan summa (majburiy)" : "Yuboriladigan summa (ixtiyoriy)"}
+          </FieldLabel>
+          <Input
+            type="number"
+            min={1}
+            value={paymentForm.summa}
+            onChange={(e) => setPaymentForm((p) => ({ ...p, summa: e.target.value }))}
+            placeholder={
+              paymentForm.turi === 'IXTIYORIY'
+                ? "Ixtiyoriy to'lovda summa kiriting"
+                : "Bo'sh qoldirilsa auto hisoblanadi"
+            }
+            required={paymentForm.turi === 'IXTIYORIY'}
+          />
+        </div>
+        <div className="md:col-span-2">
+          <FieldLabel>Izoh</FieldLabel>
+          <Textarea
+            rows={2}
+            value={paymentForm.izoh}
+            onChange={(e) => setPaymentForm((p) => ({ ...p, izoh: e.target.value }))}
+            placeholder="Izoh (ixtiyoriy)"
+          />
+        </div>
+        <div className="md:col-span-2 flex flex-col justify-end gap-2 border-t border-slate-200/80 pt-2 sm:flex-row">
+          <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={() => setModalOpen(false)}>
+            Yopish
+          </Button>
+          <Button
+            type="submit"
+            variant="success"
+            className="w-full sm:w-auto"
+            disabled={
+              actionLoading ||
+              detailState.loading ||
+              (Boolean(selectedStudentId) && !isSelectedDetailReady) ||
+              !paymentPreview?.valid ||
+              !paymentPreview?.previewMonthsCount
+            }
+          >
+            To'lovni saqlash
+          </Button>
+        </div>
+      </form>
+
+      <PaymentPreviewCard
+        paymentPreview={paymentPreview}
+        paymentForm={paymentForm}
+        detailState={detailState}
+        selectedStudentId={selectedStudentId}
+        isSelectedDetailReady={isSelectedDetailReady}
+      />
+    </>
+  );
+}
+
 export default function FinanceSection({
   classrooms,
   settings,
@@ -145,6 +572,7 @@ export default function FinanceSection({
 }) {
   const [activeTab, setActiveTab] = useState('payments');
   const [modalOpen, setModalOpen] = useState(false);
+  const [paymentModalTab, setPaymentModalTab] = useState('payment');
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [settingsDraft, setSettingsDraft] = useState({
     oylikSumma: '',
@@ -170,6 +598,10 @@ export default function FinanceSection({
   const students = useMemo(() => studentsState.items || [], [studentsState.items]);
   const detailStudent = detailState.student;
   const detailImtiyozlar = useMemo(() => detailState.imtiyozlar || [], [detailState.imtiyozlar]);
+  const isSelectedDetailReady =
+    Boolean(selectedStudentId) &&
+    Boolean(detailStudent) &&
+    String(detailStudent?.id) === String(selectedStudentId);
 
   const settingsValidation = useMemo(() => {
     const minSumma = Number(settingsMeta?.constraints?.minSumma || 50000);
@@ -232,64 +664,16 @@ export default function FinanceSection({
     };
   }, [studentsSummary]);
 
-  const paymentPreview = useMemo(() => {
-    if (!detailStudent) return null;
-    const detailDebtMonths = detailStudent.qarzOylar || [];
-    const debtAmountMap = new Map(
-      (detailStudent?.qarzOylarDetal || []).map((item) => [item.key, Number(item.oySumma || 0)]),
-    );
-    const detailDebtCount = detailStudent.qarzOylarSoni || 0;
-    const detailDebtAmount = Number(detailStudent.jamiQarzSumma || 0);
-    const startMonth = paymentForm.startMonth || todayMonth();
-    let monthsToClose = [];
-
-    if (paymentForm.turi === 'YILLIK') {
-      monthsToClose = buildMonthRange(startMonth, 12);
-    } else {
-      monthsToClose = buildMonthRange(startMonth, Number(paymentForm.oylarSoni || 1));
-    }
-
-    const actuallyClosing = monthsToClose.filter((key) => debtAmountMap.has(key));
-    const expectedSumma = actuallyClosing.reduce((acc, key) => acc + Number(debtAmountMap.get(key) || 0), 0);
-    const remainDebtCount = Math.max(detailDebtCount - actuallyClosing.length, 0);
-    const remainDebtAmount = Math.max(detailDebtAmount - expectedSumma, 0);
-    const previewMonthsCount = monthsToClose.length;
-    const firstMonth = monthsToClose[0] || null;
-    const lastMonth = monthsToClose[monthsToClose.length - 1] || null;
-    const enteredSumma = Number(paymentForm.summa || 0);
-    const requireManualSumma = paymentForm.turi === 'IXTIYORIY';
-    const hasEnteredSumma = enteredSumma > 0;
-    const finalSumma = hasEnteredSumma ? enteredSumma : expectedSumma;
-    const hasAnyDebtMonth = actuallyClosing.length > 0;
-    const summaMatches = requireManualSumma
-      ? hasEnteredSumma && enteredSumma === expectedSumma
-      : !hasEnteredSumma || enteredSumma === expectedSumma;
-
-    return {
-      monthsToClose,
-      actuallyClosing,
-      remainDebtCount,
-      remainDebtAmount,
-      previewMonthsCount,
-      firstMonth,
-      lastMonth,
-      expectedSumma,
-      finalSumma,
-      valid: hasAnyDebtMonth && summaMatches,
-      hasAnyDebtMonth,
-      summaMatches,
-      requireManualSumma,
-      hasEnteredSumma,
-      selectedDebtAmounts: actuallyClosing.map((key) => ({
-        key,
-        amount: Number(debtAmountMap.get(key) || 0),
-      })),
-      detailDebtMonths,
-    };
-  }, [detailStudent, paymentForm]);
+  const paymentPreview = useFinancePaymentPreview({
+    detailStudent,
+    isSelectedDetailReady,
+    paymentForm,
+    oylikTarif: studentsSummary?.tarifOylikSumma || settings?.oylikSumma || 0,
+  });
 
   function openPaymentModal(studentId) {
     setSelectedStudentId(studentId);
+    setPaymentModalTab('payment');
     setPaymentForm({
       turi: 'OYLIK',
       startMonth: todayMonth(),
@@ -818,127 +1202,60 @@ export default function FinanceSection({
                   </div>
                 </div>
 
-                <Card title="Imtiyoz berish">
-                  <form
-                    onSubmit={handleCreateImtiyoz}
-                  className="grid grid-cols-1 gap-2 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3 ring-1 ring-slate-200/50 lg:grid-cols-3"
-                  >
-                    <div>
-                      <FieldLabel>Imtiyoz turi</FieldLabel>
-                      <Select
-                        value={imtiyozForm.turi}
-                        onChange={(e) =>
-                          setImtiyozForm((p) => ({
-                            ...p,
-                            turi: e.target.value,
-                            qiymat: e.target.value === 'TOLIQ_OZOD' ? '' : p.qiymat,
-                          }))
-                        }
-                      >
-                        <option value="FOIZ">Foiz</option>
-                        <option value="SUMMA">Summa</option>
-                        <option value="TOLIQ_OZOD">To'liq ozod</option>
-                      </Select>
-                    </div>
-                    <div>
-                      <FieldLabel>Boshlanish oyi</FieldLabel>
-                      <Input
-                        type="month"
-                        value={imtiyozForm.boshlanishOy}
-                        onChange={(e) => setImtiyozForm((p) => ({ ...p, boshlanishOy: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <FieldLabel>Necha oyga</FieldLabel>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={imtiyozForm.oylarSoni}
-                        onChange={(e) => setImtiyozForm((p) => ({ ...p, oylarSoni: e.target.value }))}
-                        placeholder="Oylar soni"
-                      />
-                    </div>
-                    {imtiyozForm.turi !== 'TOLIQ_OZOD' && (
-                      <div>
-                        <FieldLabel>
-                          {imtiyozForm.turi === 'FOIZ' ? 'Foiz qiymati' : "Chegirma summasi"}
-                        </FieldLabel>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={imtiyozForm.qiymat}
-                          onChange={(e) => setImtiyozForm((p) => ({ ...p, qiymat: e.target.value }))}
-                          placeholder={imtiyozForm.turi === 'FOIZ' ? 'Foiz (1-99)' : "Summa (so'm)"}
-                          required
-                        />
-                      </div>
-                    )}
-                    <div className={imtiyozForm.turi === 'TOLIQ_OZOD' ? 'lg:col-span-2' : ''}>
-                      <FieldLabel>Sabab</FieldLabel>
-                      <Input
-                        type="text"
-                        value={imtiyozForm.sabab}
-                        onChange={(e) => setImtiyozForm((p) => ({ ...p, sabab: e.target.value }))}
-                        placeholder="Masalan: yutuq, ijtimoiy holat"
-                        required
-                      />
-                    </div>
-                    <div className="lg:col-span-3">
-                      <FieldLabel>Izoh (ixtiyoriy)</FieldLabel>
-                      <Textarea
-                        rows={2}
-                        value={imtiyozForm.izoh}
-                        onChange={(e) => setImtiyozForm((p) => ({ ...p, izoh: e.target.value }))}
-                        placeholder="Izoh (ixtiyoriy)"
-                      />
-                    </div>
-                    <div className="lg:col-span-3 flex justify-end border-t border-slate-200/80 pt-2">
-                      <Button type="submit" variant="indigo" disabled={actionLoading}>
-                        Imtiyozni saqlash
-                      </Button>
-                    </div>
-                  </form>
-
-                  <div className="mt-3 space-y-2">
-                    <p className="text-sm font-semibold text-slate-700">Berilgan imtiyozlar</p>
-                    {!detailImtiyozlar.length ? (
-                      <p className="text-sm text-slate-500">Imtiyozlar yo'q</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {detailImtiyozlar.map((item) => (
-                          <div
-                            key={item.id}
-                            className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-2 shadow-sm"
-                          >
-                            <div>
-                              <p className="text-sm font-semibold text-slate-800">
-                                {imtiyozTypeLabel(item.turi)}
-                                {item.turi === 'FOIZ' && ` (${item.qiymat}%)`}
-                                {item.turi === 'SUMMA' && ` (${sumFormat(item.qiymat)} so'm)`}
-                              </p>
-                              <p className="text-xs text-slate-600">{item.davrLabel} | {item.sabab}</p>
-                            </div>
-                            {item.isActive ? (
-                              <Button
-                                size="sm"
-                                variant="danger"
-                                className="min-w-24"
-                                onClick={() => handleDeactivateImtiyoz(item.id)}
-                                disabled={actionLoading}
-                              >
-                                Bekor qilish
-                              </Button>
-                            ) : (
-                              <Badge>Bekor qilingan</Badge>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-2 ring-1 ring-slate-200/50">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant={paymentModalTab === 'payment' ? 'indigo' : 'secondary'}
+                      onClick={() => setPaymentModalTab('payment')}
+                    >
+                      To'lov
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={paymentModalTab === 'imtiyoz' ? 'indigo' : 'secondary'}
+                      onClick={() => setPaymentModalTab('imtiyoz')}
+                    >
+                      Imtiyoz
+                      {!!detailImtiyozlar.length && ` (${detailImtiyozlar.length})`}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={paymentModalTab === 'history' ? 'indigo' : 'secondary'}
+                      onClick={() => setPaymentModalTab('history')}
+                    >
+                      Tarix
+                      {!!detailState.transactions?.length && ` (${detailState.transactions.length})`}
+                    </Button>
                   </div>
-                </Card>
+                </div>
 
-                {!!settingsMeta?.tarifHistory?.length && (
+                {paymentModalTab === 'payment' && (
+                  <PaymentFormCard
+                    actionLoading={actionLoading}
+                    detailState={detailState}
+                    selectedStudentId={selectedStudentId}
+                    isSelectedDetailReady={isSelectedDetailReady}
+                    paymentForm={paymentForm}
+                    setPaymentForm={setPaymentForm}
+                    handleCreatePayment={handleCreatePayment}
+                    setModalOpen={setModalOpen}
+                    paymentPreview={paymentPreview}
+                  />
+                )}
+
+                {paymentModalTab === 'imtiyoz' && (
+                  <ImtiyozFormCard
+                    actionLoading={actionLoading}
+                    imtiyozForm={imtiyozForm}
+                    setImtiyozForm={setImtiyozForm}
+                    handleCreateImtiyoz={handleCreateImtiyoz}
+                    detailImtiyozlar={detailImtiyozlar}
+                    handleDeactivateImtiyoz={handleDeactivateImtiyoz}
+                  />
+                )}
+
+                {paymentModalTab === 'history' && !!settingsMeta?.tarifHistory?.length && (
                   <Card title="Tarif versiyalari">
                     <div className="space-y-2">
                       {settingsMeta.tarifHistory.slice(0, 5).map((tarif) => {
@@ -974,153 +1291,8 @@ export default function FinanceSection({
                   </Card>
                 )}
 
-                <form
-                  onSubmit={handleCreatePayment}
-                  className="grid grid-cols-1 gap-2 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3 ring-1 ring-slate-200/50 md:grid-cols-2"
-                >
-                  <div>
-                    <FieldLabel>To'lov turi</FieldLabel>
-                    <Select
-                      value={paymentForm.turi}
-                      onChange={(e) =>
-                        setPaymentForm((p) => {
-                          const nextType = e.target.value;
-                          if (nextType === 'YILLIK') {
-                            return { ...p, turi: nextType, oylarSoni: 12 };
-                          }
-                          return { ...p, turi: nextType, oylarSoni: p.oylarSoni || 1 };
-                        })
-                      }
-                    >
-                      <option value="OYLIK">Oylik</option>
-                      <option value="YILLIK">Yillik</option>
-                      <option value="IXTIYORIY">Ixtiyoriy</option>
-                    </Select>
-                  </div>
-                  <div>
-                    <FieldLabel>Boshlanish oyi</FieldLabel>
-                    <Input
-                      type="month"
-                      value={paymentForm.startMonth}
-                      onChange={(e) => setPaymentForm((p) => ({ ...p, startMonth: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <FieldLabel>Oylar soni</FieldLabel>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={paymentForm.oylarSoni}
-                      onChange={(e) => setPaymentForm((p) => ({ ...p, oylarSoni: e.target.value }))}
-                      placeholder="Oylar soni"
-                      disabled={paymentForm.turi === 'YILLIK'}
-                    />
-                  </div>
-                  <div>
-                    <FieldLabel>
-                      {paymentForm.turi === 'IXTIYORIY'
-                        ? "Yuboriladigan summa (majburiy)"
-                        : "Yuboriladigan summa (ixtiyoriy)"}
-                    </FieldLabel>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={paymentForm.summa}
-                      onChange={(e) => setPaymentForm((p) => ({ ...p, summa: e.target.value }))}
-                      placeholder={
-                        paymentForm.turi === 'IXTIYORIY'
-                          ? "Ixtiyoriy to'lovda summa kiriting"
-                          : "Bo'sh qoldirilsa auto hisoblanadi"
-                      }
-                      required={paymentForm.turi === 'IXTIYORIY'}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <FieldLabel>Izoh</FieldLabel>
-                    <Textarea
-                      rows={2}
-                      value={paymentForm.izoh}
-                      onChange={(e) => setPaymentForm((p) => ({ ...p, izoh: e.target.value }))}
-                      placeholder="Izoh (ixtiyoriy)"
-                    />
-                  </div>
-                  <div className="md:col-span-2 flex flex-col justify-end gap-2 border-t border-slate-200/80 pt-2 sm:flex-row">
-                    <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={() => setModalOpen(false)}>
-                      Yopish
-                    </Button>
-                    <Button
-                      type="submit"
-                      variant="success"
-                      className="w-full sm:w-auto"
-                      disabled={actionLoading || !paymentPreview?.valid || !paymentPreview?.previewMonthsCount}
-                    >
-                      To'lovni saqlash
-                    </Button>
-                  </div>
-                </form>
-
-                <Card title="To'lov preview">
-                  {!paymentPreview ? (
-                    <StateView type="empty" description="Preview mavjud emas" />
-                  ) : (
-                    <div className="space-y-2 text-sm">
-                      {!paymentPreview.hasAnyDebtMonth && (
-                        <p className="rounded-xl border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700">
-                          Tanlangan davrda yopiladigan qarz oy topilmadi.
-                        </p>
-                      )}
-                      {!paymentPreview.summaMatches && (
-                        <p className="rounded-xl border border-rose-200 bg-rose-50 px-2 py-1 text-rose-700">
-                          {paymentPreview.requireManualSumma && !paymentPreview.hasEnteredSumma
-                            ? "Ixtiyoriy to'lovda summa majburiy."
-                            : "Yuboriladigan summa kutilgan summa bilan bir xil bo'lishi kerak."}
-                        </p>
-                      )}
-                      <div className="grid grid-cols-1 gap-2 rounded-xl border border-slate-200/80 bg-slate-50/60 p-3 md:grid-cols-2">
-                        <p className="text-slate-700">To'lov turi: <b>{paymentTypeLabel(paymentForm.turi)}</b></p>
-                        <p className="text-slate-700">Yopiladigan oylar soni: <b>{paymentPreview.previewMonthsCount}</b></p>
-                        <p className="text-slate-700 md:col-span-2">
-                          Davr:{' '}
-                          <b>
-                            {paymentPreview.firstMonth
-                              ? `${formatMonthKey(paymentPreview.firstMonth)} - ${formatMonthKey(paymentPreview.lastMonth)}`
-                              : '-'}
-                          </b>
-                        </p>
-                        <p className="text-slate-700">Kutilgan summa: <b>{sumFormat(paymentPreview.expectedSumma)} so'm</b></p>
-                        <p className="text-slate-700">Yuboriladigan summa: <b>{sumFormat(paymentPreview.finalSumma)} so'm</b></p>
-                      </div>
-                      <div>
-                        <p className="mb-1 text-slate-600">Yopilishi rejalangan oylar:</p>
-                        <MonthChips months={paymentPreview.monthsToClose.map(formatMonthKey)} maxVisible={6} />
-                      </div>
-                      <div>
-                        <p className="mb-1 text-slate-600">Qarzdan yopiladigan oylar:</p>
-                        <MonthChips months={paymentPreview.actuallyClosing.map(formatMonthKey)} maxVisible={6} />
-                      </div>
-                      {!!paymentPreview.selectedDebtAmounts?.length && (
-                        <div>
-                          <p className="mb-1 text-slate-600">Oylar kesimida summa:</p>
-                            <div className="flex flex-wrap gap-1">
-                              {paymentPreview.selectedDebtAmounts.map((item) => (
-                              <span
-                                key={item.key}
-                                className="rounded-full border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm"
-                              >
-                                {formatMonthKey(item.key)}: {sumFormat(item.amount)} so'm
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <p className="text-slate-700">
-                        Qoladigan qarz: <b>{paymentPreview.remainDebtCount}</b> oy / <b>{sumFormat(paymentPreview.remainDebtAmount)} so'm</b>
-                      </p>
-                    </div>
-                  )}
-                </Card>
-
-                <Card title="To'lov tranzaksiyalari">
+                {paymentModalTab === 'history' && (
+                  <Card title="To'lov tranzaksiyalari">
                   {!detailState.transactions?.length ? (
                     <p className="text-sm text-slate-500">Tranzaksiyalar yo'q</p>
                   ) : (
@@ -1189,6 +1361,7 @@ export default function FinanceSection({
                     </div>
                   )}
                 </Card>
+                )}
               </>
             )}
           </div>
