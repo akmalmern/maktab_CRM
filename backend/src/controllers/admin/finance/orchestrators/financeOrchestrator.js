@@ -40,11 +40,14 @@ const {
   mapTarifRow: mapTarifRowShared,
   mapTarifAuditRow: mapTarifAuditRowShared,
 } = require("../shared/tarifMappers");
+const { utcDateToTashkentIsoDate } = require("../../../../utils/tashkentTime");
 
 const DEFAULT_OYLIK_SUMMA = 300000;
-const DEFAULT_YILLIK_SUMMA = 3000000;
+const DEFAULT_TOLOV_OYLAR_SONI = 10;
+const DEFAULT_YILLIK_SUMMA = DEFAULT_OYLIK_SUMMA * DEFAULT_TOLOV_OYLAR_SONI;
 const MIN_SUMMA = 50_000;
 const MAX_SUMMA = 50_000_000;
+const SCHOOL_MONTH_ORDER = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
 
 function parseIntSafe(value, fallback) {
   return parseIntSafeShared(value, fallback);
@@ -68,6 +71,106 @@ function safeFormatMonthKey(value) {
 
 function monthKeyToSerial(monthKey) {
   return monthKeyToSerialShared(monthKey);
+}
+
+function normalizeTolovOylarSoni(value, fallback = DEFAULT_TOLOV_OYLAR_SONI) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  const intVal = Math.trunc(num);
+  if (intVal < 1 || intVal > 12) return fallback;
+  return intVal;
+}
+
+function deriveYillikSumma(oylikSumma, tolovOylarSoni = DEFAULT_TOLOV_OYLAR_SONI) {
+  return Number(oylikSumma || 0) * normalizeTolovOylarSoni(tolovOylarSoni);
+}
+
+function sortChargeableMonths(months = []) {
+  return [...months].sort(
+    (a, b) => SCHOOL_MONTH_ORDER.indexOf(a) - SCHOOL_MONTH_ORDER.indexOf(b),
+  );
+}
+
+function normalizeAcademicYearLabel(value) {
+  const match = String(value || "").trim().match(/^(\d{4})-(\d{4})$/);
+  if (!match) return undefined;
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end !== start + 1) return undefined;
+  return `${start}-${end}`;
+}
+
+function buildDefaultBillingCalendar(tolovOylarSoni = DEFAULT_TOLOV_OYLAR_SONI) {
+  const count = normalizeTolovOylarSoni(tolovOylarSoni);
+  return {
+    chargeableMonths: sortChargeableMonths(SCHOOL_MONTH_ORDER.slice(0, count)),
+  };
+}
+
+function normalizeBillingCalendar(rawBillingCalendar, fallbackTolovOylarSoni) {
+  const fallbackCount = normalizeTolovOylarSoni(fallbackTolovOylarSoni);
+  const academicYear = normalizeAcademicYearLabel(rawBillingCalendar?.academicYear);
+  const rawMonths = Array.isArray(rawBillingCalendar?.chargeableMonths)
+    ? rawBillingCalendar.chargeableMonths
+    : [];
+  const normalizedMonths = sortChargeableMonths(
+    Array.from(
+      new Set(
+        rawMonths
+          .map((m) => Number.parseInt(String(m), 10))
+          .filter((m) => Number.isFinite(m) && m >= 1 && m <= 12),
+      ),
+    ),
+  );
+  if (normalizedMonths.length) {
+    return {
+      ...(academicYear ? { academicYear } : {}),
+      chargeableMonths: normalizedMonths,
+    };
+  }
+  return {
+    ...(academicYear ? { academicYear } : {}),
+    ...buildDefaultBillingCalendar(fallbackCount),
+  };
+}
+
+function readTarifTolovOylarSoni(row) {
+  const billingCalendarMonths = Array.isArray(row?.billingCalendar?.chargeableMonths)
+    ? row.billingCalendar.chargeableMonths
+        .map((m) => Number.parseInt(String(m), 10))
+        .filter((m) => Number.isFinite(m) && m >= 1 && m <= 12)
+    : [];
+  if (billingCalendarMonths.length) {
+    return normalizeTolovOylarSoni(billingCalendarMonths.length);
+  }
+  const fallback =
+    Number(row?.oylikSumma || 0) > 0 && Number(row?.yillikSumma || 0) > 0
+      ? Math.round(Number(row.yillikSumma) / Number(row.oylikSumma))
+      : DEFAULT_TOLOV_OYLAR_SONI;
+  return normalizeTolovOylarSoni(row?.tolovOylarSoni, fallback);
+}
+
+function readTarifBillingCalendar(row) {
+  return normalizeBillingCalendar(row?.billingCalendar, readTarifTolovOylarSoni(row));
+}
+
+function readTarifChargeableMonths(row) {
+  return readTarifBillingCalendar(row).chargeableMonths;
+}
+
+function isMonthChargeableForTarif(row, monthKey) {
+  const month = Number(String(monthKey || "").split("-")[1]);
+  if (!Number.isFinite(month) || month < 1 || month > 12) return true;
+  const months = readTarifChargeableMonths(row);
+  return months.includes(month);
+}
+
+function getTashkentLocalMonthStartDateUtc(monthsToAdd = 0) {
+  const todayTashkent = utcDateToTashkentIsoDate(new Date());
+  const [year, month] = String(todayTashkent)
+    .split("-")
+    .map((part) => parseInt(part, 10));
+  return new Date(Date.UTC(year, (month - 1) + monthsToAdd, 1));
 }
 
 function buildImtiyozSnapshotRows({
@@ -275,6 +378,7 @@ async function fetchFinancePageRows({
       studentIds,
       oylikSumma: settings.oylikSumma,
       futureMonths: 3,
+      chargeableMonths: readTarifChargeableMonths(settings),
     });
   }
   const now = new Date();
@@ -453,10 +557,15 @@ async function fetchFinanceSummary({
       imtiyozGrouped.get(row.studentId).push(row);
     }
 
+    const cashflowMonthChargeable = isMonthChargeableForTarif(
+      settings,
+      cashflowMonthKey,
+    );
     for (const student of planStudents) {
       const startDate =
         student.enrollments?.[0]?.startDate || student.createdAt;
       if (startOfMonthUtc(new Date(startDate)) > cashflowMonthStart) continue;
+      if (!cashflowMonthChargeable) continue;
       const monthMap = buildImtiyozMonthMap({
         imtiyozlar: imtiyozGrouped.get(student.id) || [],
         oylikSumma: settings.oylikSumma,
@@ -524,9 +633,10 @@ async function fetchFinanceSummary({
     thisMonthPaidAmount,
     thisYearPaidAmount,
     monthlyPlanAmount,
-    yearlyPlanAmount: monthlyPlanAmount * 12,
+    yearlyPlanAmount: monthlyPlanAmount * readTarifTolovOylarSoni(settings),
     tarifOylikSumma: Number(settings.oylikSumma || 0),
     tarifYillikSumma: Number(settings.yillikSumma || 0),
+    tarifTolovOylarSoni: readTarifTolovOylarSoni(settings),
     cashflow: {
       month: cashflowMonthKey,
       monthFormatted: safeFormatMonthKey(cashflowMonthKey),
@@ -574,6 +684,8 @@ async function getOrCreateSettings() {
       key: "MAIN",
       oylikSumma: DEFAULT_OYLIK_SUMMA,
       yillikSumma: DEFAULT_YILLIK_SUMMA,
+      tolovOylarSoni: DEFAULT_TOLOV_OYLAR_SONI,
+      billingCalendar: buildDefaultBillingCalendar(DEFAULT_TOLOV_OYLAR_SONI),
     },
   });
 
@@ -609,6 +721,8 @@ async function getOrCreateSettings() {
         data: {
           oylikSumma: dueTarif.oylikSumma,
           yillikSumma: dueTarif.yillikSumma,
+          tolovOylarSoni: readTarifTolovOylarSoni(dueTarif),
+          billingCalendar: readTarifBillingCalendar(dueTarif),
           faolTarifId: dueTarif.id,
         },
       });
@@ -620,6 +734,8 @@ async function getOrCreateSettings() {
           newValue: {
             oylikSumma: dueTarif.oylikSumma,
             yillikSumma: dueTarif.yillikSumma,
+            tolovOylarSoni: readTarifTolovOylarSoni(dueTarif),
+            billingCalendar: readTarifBillingCalendar(dueTarif),
             boshlanishSana: dueTarif.boshlanishSana,
           },
           izoh: "Rejalangan tarif avtomatik aktiv qilindi",
@@ -693,6 +809,8 @@ async function buildFinanceSettingsPayload(settings) {
     settings: {
       oylikSumma: settings.oylikSumma,
       yillikSumma: settings.yillikSumma,
+      tolovOylarSoni: readTarifTolovOylarSoni(settings),
+      billingCalendar: readTarifBillingCalendar(settings),
       faolTarifId: settings.faolTarifId || null,
     },
     preview: {
@@ -710,6 +828,7 @@ async function buildFinanceSettingsPayload(settings) {
     constraints: {
       minSumma: MIN_SUMMA,
       maxSumma: MAX_SUMMA,
+      billingMonthsOptions: [9, 10, 11, 12],
     },
     tarifHistory: tarifRows.map(mapTarifRow),
     tarifAudit: auditRows.map(mapTarifAuditRow),
@@ -725,20 +844,31 @@ async function getFinanceSettings(_req, res) {
 async function upsertFinanceSettings(req, res) {
   const {
     oylikSumma,
-    yillikSumma,
+    tolovOylarSoni = DEFAULT_TOLOV_OYLAR_SONI,
+    billingCalendar,
     boshlanishTuri = "KELASI_OY",
     izoh,
   } = req.body;
+  const normalizedBillingCalendar = normalizeBillingCalendar(
+    billingCalendar,
+    tolovOylarSoni,
+  );
+  const effectiveTolovOylarSoni = normalizeTolovOylarSoni(
+    normalizedBillingCalendar.chargeableMonths.length || tolovOylarSoni,
+  );
+  const yillikSumma = deriveYillikSumma(oylikSumma, effectiveTolovOylarSoni);
   const current = await getOrCreateSettings();
   const boshlanishSana = resolveTarifStartDate(boshlanishTuri);
 
   const result = await prisma.$transaction(async (tx) => {
     const createdTarif = await tx.moliyaTarifVersion.create({
-      data: {
-        oylikSumma,
-        yillikSumma,
-        boshlanishSana,
-        holat: "REJALANGAN",
+        data: {
+          oylikSumma,
+          yillikSumma,
+          tolovOylarSoni: effectiveTolovOylarSoni,
+          billingCalendar: normalizedBillingCalendar,
+          boshlanishSana,
+          holat: "REJALANGAN",
         izoh: izoh || null,
         yaratganAdminUserId: req.user.sub,
       },
@@ -761,11 +891,15 @@ async function upsertFinanceSettings(req, res) {
         oldValue: {
           oylikSumma: current.oylikSumma,
           yillikSumma: current.yillikSumma,
+          tolovOylarSoni: readTarifTolovOylarSoni(current),
+          billingCalendar: readTarifBillingCalendar(current),
           faolTarifId: current.faolTarifId || null,
         },
         newValue: {
           oylikSumma,
           yillikSumma,
+          tolovOylarSoni: effectiveTolovOylarSoni,
+          billingCalendar: normalizedBillingCalendar,
           boshlanishSana,
           boshlanishTuri,
         },
@@ -783,6 +917,8 @@ async function upsertFinanceSettings(req, res) {
     activeSettings: {
       oylikSumma: current.oylikSumma,
       yillikSumma: current.yillikSumma,
+      tolovOylarSoni: readTarifTolovOylarSoni(current),
+      billingCalendar: readTarifBillingCalendar(current),
     },
   });
 }
@@ -803,11 +939,13 @@ async function rollbackFinanceTarif(req, res) {
 
   const rollbackTarif = await prisma.$transaction(async (tx) => {
     const created = await tx.moliyaTarifVersion.create({
-      data: {
-        oylikSumma: sourceTarif.oylikSumma,
-        yillikSumma: sourceTarif.yillikSumma,
-        boshlanishSana,
-        holat: "REJALANGAN",
+        data: {
+          oylikSumma: sourceTarif.oylikSumma,
+          yillikSumma: sourceTarif.yillikSumma,
+          tolovOylarSoni: readTarifTolovOylarSoni(sourceTarif),
+          billingCalendar: readTarifBillingCalendar(sourceTarif),
+          boshlanishSana,
+          holat: "REJALANGAN",
         izoh: izoh || `Rollback: ${sourceTarif.id}`,
         yaratganAdminUserId: req.user.sub,
       },
@@ -830,11 +968,15 @@ async function rollbackFinanceTarif(req, res) {
         oldValue: {
           oylikSumma: current.oylikSumma,
           yillikSumma: current.yillikSumma,
+          tolovOylarSoni: readTarifTolovOylarSoni(current),
+          billingCalendar: readTarifBillingCalendar(current),
           faolTarifId: current.faolTarifId || null,
         },
         newValue: {
           oylikSumma: sourceTarif.oylikSumma,
           yillikSumma: sourceTarif.yillikSumma,
+          tolovOylarSoni: readTarifTolovOylarSoni(sourceTarif),
+          billingCalendar: readTarifBillingCalendar(sourceTarif),
           boshlanishSana,
           sourceTarifId: sourceTarif.id,
         },
@@ -898,6 +1040,8 @@ async function getFinanceStudents(req, res) {
     settings: {
       oylikSumma: settings.oylikSumma,
       yillikSumma: settings.yillikSumma,
+      tolovOylarSoni: readTarifTolovOylarSoni(settings),
+      billingCalendar: readTarifBillingCalendar(settings),
       faolTarifId: settings.faolTarifId || null,
     },
     summary,
@@ -1006,6 +1150,7 @@ async function getStudentFinanceDetail(req, res) {
     studentIds: [studentId],
     oylikSumma: settings.oylikSumma,
     futureMonths: 3,
+    chargeableMonths: readTarifChargeableMonths(settings),
   });
 
   const [majburiyatlar, imtiyozlar] = await Promise.all([
@@ -1015,6 +1160,8 @@ async function getStudentFinanceDetail(req, res) {
       select: {
         yil: true,
         oy: true,
+        bazaSumma: true,
+        imtiyozSumma: true,
         netSumma: true,
         tolanganSumma: true,
         qoldiqSumma: true,
@@ -1078,6 +1225,21 @@ async function getStudentFinanceDetail(req, res) {
   res.json({
     ok: true,
     student: studentRow,
+    majburiyatlar: majburiyatlar.map((m) => {
+      const key = `${m.yil}-${String(m.oy).padStart(2, "0")}`;
+      return {
+        yil: m.yil,
+        oy: m.oy,
+        key,
+        oyLabel: safeFormatMonthKey(key),
+        bazaSumma: Number(m.bazaSumma || 0),
+        imtiyozSumma: Number(m.imtiyozSumma || 0),
+        netSumma: Number(m.netSumma || 0),
+        tolanganSumma: Number(m.tolanganSumma || 0),
+        qoldiqSumma: Number(m.qoldiqSumma || 0),
+        holat: m.holat,
+      };
+    }),
     imtiyozlar: imtiyozlar.map(mapImtiyozRow),
     transactions: transactions.map((t) => {
       const qoplanganOylar = t.qoplamalar.map(
@@ -1169,6 +1331,7 @@ async function createStudentImtiyoz(req, res) {
     studentIds: [studentId],
     oylikSumma: settings.oylikSumma,
     futureMonths: 3,
+    chargeableMonths: readTarifChargeableMonths(settings),
   });
 
   res.status(201).json({
@@ -1263,6 +1426,7 @@ async function deactivateStudentImtiyoz(req, res) {
     studentIds: [existing.studentId],
     oylikSumma: settings.oylikSumma,
     futureMonths: 3,
+    chargeableMonths: readTarifChargeableMonths(settings),
   });
 
   res.json({
@@ -1271,30 +1435,46 @@ async function deactivateStudentImtiyoz(req, res) {
   });
 }
 
-async function createStudentPayment(req, res) {
-  const { studentId } = req.params;
-  const settings = await getOrCreateSettings();
+function getPaymentRequestInput(req) {
   const startMonth = req.body.startMonth || monthKeyFromDate(new Date());
   const turi = req.body.turi;
-  const requestedMonthsRaw = Number.parseInt(
-    String(req.body.oylarSoni ?? ""),
-    10,
-  );
+  const requestedMonthsRaw = Number.parseInt(String(req.body.oylarSoni ?? ""), 10);
   const hasRawSumma =
     req.body.summa !== undefined &&
     req.body.summa !== null &&
     String(req.body.summa).trim() !== "";
-  const hasRequestedSumma =
-    hasRawSumma && Number.isFinite(Number(req.body.summa));
+  const hasRequestedSumma = hasRawSumma && Number.isFinite(Number(req.body.summa));
   const requestedSumma = hasRequestedSumma ? Number(req.body.summa) : null;
+  const idempotencyKey =
+    req.body.idempotencyKey && String(req.body.idempotencyKey).trim()
+      ? String(req.body.idempotencyKey).trim()
+      : null;
 
-  const student = await prisma.student.findUnique({
+  return {
+    startMonth,
+    turi,
+    requestedMonthsRaw,
+    requestedSumma,
+    idempotencyKey,
+  };
+}
+
+async function buildStudentPaymentDraftContext({
+  prismaClient = prisma,
+  studentId,
+  settings,
+  startMonth,
+  turi,
+  requestedMonthsRaw,
+}) {
+  const student = await prismaClient.student.findUnique({
     where: { id: studentId },
     select: {
       id: true,
       createdAt: true,
       enrollments: {
         where: { isActive: true },
+        orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
         select: { id: true, startDate: true },
         take: 1,
       },
@@ -1311,27 +1491,17 @@ async function createStudentPayment(req, res) {
   }
 
   const enrollmentStartMonth = monthKeyFromDate(
-    startOfMonthUtc(
-      new Date(student.enrollments?.[0]?.startDate || student.createdAt),
-    ),
+    startOfMonthUtc(new Date(student.enrollments?.[0]?.startDate || student.createdAt)),
   );
   const enrollmentStartSerial = monthKeyToSerial(enrollmentStartMonth);
   const maxFutureMonths = 3;
   const maxAllowedMonthKey = monthKeyFromDate(
-    new Date(
-      Date.UTC(
-        new Date().getUTCFullYear(),
-        new Date().getUTCMonth() + maxFutureMonths,
-        1,
-      ),
-    ),
+    getTashkentLocalMonthStartDateUtc(maxFutureMonths),
   );
   const maxAllowedSerial = monthKeyToSerial(maxAllowedMonthKey);
 
-  const imtiyozRows = await prisma.tolovImtiyozi.findMany({
-    where: {
-      studentId,
-    },
+  const imtiyozRows = await prismaClient.tolovImtiyozi.findMany({
+    where: { studentId },
     select: {
       turi: true,
       qiymat: true,
@@ -1354,19 +1524,26 @@ async function createStudentPayment(req, res) {
     monthAmountByKey: imtiyozMonthMap,
     defaultMonthAmount: settings.oylikSumma,
   });
+  const chargeableMonths = readTarifChargeableMonths(settings);
+  const chargeableMonthSet = new Set(chargeableMonths);
+  const normalizedDraftPlans = draftPlans.map((item) =>
+    chargeableMonthSet.has(Number(item.oy))
+      ? item
+      : {
+          ...item,
+          oySumma: 0,
+        },
+  );
 
   const invalidBeforeEnrollment = [];
   const invalidFuture = [];
-  for (const item of draftPlans) {
+  for (const item of normalizedDraftPlans) {
     const serial = monthKeyToSerial(item.key);
     if (serial === null || enrollmentStartSerial === null || serial < enrollmentStartSerial) {
       invalidBeforeEnrollment.push(item.key);
       continue;
     }
-    if (
-      maxAllowedSerial !== null &&
-      serial > maxAllowedSerial
-    ) {
+    if (maxAllowedSerial !== null && serial > maxAllowedSerial) {
       invalidFuture.push(item.key);
     }
   }
@@ -1389,16 +1566,33 @@ async function createStudentPayment(req, res) {
     );
   }
 
+  return {
+    student,
+    oylarSoni,
+    draftPlans: normalizedDraftPlans,
+    enrollmentStartMonth,
+    maxAllowedMonthKey,
+    chargeableMonths,
+  };
+}
+
+async function buildPaymentAllocationPreview({
+  prismaClient = prisma,
+  studentId,
+  draftPlans,
+  requestedSumma,
+  throwOnAlreadyPaid = false,
+}) {
   const months = draftPlans.map((m) => ({ yil: m.yil, oy: m.oy }));
-  const [existing] = await Promise.all([
-    prisma.tolovQoplama.findMany({
-      where: {
-        studentId,
-        OR: months.map((m) => ({ yil: m.yil, oy: m.oy })),
-      },
-      select: { yil: true, oy: true, summa: true },
-    }),
-  ]);
+  const existing = months.length
+    ? await prismaClient.tolovQoplama.findMany({
+        where: {
+          studentId,
+          OR: months.map((m) => ({ yil: m.yil, oy: m.oy })),
+        },
+        select: { yil: true, oy: true, summa: true },
+      })
+    : [];
 
   const existingAmountMap = new Map();
   for (const row of existing) {
@@ -1408,12 +1602,16 @@ async function createStudentPayment(req, res) {
       Number(existingAmountMap.get(key) || 0) + Number(row.summa || 0),
     );
   }
+
   const monthPlans = draftPlans.map((m) => ({
     ...m,
     paidSumma: Number(existingAmountMap.get(m.key) || 0),
   }));
   const monthPlansWithRemaining = monthPlans.map((m) => {
-    const remainingSumma = Math.max(0, Number(m.oySumma || 0) - Number(m.paidSumma || 0));
+    const remainingSumma = Math.max(
+      0,
+      Number(m.oySumma || 0) - Number(m.paidSumma || 0),
+    );
     return {
       ...m,
       remainingSumma,
@@ -1422,15 +1620,19 @@ async function createStudentPayment(req, res) {
     };
   });
 
-  const alreadyPaidMonths = monthPlansWithRemaining.filter((m) => m.isPaid);
-  if (alreadyPaidMonths.length) {
+  const fullyDiscountedMonths = monthPlansWithRemaining
+    .filter((m) => m.oySumma <= 0)
+    .map((m) => m.key);
+
+  const alreadyPaidMonthRows = monthPlansWithRemaining.filter((m) => m.isPaid);
+  if (throwOnAlreadyPaid && alreadyPaidMonthRows.length) {
     throw new ApiError(
       409,
       "PAYMENT_MONTH_ALREADY_COVERED",
       "Tanlangan oylarning bir qismi oldin to'langan. Oylarni qayta tanlang.",
       {
-        alreadyPaidMonths: alreadyPaidMonths.map((m) => m.key),
-        alreadyPaidMonthsFormatted: alreadyPaidMonths.map((m) =>
+        alreadyPaidMonths: alreadyPaidMonthRows.map((m) => m.key),
+        alreadyPaidMonthsFormatted: alreadyPaidMonthRows.map((m) =>
           safeFormatMonthKey(m.key),
         ),
       },
@@ -1438,12 +1640,7 @@ async function createStudentPayment(req, res) {
   }
 
   const appliedMonths = monthPlansWithRemaining.filter((m) => m.remainingSumma > 0);
-  let appliedMonthKeys = appliedMonths.map((m) => m.key);
-  const fullyDiscountedMonths = monthPlansWithRemaining
-    .filter((m) => m.oySumma <= 0)
-    .map((m) => m.key);
-
-  if (!appliedMonths.length) {
+  if (throwOnAlreadyPaid && !appliedMonths.length) {
     throw new ApiError(
       400,
       "PAYMENT_NOT_REQUIRED",
@@ -1481,9 +1678,8 @@ async function createStudentPayment(req, res) {
     });
     remainingToAllocate -= allocate;
   }
-  appliedMonthKeys = allocations.map((m) => m.key);
 
-  if (!allocations.length || remainingToAllocate < 0) {
+  if (throwOnAlreadyPaid && (!allocations.length || remainingToAllocate < 0)) {
     throw new ApiError(
       400,
       "PAYMENT_ALLOCATION_FAILED",
@@ -1491,57 +1687,122 @@ async function createStudentPayment(req, res) {
     );
   }
 
-  const transaction = await prisma.$transaction(async (tx) => {
-    const created = await tx.tolovTranzaksiya.create({
-      data: {
+  return {
+    monthPlansWithRemaining,
+    fullyDiscountedMonths,
+    alreadyPaidMonths: alreadyPaidMonthRows.map((m) => m.key),
+    alreadyPaidMonthRows,
+    appliedMonths,
+    expectedSumma,
+    finalSumma,
+    allocations,
+    remainingToAllocate,
+    appliedMonthKeys: allocations.map((m) => m.key),
+  };
+}
+
+async function createStudentPayment(req, res) {
+  const { studentId } = req.params;
+  const settings = await getOrCreateSettings();
+  const { startMonth, turi, requestedMonthsRaw, requestedSumma, idempotencyKey } =
+    getPaymentRequestInput(req);
+  const { oylarSoni, draftPlans } = await buildStudentPaymentDraftContext({
+    studentId,
+    settings,
+    startMonth,
+    turi,
+    requestedMonthsRaw,
+  });
+
+  let paymentResult;
+  try {
+    paymentResult = await prisma.$transaction(async (tx) => {
+      const allocationPreview = await buildPaymentAllocationPreview({
+        prismaClient: tx,
         studentId,
-        adminUserId: req.user.sub,
-        turi,
-        summa: finalSumma,
-        izoh: req.body.izoh || null,
-        tarifVersionId: settings.faolTarifId || null,
-        tarifSnapshot: {
-          oylikSumma: settings.oylikSumma,
-          yillikSumma: settings.yillikSumma,
-          faolTarifId: settings.faolTarifId || null,
+        draftPlans,
+        requestedSumma,
+        throwOnAlreadyPaid: true,
+      });
+      const allocationsLocal = allocationPreview.allocations;
+      const appliedMonthKeysLocal = allocationPreview.appliedMonthKeys;
+
+      const created = await tx.tolovTranzaksiya.create({
+        data: {
+          studentId,
+          adminUserId: req.user.sub,
+          turi,
+          summa: allocationPreview.finalSumma,
+          izoh: req.body.izoh || null,
+          idempotencyKey,
+          tarifVersionId: settings.faolTarifId || null,
+          tarifSnapshot: {
+            oylikSumma: settings.oylikSumma,
+            yillikSumma: settings.yillikSumma,
+            tolovOylarSoni: readTarifTolovOylarSoni(settings),
+            billingCalendar: readTarifBillingCalendar(settings),
+            faolTarifId: settings.faolTarifId || null,
+          },
         },
-      },
-    });
+      });
 
-    const inserted = await tx.tolovQoplama.createMany({
-      data: allocations.map((m) => ({
-        studentId,
-        tranzaksiyaId: created.id,
-        yil: m.yil,
-        oy: m.oy,
-        summa: Number(m.qoplamaSumma || 0),
-      })),
-    });
+      const inserted = await tx.tolovQoplama.createMany({
+        data: allocationsLocal.map((m) => ({
+          studentId,
+          tranzaksiyaId: created.id,
+          yil: m.yil,
+          oy: m.oy,
+          summa: Number(m.qoplamaSumma || 0),
+        })),
+      });
 
-    if (inserted.count !== allocations.length) {
+      if (inserted.count !== allocationsLocal.length) {
+        throw new ApiError(
+          409,
+          "PAYMENT_MONTH_CONFLICT",
+          "Tanlangan oylarning bir qismi boshqa to'lov bilan yopilgan. Sahifani yangilang va qayta urinib ko'ring.",
+        );
+      }
+
+      await syncStudentOyMajburiyatlar({
+        prismaClient: tx,
+        studentIds: [studentId],
+        oylikSumma: settings.oylikSumma,
+        futureMonths: 3,
+        chargeableMonths: readTarifChargeableMonths(settings),
+      });
+
+      return {
+        transactionId: created.id,
+        appliedMonthKeys: appliedMonthKeysLocal,
+        allocations: allocationsLocal,
+        expectedSumma: allocationPreview.expectedSumma,
+        finalSumma: allocationPreview.finalSumma,
+        fullyDiscountedMonths: allocationPreview.fullyDiscountedMonths,
+      };
+    });
+  } catch (error) {
+    if (
+      idempotencyKey &&
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
       throw new ApiError(
         409,
-        "PAYMENT_MONTH_CONFLICT",
-        "Tanlangan oylarning bir qismi boshqa to'lov bilan yopilgan. Sahifani yangilang va qayta urinib ko'ring.",
+        "PAYMENT_DUPLICATE_REQUEST",
+        "To'lov so'rovi takror yuborildi. Sahifani yangilang yoki bir necha soniyadan keyin qayta urinib ko'ring.",
       );
     }
-
-    return created;
-  });
-
-  await syncStudentOyMajburiyatlar({
-    studentIds: [studentId],
-    oylikSumma: settings.oylikSumma,
-    futureMonths: 3,
-  });
+    throw error;
+  }
 
   res.status(201).json({
     ok: true,
-    transactionId: transaction.id,
-    appliedMonths: appliedMonthKeys,
-    appliedMonthsFormatted: appliedMonthKeys.map(safeFormatMonthKey),
-    qismanTolov: finalSumma < expectedSumma,
-    allocations: allocations.map((m) => ({
+    transactionId: paymentResult.transactionId,
+    appliedMonths: paymentResult.appliedMonthKeys,
+    appliedMonthsFormatted: paymentResult.appliedMonthKeys.map(safeFormatMonthKey),
+    qismanTolov: paymentResult.finalSumma < paymentResult.expectedSumma,
+    allocations: paymentResult.allocations.map((m) => ({
       key: m.key,
       yil: m.yil,
       oy: m.oy,
@@ -1551,14 +1812,84 @@ async function createStudentPayment(req, res) {
       qoldiq: Number(m.remainingSumma || 0),
       tushganSumma: Number(m.qoplamaSumma || 0),
     })),
-    skippedDiscountedMonths: fullyDiscountedMonths,
-    skippedDiscountedMonthsFormatted: fullyDiscountedMonths.map((m) =>
+    skippedDiscountedMonths: paymentResult.fullyDiscountedMonths,
+    skippedDiscountedMonthsFormatted: paymentResult.fullyDiscountedMonths.map((m) =>
       safeFormatMonthKey(m),
     ),
-    summa: finalSumma,
-    expectedSumma,
+    summa: paymentResult.finalSumma,
+    expectedSumma: paymentResult.expectedSumma,
     oylarSoni,
     turi,
+  });
+}
+
+async function previewStudentPayment(req, res) {
+  const { studentId } = req.params;
+  const settings = await getOrCreateSettings();
+  const { startMonth, turi, requestedMonthsRaw, requestedSumma } =
+    getPaymentRequestInput(req);
+  const {
+    oylarSoni,
+    draftPlans,
+    enrollmentStartMonth,
+    maxAllowedMonthKey,
+    chargeableMonths,
+  } =
+    await buildStudentPaymentDraftContext({
+      studentId,
+      settings,
+      startMonth,
+      turi,
+      requestedMonthsRaw,
+    });
+  const allocationPreview = await buildPaymentAllocationPreview({
+    prismaClient: prisma,
+    studentId,
+    draftPlans,
+    requestedSumma,
+    throwOnAlreadyPaid: false,
+  });
+
+  res.json({
+    ok: true,
+    preview: {
+      studentId,
+      turi,
+      startMonth,
+      oylarSoni,
+      monthsToClose: draftPlans.map((m) => m.key),
+      previewMonthsCount: draftPlans.length,
+      expectedSumma: allocationPreview.expectedSumma,
+      finalSumma: allocationPreview.finalSumma,
+      qismanTolov: allocationPreview.finalSumma < allocationPreview.expectedSumma,
+      requestedSumma,
+      canSubmit:
+        allocationPreview.appliedMonths.length > 0 &&
+        allocationPreview.allocations.length > 0 &&
+        allocationPreview.remainingToAllocate >= 0,
+      alreadyPaidMonths: allocationPreview.alreadyPaidMonths,
+      alreadyPaidMonthsFormatted: allocationPreview.alreadyPaidMonths.map(safeFormatMonthKey),
+      fullyDiscountedMonths: allocationPreview.fullyDiscountedMonths,
+      fullyDiscountedMonthsFormatted: allocationPreview.fullyDiscountedMonths.map(safeFormatMonthKey),
+      appliedMonths: allocationPreview.appliedMonthKeys,
+      appliedMonthsFormatted: allocationPreview.appliedMonthKeys.map(safeFormatMonthKey),
+      allocations: allocationPreview.allocations.map((m) => ({
+        key: m.key,
+        oyLabel: safeFormatMonthKey(m.key),
+        yil: m.yil,
+        oy: m.oy,
+        oyJami: Number(m.oySumma || 0),
+        oldinTolangan: Number(m.paidSumma || 0),
+        qoldiq: Number(m.remainingSumma || 0),
+        tushganSumma: Number(m.qoplamaSumma || 0),
+        isPartialMonth: Boolean(m.isPartial),
+      })),
+      enrollmentStartMonth,
+      enrollmentStartMonthFormatted: safeFormatMonthKey(enrollmentStartMonth),
+      maxAllowedMonth: maxAllowedMonthKey,
+      maxAllowedMonthFormatted: safeFormatMonthKey(maxAllowedMonthKey),
+      chargeableMonths,
+    },
   });
 }
 
@@ -1610,6 +1941,7 @@ async function revertPayment(req, res) {
     studentIds: [txn.studentId],
     oylikSumma: settings.oylikSumma,
     futureMonths: 3,
+    chargeableMonths: readTarifChargeableMonths(settings),
   });
 
   res.json({
@@ -1643,6 +1975,7 @@ module.exports = {
   getStudentFinanceDetail,
   createStudentImtiyoz,
   deactivateStudentImtiyoz,
+  previewStudentPayment,
   createStudentPayment,
   revertPayment,
 };

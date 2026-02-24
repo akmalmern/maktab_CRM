@@ -24,9 +24,11 @@ function monthKey(yil, oy) {
 }
 
 async function syncStudentOyMajburiyatlar({
+  prismaClient = prisma,
   studentIds,
   oylikSumma,
   futureMonths = 0,
+  chargeableMonths = null,
 }) {
   const ids = Array.from(
     new Set((studentIds || []).filter((id) => typeof id === "string" && id)),
@@ -38,14 +40,14 @@ async function syncStudentOyMajburiyatlar({
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + Number(futureMonths || 0), 1),
   );
 
-  const students = await prisma.student.findMany({
+  const students = await prismaClient.student.findMany({
     where: { id: { in: ids } },
     select: {
       id: true,
       createdAt: true,
       enrollments: {
         where: { isActive: true },
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
         take: 1,
         select: { startDate: true },
       },
@@ -54,12 +56,22 @@ async function syncStudentOyMajburiyatlar({
 
   if (!students.length) return;
 
+  const normalizedChargeableMonths = Array.isArray(chargeableMonths)
+    ? Array.from(
+        new Set(
+          chargeableMonths
+            .map((m) => Number.parseInt(String(m), 10))
+            .filter((m) => Number.isFinite(m) && m >= 1 && m <= 12),
+        ),
+      )
+    : null;
+
   const [qoplamalar, imtiyozlar] = await Promise.all([
-    prisma.tolovQoplama.findMany({
+    prismaClient.tolovQoplama.findMany({
       where: { studentId: { in: students.map((s) => s.id) } },
       select: { studentId: true, yil: true, oy: true, summa: true },
     }),
-    prisma.tolovImtiyozi.findMany({
+    prismaClient.tolovImtiyozi.findMany({
       where: { studentId: { in: students.map((s) => s.id) } },
       select: {
         studentId: true,
@@ -104,6 +116,16 @@ async function syncStudentOyMajburiyatlar({
     const paidAmountMap = paidMap.get(student.id) || new Map();
 
     for (const row of dueMonths) {
+      if (
+        Array.isArray(normalizedChargeableMonths) &&
+        normalizedChargeableMonths.length > 0 &&
+        !normalizedChargeableMonths.includes(row.oy)
+      ) {
+        await prismaClient.studentOyMajburiyat.deleteMany({
+          where: { studentId: student.id, yil: row.yil, oy: row.oy },
+        });
+        continue;
+      }
       const key = monthKey(row.yil, row.oy);
       const baza = Number(oylikSumma || 0);
       const net = Number(imtiyozMap.has(key) ? imtiyozMap.get(key) : baza);
@@ -118,7 +140,7 @@ async function syncStudentOyMajburiyatlar({
         holat = "QISMAN_TOLANGAN";
       }
 
-      await prisma.studentOyMajburiyat.upsert({
+      await prismaClient.studentOyMajburiyat.upsert({
         where: {
           studentId_yil_oy: { studentId: student.id, yil: row.yil, oy: row.oy },
         },

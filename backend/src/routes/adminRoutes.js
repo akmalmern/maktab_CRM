@@ -306,6 +306,13 @@ router.get(
   asyncHandler(finance.getStudentFinanceDetail),
 );
 router.post(
+  "/moliya/students/:studentId/tolov/preview",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: studentIdParamSchema, body: createPaymentSchema }),
+  asyncHandler(finance.previewStudentPayment),
+);
+router.post(
   "/moliya/students/:studentId/tolov",
   requireAuth,
   requireRole("ADMIN"),

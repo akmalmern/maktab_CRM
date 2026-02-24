@@ -47,6 +47,13 @@ export const financeApi = baseApi.injectEndpoints({
         { type: 'FinanceStudentDetail', id: studentId },
       ],
     }),
+    previewFinancePayment: builder.mutation({
+      query: ({ studentId, payload }) => ({
+        path: `/api/admin/moliya/students/${studentId}/tolov/preview`,
+        method: 'POST',
+        body: payload,
+      }),
+    }),
     createFinanceImtiyoz: builder.mutation({
       query: ({ studentId, payload }) => ({
         path: `/api/admin/moliya/students/${studentId}/imtiyoz`,
@@ -103,6 +110,7 @@ export const {
   useLazyGetFinanceStudentDetailQuery,
   useUpdateFinanceSettingsMutation,
   useCreateFinancePaymentMutation,
+  usePreviewFinancePaymentMutation,
   useCreateFinanceImtiyozMutation,
   useDeactivateFinanceImtiyozMutation,
   useRollbackFinanceTarifMutation,

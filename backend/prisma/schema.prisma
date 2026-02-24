@@ -363,6 +363,8 @@ model MoliyaSozlama {
 
   oylikSumma Int
   yillikSumma Int
+  tolovOylarSoni Int @default(10)
+  billingCalendar Json?
   faolTarifId String?
   faolTarif MoliyaTarifVersion? @relation(fields: [faolTarifId], references: [id], onDelete: SetNull)
 
@@ -375,6 +377,8 @@ model MoliyaTarifVersion {
 
   oylikSumma Int
   yillikSumma Int
+  tolovOylarSoni Int @default(10)
+  billingCalendar Json?
 
   boshlanishSana DateTime
   holat MoliyaTarifHolati @default(REJALANGAN)
@@ -426,6 +430,7 @@ model TolovTranzaksiya {
   summa Int
   tolovSana DateTime @default(now())
   izoh String?
+  idempotencyKey String?
   tarifSnapshot Json?
   tarifVersionId String?
   bekorSana DateTime?
@@ -445,6 +450,7 @@ model TolovTranzaksiya {
   @@index([adminUserId, tolovSana])
   @@index([holat, tolovSana])
   @@index([bekorQilganAdminUserId, bekorSana])
+  @@unique([studentId, idempotencyKey])
 }
 
 model TolovQoplama {

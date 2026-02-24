@@ -120,14 +120,6 @@ export default function AttendanceReports({
           >
             {exporting === 'xlsx' ? t('Excel yuklanmoqda...') : t('Excel export')}
           </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={Boolean(exporting)}
-            onClick={() => onExport?.('pdf', getFilterParams())}
-          >
-            {exporting === 'pdf' ? t('PDF yuklanmoqda...') : t('PDF export')}
-          </Button>
         </div>
         {report?.period && (
           <p className="mt-2 text-xs text-slate-500">

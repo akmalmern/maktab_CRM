@@ -29,11 +29,38 @@ export const managerApi = baseApi.injectEndpoints({
         path: `/api/manager/tolov/students/${studentId}`,
       }),
     }),
+    previewManagerPayment: builder.mutation({
+      query: ({ studentId, payload }) => ({
+        path: `/api/manager/tolov/students/${studentId}/preview`,
+        method: 'POST',
+        body: payload,
+      }),
+    }),
     createManagerPayment: builder.mutation({
       query: ({ studentId, payload }) => ({
         path: `/api/manager/tolov/students/${studentId}`,
         method: 'POST',
         body: payload,
+      }),
+    }),
+    createManagerImtiyoz: builder.mutation({
+      query: ({ studentId, payload }) => ({
+        path: `/api/manager/tolov/students/${studentId}/imtiyoz`,
+        method: 'POST',
+        body: payload,
+      }),
+    }),
+    deactivateManagerImtiyoz: builder.mutation({
+      query: ({ imtiyozId, payload }) => ({
+        path: `/api/manager/tolov/imtiyoz/${imtiyozId}`,
+        method: 'PATCH',
+        body: payload,
+      }),
+    }),
+    revertManagerPayment: builder.mutation({
+      query: (tolovId) => ({
+        path: `/api/manager/tolov/${tolovId}`,
+        method: 'DELETE',
       }),
     }),
   }),
@@ -45,6 +72,9 @@ export const {
   useLazyGetManagerDebtorNotesQuery,
   useCreateManagerDebtorNoteMutation,
   useLazyGetManagerPaymentStudentDetailQuery,
+  usePreviewManagerPaymentMutation,
   useCreateManagerPaymentMutation,
+  useCreateManagerImtiyozMutation,
+  useDeactivateManagerImtiyozMutation,
+  useRevertManagerPaymentMutation,
 } = managerApi;
-

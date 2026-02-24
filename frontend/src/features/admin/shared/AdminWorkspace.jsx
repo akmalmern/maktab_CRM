@@ -48,6 +48,14 @@ const DEFAULT_LIST_QUERY = {
 };
 const FINANCE_SEARCH_DEBOUNCE_MS = 350;
 
+function createRequestIdempotencyKey() {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+  const hex = () => Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0');
+  return `${hex()}-${hex().slice(0, 4)}-4${hex().slice(0, 3)}-a${hex().slice(0, 3)}-${hex()}${hex().slice(0, 4)}`;
+}
+
 export default function AdminWorkspace({ section }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -93,8 +101,13 @@ export default function AdminWorkspace({ section }) {
     search: debouncedFinanceSearch,
     classroomId: financeQuery.classroomId === 'all' ? undefined : financeQuery.classroomId,
   };
+  const financeSummaryParams = {
+    ...financeStudentsParams,
+    classroomId: undefined,
+  };
   const financeSettingsQuery = useGetFinanceSettingsQuery(undefined, { skip: !isFinanceSection });
   const financeStudentsQuery = useGetFinanceStudentsQuery(financeStudentsParams, { skip: !isFinanceSection });
+  const financeSummaryQuery = useGetFinanceStudentsQuery(financeSummaryParams, { skip: !isFinanceSection });
   const shouldLoadSubjects = isTeachersSection || isStudentsSection || isJadvalSection;
   const shouldLoadClassrooms = isTeachersSection || isStudentsSection || isJadvalSection || isAttendanceSection || isFinanceSection;
   const subjectsQuery = useGetSubjectsQuery(undefined, { skip: !shouldLoadSubjects });
@@ -119,12 +132,15 @@ export default function AdminWorkspace({ section }) {
   const financeSettings = financeSettingsQuery.data?.settings || {
     oylikSumma: 0,
     yillikSumma: 0,
+    tolovOylarSoni: 10,
+    billingCalendar: null,
     faolTarifId: null,
   };
   const financeSettingsMeta = {
     constraints: financeSettingsQuery.data?.constraints || {
       minSumma: 50000,
       maxSumma: 50000000,
+      billingMonthsOptions: [9, 10, 11, 12],
     },
     preview: financeSettingsQuery.data?.preview || {
       studentCount: 0,
@@ -147,7 +163,7 @@ export default function AdminWorkspace({ section }) {
     limit: financeStudentsQuery.data?.limit || financeQuery.limit,
     total: financeStudentsQuery.data?.total || 0,
     pages: financeStudentsQuery.data?.pages || 0,
-    summary: financeStudentsQuery.data?.summary || {
+    summary: financeSummaryQuery.data?.summary || {
       totalRows: 0,
       totalDebtors: 0,
       totalDebtAmount: 0,
@@ -163,6 +179,7 @@ export default function AdminWorkspace({ section }) {
       yearlyPlanAmount: 0,
       tarifOylikSumma: 0,
       tarifYillikSumma: 0,
+      tarifTolovOylarSoni: 10,
       cashflow: {
         month: null,
         monthFormatted: '',
@@ -178,6 +195,7 @@ export default function AdminWorkspace({ section }) {
   };
   const financeDetailState = {
     student: financeDetailQuery.data?.student || null,
+    majburiyatlar: financeDetailQuery.data?.majburiyatlar || [],
     imtiyozlar: financeDetailQuery.data?.imtiyozlar || [],
     transactions: financeDetailQuery.data?.transactions || [],
     loading: financeDetailQuery.isLoading || financeDetailQuery.isFetching,
@@ -221,6 +239,14 @@ export default function AdminWorkspace({ section }) {
     }, FINANCE_SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [financeQuery.search, isFinanceSection]);
+
+  useEffect(() => {
+    if (!isFinanceSection) return;
+    if (financeQuery.classroomId !== 'all') return;
+    const firstClassroomId = classroomsQuery.data?.classrooms?.[0]?.id;
+    if (!firstClassroomId) return;
+    setFinanceQuery((prev) => (prev.classroomId === 'all' ? { ...prev, classroomId: firstClassroomId, page: 1 } : prev));
+  }, [isFinanceSection, financeQuery.classroomId, classroomsQuery.data?.classrooms]);
 
   useEffect(
     () => () => {
@@ -330,7 +356,13 @@ export default function AdminWorkspace({ section }) {
 
   async function handleCreateFinancePayment(studentId, payload) {
     try {
-      await createFinancePayment({ studentId, payload }).unwrap();
+      await createFinancePayment({
+        studentId,
+        payload: {
+          ...payload,
+          idempotencyKey: payload?.idempotencyKey || createRequestIdempotencyKey(),
+        },
+      }).unwrap();
       toast.success(t("To'lov saqlandi"));
       return true;
     } catch (error) {

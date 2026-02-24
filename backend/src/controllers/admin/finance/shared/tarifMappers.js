@@ -3,6 +3,11 @@ function mapTarifRow(row) {
     id: row.id,
     oylikSumma: row.oylikSumma,
     yillikSumma: row.yillikSumma,
+    tolovOylarSoni: row.tolovOylarSoni ?? null,
+    billingCalendar:
+      row.billingCalendar && typeof row.billingCalendar === "object"
+        ? row.billingCalendar
+        : null,
     boshlanishSana: row.boshlanishSana,
     holat: row.holat,
     izoh: row.izoh || "",

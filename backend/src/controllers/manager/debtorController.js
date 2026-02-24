@@ -5,10 +5,36 @@ const { formatMonthKey } = require("../../services/financeDebtService");
 const { syncStudentOyMajburiyatlar } = require("../../services/financeMajburiyatService");
 
 const DEFAULT_OYLIK_SUMMA = 300000;
+const SCHOOL_MONTH_ORDER = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
 
 function parseIntSafe(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function isSchemaMismatchError(error) {
+  return error?.code === "P2022" || error?.code === "P2021";
+}
+
+function safeFormatMonthKey(monthKey) {
+  try {
+    return formatMonthKey(monthKey);
+  } catch {
+    return String(monthKey || "-");
+  }
+}
+
+function normalizeChargeableMonths(value, fallbackCount = 10) {
+  const monthSet = new Set(
+    (Array.isArray(value) ? value : [])
+      .map((month) => Number(month))
+      .filter((month) => Number.isFinite(month) && month >= 1 && month <= 12),
+  );
+  const fromCalendar = SCHOOL_MONTH_ORDER.filter((month) => monthSet.has(month));
+  if (fromCalendar.length) return fromCalendar;
+
+  const count = Math.max(1, Math.min(12, Number(fallbackCount) || 10));
+  return SCHOOL_MONTH_ORDER.slice(0, count);
 }
 
 function formatClassroomName(name, year) {
@@ -42,11 +68,40 @@ function mapNoteRow(row) {
 }
 
 async function getSettings() {
-  const settings = await prisma.moliyaSozlama.findUnique({
-    where: { key: "MAIN" },
-  });
+  let settings;
+  try {
+    settings = await prisma.moliyaSozlama.findUnique({
+      where: { key: "MAIN" },
+      select: {
+        key: true,
+        oylikSumma: true,
+        yillikSumma: true,
+        tolovOylarSoni: true,
+        billingCalendar: true,
+      },
+    });
+  } catch (error) {
+    // Backward-compatible fallback when DB schema migrations for finance settings
+    // (tolovOylarSoni/billingCalendar) are not applied yet.
+    if (error?.code !== "P2022") throw error;
+    settings = await prisma.moliyaSozlama.findUnique({
+      where: { key: "MAIN" },
+      select: {
+        key: true,
+        oylikSumma: true,
+        yillikSumma: true,
+      },
+    });
+  }
+  const chargeableMonths = normalizeChargeableMonths(
+    settings?.billingCalendar?.chargeableMonths,
+    settings?.tolovOylarSoni || 10,
+  );
   return {
     oylikSumma: settings?.oylikSumma || DEFAULT_OYLIK_SUMMA,
+    tolovOylarSoni: settings?.tolovOylarSoni || chargeableMonths.length || 10,
+    billingCalendar: settings?.billingCalendar || { chargeableMonths },
+    chargeableMonths,
   };
 }
 
@@ -135,11 +190,18 @@ async function getDebtors(req, res) {
     LIMIT 500
   `;
   if (missingCurrentRows.length) {
-    await syncStudentOyMajburiyatlar({
-      studentIds: missingCurrentRows.map((row) => row.id),
-      oylikSumma: settings.oylikSumma,
-      futureMonths: 0,
-    });
+    try {
+      await syncStudentOyMajburiyatlar({
+        studentIds: missingCurrentRows.map((row) => row.id),
+        oylikSumma: settings.oylikSumma,
+        futureMonths: 0,
+        chargeableMonths: settings.chargeableMonths,
+      });
+    } catch (error) {
+      // Compatibility mode: finance schema migrations may be partially applied.
+      // Manager debtor list should still open using existing StudentOyMajburiyat data.
+      if (!isSchemaMismatchError(error)) throw error;
+    }
   }
 
   const whereSql = buildDebtorsWhereSql({ search, classroomId });
@@ -202,19 +264,25 @@ async function getDebtors(req, res) {
   const debtMonthsMap = new Map();
 
   if (studentIds.length) {
-    const debtMonths = await prisma.studentOyMajburiyat.findMany({
-      where: {
-        studentId: { in: studentIds },
-        holat: "BELGILANDI",
-        netSumma: { gt: 0 },
-        OR: [
-          { yil: { lt: currentYear } },
-          { yil: currentYear, oy: { lte: currentMonth } },
-        ],
-      },
-      select: { studentId: true, yil: true, oy: true },
-      orderBy: [{ yil: "asc" }, { oy: "asc" }],
-    });
+    let debtMonths = [];
+    try {
+      debtMonths = await prisma.studentOyMajburiyat.findMany({
+        where: {
+          studentId: { in: studentIds },
+          holat: "BELGILANDI",
+          netSumma: { gt: 0 },
+          OR: [
+            { yil: { lt: currentYear } },
+            { yil: currentYear, oy: { lte: currentMonth } },
+          ],
+        },
+        select: { studentId: true, yil: true, oy: true },
+        orderBy: [{ yil: "asc" }, { oy: "asc" }],
+      });
+    } catch (error) {
+      if (!isSchemaMismatchError(error)) throw error;
+      debtMonths = [];
+    }
 
     for (const row of debtMonths) {
       if (!debtMonthsMap.has(row.studentId)) debtMonthsMap.set(row.studentId, []);
@@ -233,9 +301,10 @@ async function getDebtors(req, res) {
       phone: row.phone || "-",
       parentPhone: row.parentPhone || "-",
       classroom: formatClassroomName(row.classroomName, row.academicYear),
+      holat: Number(row.debtSum || 0) > 0 ? "QARZDOR" : "TOLANGAN",
       qarzOylarSoni: Number(row.debtMonths || 0),
       qarzOylar: monthKeys,
-      qarzOylarFormatted: monthKeys.map((key) => formatMonthKey(key)),
+      qarzOylarFormatted: monthKeys.map((key) => safeFormatMonthKey(key)),
       jamiQarzSumma: Number(row.debtSum || 0),
       oxirgiIzoh: notesMap.get(row.id) || null,
     };
@@ -313,11 +382,16 @@ async function createDebtorNote(req, res) {
   if (!student) {
     throw new ApiError(404, "STUDENT_NOT_FOUND", "Student topilmadi");
   }
-  await syncStudentOyMajburiyatlar({
-    studentIds: [studentId],
-    oylikSumma: settings.oylikSumma,
-    futureMonths: 0,
-  });
+  try {
+    await syncStudentOyMajburiyatlar({
+      studentIds: [studentId],
+      oylikSumma: settings.oylikSumma,
+      futureMonths: 0,
+      chargeableMonths: settings.chargeableMonths,
+    });
+  } catch (error) {
+    if (!isSchemaMismatchError(error)) throw error;
+  }
 
   const now = new Date();
   const currentYear = now.getUTCFullYear();

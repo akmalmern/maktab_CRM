@@ -1,6 +1,7 @@
 const { z } = require("zod");
 
 const oyKeyRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
+const academicYearRegex = /^(\d{4})-(\d{4})$/;
 
 const MIN_SUMMA = 50_000;
 const MAX_SUMMA = 50_000_000;
@@ -12,20 +13,58 @@ const financeSettingsSchema = z
       .int()
       .min(MIN_SUMMA, `oylikSumma kamida ${MIN_SUMMA} bo'lishi kerak`)
       .max(MAX_SUMMA, `oylikSumma ko'pi bilan ${MAX_SUMMA} bo'lishi kerak`),
-    yillikSumma: z
+    tolovOylarSoni: z
       .coerce.number()
       .int()
-      .min(MIN_SUMMA, `yillikSumma kamida ${MIN_SUMMA} bo'lishi kerak`)
-      .max(MAX_SUMMA, `yillikSumma ko'pi bilan ${MAX_SUMMA} bo'lishi kerak`),
+      .min(1, "tolovOylarSoni kamida 1 bo'lishi kerak")
+      .max(12, "tolovOylarSoni ko'pi bilan 12 bo'lishi kerak"),
+    billingCalendar: z
+      .object({
+        academicYear: z.string().trim().regex(academicYearRegex, "academicYear formati YYYY-YYYY bo'lishi kerak").optional(),
+        chargeableMonths: z
+          .array(
+            z.coerce.number().int().min(1, "Oy 1-12 bo'lishi kerak").max(12, "Oy 1-12 bo'lishi kerak"),
+          )
+          .min(1, "Kamida 1 ta to'lov oyi tanlanishi kerak")
+          .max(12, "Ko'pi bilan 12 ta oy tanlanadi"),
+      })
+      .optional(),
+    yillikSumma: z.coerce.number().int().optional(),
     boshlanishTuri: z.literal("KELASI_OY").optional().default("KELASI_OY"),
     izoh: z.string().trim().max(300).optional(),
   })
   .superRefine((value, ctx) => {
-    if (value.yillikSumma > value.oylikSumma * 12) {
+    if (value.billingCalendar?.academicYear) {
+      const match = String(value.billingCalendar.academicYear).match(academicYearRegex);
+      if (match) {
+        const start = Number(match[1]);
+        const end = Number(match[2]);
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end !== start + 1) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["billingCalendar", "academicYear"],
+            message: "academicYear ketma-ket yil bo'lishi kerak (masalan 2025-2026)",
+          });
+        }
+      }
+    }
+    const chargeableMonths = Array.isArray(value.billingCalendar?.chargeableMonths)
+      ? [...new Set(value.billingCalendar.chargeableMonths.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n >= 1 && n <= 12))]
+      : [];
+    if (chargeableMonths.length && chargeableMonths.length !== value.tolovOylarSoni) {
       ctx.addIssue({
         code: "custom",
-        path: ["yillikSumma"],
-        message: "yillikSumma oylikSumma * 12 dan katta bo'lmasligi kerak",
+        path: ["tolovOylarSoni"],
+        message: "tolovOylarSoni billingCalendar chargeableMonths soniga teng bo'lishi kerak",
+      });
+    }
+    const effectiveOylar = chargeableMonths.length || value.tolovOylarSoni;
+    const hisoblanganYillik = value.oylikSumma * effectiveOylar;
+    if (hisoblanganYillik < MIN_SUMMA || hisoblanganYillik > MAX_SUMMA) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["oylikSumma"],
+        message: "Hisoblangan yillik summa ruxsat etilgan oraliqdan tashqariga chiqmoqda",
       });
     }
   });
@@ -55,6 +94,7 @@ const createPaymentSchema = z.object({
   oylarSoni: z.coerce.number().int().min(1).max(36).optional(),
   summa: z.coerce.number().int().positive().optional(),
   izoh: z.string().trim().max(300).optional(),
+  idempotencyKey: z.string().trim().uuid("idempotencyKey UUID bo'lishi kerak").optional(),
 }).superRefine((value, ctx) => {
   if (value.turi === "YILLIK" && value.oylarSoni !== undefined && value.oylarSoni !== 12) {
     ctx.addIssue({
