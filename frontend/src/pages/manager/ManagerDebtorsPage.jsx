@@ -17,6 +17,7 @@ import {
 
 const SEARCH_DEBOUNCE_MS = 400;
 const NOTES_PAGE_LIMIT = 10;
+const MANAGER_DEBTORS_LIMIT = 500;
 
 function resolveLocale(language) {
   if (language === 'ru') return 'ru-RU';
@@ -67,14 +68,15 @@ function buildMonthRange(startMonth, count) {
   return Array.from({ length: limit }, (_, idx) => fromMonthNumber(startValue + idx));
 }
 
-const OY_NOMLARI = ['Yanvar','Fevral','Mart','Aprel','May','Iyun','Iyul','Avgust','Sentabr','Oktabr','Noyabr','Dekabr'];
-
-function formatMonthKey(value) {
+function formatMonthKey(value, locale = 'uz-UZ') {
   const [y, m] = String(value || '').split('-');
   const year = Number(y);
   const month = Number(m);
   if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return value || '-';
-  return `${OY_NOMLARI[month - 1]} ${year}`;
+  return new Date(year, month - 1, 1).toLocaleDateString(locale, {
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
 function monthKeyToDateInputValue(monthKey) {
@@ -135,6 +137,13 @@ function formatDate(value, locale) {
   return date.toLocaleDateString(locale);
 }
 
+function managerSelectedClassRecordsLabel(language) {
+  if (language === 'ru') return '\u0417\u0430\u043f\u0438\u0441\u0438 \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u043e\u0433\u043e \u043a\u043b\u0430\u0441\u0441\u0430';
+  if (language === 'ru') return 'Записи выбранного класса';
+  if (language === 'en') return 'Selected class records';
+  return "Tanlangan sinf yozuvlari";
+}
+
 function MonthChips({ items = [] }) {
   if (!items.length) return <span className="text-slate-400">-</span>;
   const visible = items.slice(0, 3);
@@ -163,7 +172,7 @@ export default function ManagerDebtorsPage() {
     search: '',
     classroomId: '',
     page: 1,
-    limit: 20,
+    limit: MANAGER_DEBTORS_LIMIT,
   });
   const [refreshTick, setRefreshTick] = useState(0);
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -358,14 +367,14 @@ export default function ManagerDebtorsPage() {
           ? '...'
           : formatMoney(globalSummaryState.totalDebtAmount || 0, locale, t),
       },
-      { label: t('Tanlangan sinf sahifasi'), value: `${query.page} / ${studentsState.pages || 1}` },
+      { label: managerSelectedClassRecordsLabel(i18n.language), value: Number(studentsState.total || 0) },
     ],
     [
       globalSummaryState.loading,
       globalSummaryState.totalDebtors,
       globalSummaryState.totalDebtAmount,
-      studentsState.pages,
-      query.page,
+      studentsState.total,
+      i18n.language,
       locale,
       t,
     ],
@@ -686,28 +695,19 @@ export default function ManagerDebtorsPage() {
           onReset={() =>
             setQuery((prev) => ({
               ...prev,
-              search: '',
               classroomId: classrooms?.[0]?.id || '',
               page: 1,
-              limit: 20,
+              limit: MANAGER_DEBTORS_LIMIT,
             }))
           }
           resetLabel={t('Filterlarni tozalash')}
-          resetDisabled={query.search === '' && query.classroomId === (classrooms?.[0]?.id || '') && Number(query.limit) === 20}
+          resetDisabled={query.classroomId === (classrooms?.[0]?.id || '')}
           actions={(
             <Button variant="secondary" size="sm" onClick={reloadDebtors}>
               {t('Yangilash')}
             </Button>
           )}
         >
-          <FilterToolbarItem label={t('Qidiruv')}>
-            <Input
-              type="text"
-              value={query.search}
-              onChange={(e) => setQuery((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
-              placeholder={t('Ism, username yoki ota-ona telefoni...')}
-            />
-          </FilterToolbarItem>
           <FilterToolbarItem label={t('Sinf filtri')}>
             <Select
               value={query.classroomId}
@@ -719,23 +719,6 @@ export default function ManagerDebtorsPage() {
                 </option>
               ))}
             </Select>
-          </FilterToolbarItem>
-          <FilterToolbarItem label={t('Sahifa limiti')}>
-            <Select
-              value={String(query.limit)}
-              onChange={(e) => setQuery((prev) => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-            >
-              {[10, 20, 50].map((size) => (
-                <option key={size} value={size}>
-                  {t('{{count}} ta / sahifa', { count: size })}
-                </option>
-              ))}
-            </Select>
-          </FilterToolbarItem>
-          <FilterToolbarItem label={t("Ko'rinish")}>
-            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-600">
-              {t("Qarzdorlar ro'yxati")}
-            </div>
           </FilterToolbarItem>
         </FilterToolbar>
 
@@ -754,9 +737,6 @@ export default function ManagerDebtorsPage() {
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
                   {t('Jami')}: {studentsState.total || 0}
                 </span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
-                  {t('Sahifa')}: {query.page} / {studentsState.pages || 1}
-                </span>
               </div>
               <div className="max-h-[60vh] overflow-auto rounded-2xl border border-slate-200/80 bg-white shadow-sm ring-1 ring-slate-200/50">
                 <table className="w-full min-w-[980px] text-sm">
@@ -764,7 +744,7 @@ export default function ManagerDebtorsPage() {
                   <tr>
                     <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em]">{t("O'quvchi")}</th>
                     <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em]">{t('Sinf')}</th>
-                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em]">USERNAME</th>
+                    <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em]">{t('Username')}</th>
                     <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em]">{t('Holat')}</th>
                     <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em]">{t('Qarz oylar')}</th>
                     <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em]">{t('Jami qarz')}</th>
@@ -781,7 +761,11 @@ export default function ManagerDebtorsPage() {
                       <td className="px-3 py-2">{row.classroom}</td>
                       <td className="px-3 py-2">{row.username}</td>
                       <td className="px-3 py-2">
-                        <StatusBadge domain="financeStudent" value={row.holat} className="shadow-none" />
+                        <StatusBadge
+                          domain="financeStudent"
+                          value={Number(row.jamiQarzSumma || 0) > 0 ? 'QARZDOR' : 'TOLANGAN'}
+                          className="shadow-none"
+                        />
                       </td>
                       <td className="px-3 py-2">
                         <p className="mb-1">
@@ -789,7 +773,7 @@ export default function ManagerDebtorsPage() {
                             {row.qarzOylarSoni} {t('ta')}
                           </Badge>
                         </p>
-                        <MonthChips items={row.qarzOylarFormatted || []} />
+                        <MonthChips items={(row.qarzOylar || []).map((key) => formatMonthKey(key, locale))} />
                       </td>
                       <td className="px-3 py-2 font-semibold text-rose-700">
                         {formatMoney(row.jamiQarzSumma, locale, t)}
@@ -813,29 +797,6 @@ export default function ManagerDebtorsPage() {
           )}
         </div>
 
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => setQuery((prev) => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-            disabled={query.page <= 1}
-          >
-            {t('Oldingi')}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() =>
-              setQuery((prev) => ({
-                ...prev,
-                page: Math.min(studentsState.pages || 1, prev.page + 1),
-              }))
-            }
-            disabled={query.page >= (studentsState.pages || 1)}
-          >
-            {t('Keyingi')}
-          </Button>
-        </div>
       </Card>
 
       <Modal open={modalOpen} onClose={closeModal} title={t('Ota-ona bilan aloqa izohlari')} maxWidth="max-w-4xl">
@@ -960,7 +921,7 @@ export default function ManagerDebtorsPage() {
                 {t('Qarzdor oylar')}: {paymentStudent.qarzOylarSoni || 0} {t('ta')}
               </p>
               <div className="mt-2">
-                <MonthChips items={paymentStudent.qarzOylarFormatted || []} />
+                <MonthChips items={(paymentStudent.qarzOylar || []).map((key) => formatMonthKey(key, locale))} />
               </div>
             </div>
 
@@ -1025,7 +986,7 @@ export default function ManagerDebtorsPage() {
                       }
                     />
                     <p className="mt-1 text-xs text-slate-500">
-                      {t('Tanlangan oy')}: {formatMonthKey(paymentForm.startMonth)}
+                      {t('Tanlangan oy')}: {formatMonthKey(paymentForm.startMonth, locale)}
                     </p>
                   </div>
                   <div className="md:col-span-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
@@ -1033,7 +994,7 @@ export default function ManagerDebtorsPage() {
                       <p className="text-sm font-semibold text-slate-800">{t('Tez amal')}</p>
                       <p className="text-xs text-slate-500">
                         {Number(paymentStudent.qarzOylarSoni || 0) > 0
-                          ? `${t('Qarzdor oylar')}: ${paymentStudent.qarzOylarSoni} ${t('ta')} (${formatMonthKey(firstDebtMonth(paymentStudent))}dan boshlab)`
+                          ? `${t('Qarzdor oylar')}: ${paymentStudent.qarzOylarSoni} ${t('ta')} (${formatMonthKey(firstDebtMonth(paymentStudent), locale)}dan boshlab)`
                           : t("Qarzdor oylar topilmadi")}
                       </p>
                     </div>
@@ -1136,11 +1097,11 @@ export default function ManagerDebtorsPage() {
                       </div>
                       <div>
                         <p className="mb-1 text-slate-600">{t("Yopilishi rejalangan oylar")}:</p>
-                        <MonthChips items={(mergedPaymentPreview.monthsToClose || []).map(formatMonthKey)} />
+                        <MonthChips items={(mergedPaymentPreview.monthsToClose || []).map((key) => formatMonthKey(key, locale))} />
                       </div>
                       <div>
                         <p className="mb-1 text-slate-600">{t("Qarzdan yopiladigan oylar")}:</p>
-                        <MonthChips items={(mergedPaymentPreview.debtClosingMonths || []).map(formatMonthKey)} />
+                        <MonthChips items={(mergedPaymentPreview.debtClosingMonths || []).map((key) => formatMonthKey(key, locale))} />
                       </div>
                     </div>
                   )}
@@ -1182,7 +1143,7 @@ export default function ManagerDebtorsPage() {
                         }
                       />
                       <p className="mt-1 text-xs text-slate-500">
-                        {t('Tanlangan oy')}: {formatMonthKey(imtiyozForm.boshlanishOy)}
+                        {t('Tanlangan oy')}: {formatMonthKey(imtiyozForm.boshlanishOy, locale)}
                       </p>
                     </div>
                     <div>
@@ -1350,8 +1311,8 @@ export default function ManagerDebtorsPage() {
                                 {paymentTypeLabel(row.tx.turi)} • {formatMoney(row.tx.summa, locale, t)}
                               </p>
                               <p className="text-xs text-slate-600">{formatDateTime(row.tx.tolovSana, locale)}</p>
-                              {!!row.tx.qoplanganOylarFormatted?.length && (
-                                <MonthChips items={row.tx.qoplanganOylarFormatted} />
+                              {!!row.tx.qoplanganOylar?.length && (
+                                <MonthChips items={row.tx.qoplanganOylar.map((key) => formatMonthKey(key, locale))} />
                               )}
                             </div>
                           ) : (
@@ -1371,7 +1332,18 @@ export default function ManagerDebtorsPage() {
                               </p>
                               <p className="text-xs text-slate-600">{row.im.davrLabel || '-'}</p>
                               {row.im.sabab ? <p className="text-xs text-slate-600">{t('Sabab')}: {row.im.sabab}</p> : null}
-                              {row.im.oylarFormatted?.length ? <MonthChips items={row.im.oylarFormatted} /> : null}
+                              {Array.isArray(row.im.oylarSnapshot) && row.im.oylarSnapshot.length ? (
+                                <MonthChips
+                                  items={row.im.oylarSnapshot
+                                    .map((item) =>
+                                      item && Number.isFinite(Number(item.yil)) && Number.isFinite(Number(item.oy))
+                                        ? `${item.yil}-${String(item.oy).padStart(2, '0')}`
+                                        : null,
+                                    )
+                                    .filter(Boolean)
+                                    .map((key) => formatMonthKey(key, locale))}
+                                />
+                              ) : null}
                             </div>
                           )}
                         </div>

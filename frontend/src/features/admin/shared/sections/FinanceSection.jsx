@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Input, Modal, Select, StateView, Textarea } from '../../../../components/ui';
+import { useTranslation } from 'react-i18next';
+import { Badge, Button, Card, Input, Select, StateView, Textarea } from '../../../../components/ui';
 import { usePreviewFinancePaymentMutation } from '../../../../services/api/financeApi';
+import FinanceSettingsPanelView from './finance/FinanceSettingsPanel';
+import FinancePaymentsListView from './finance/FinancePaymentsList';
+import FinancePaymentModalView from './finance/FinancePaymentModal';
 
-function sumFormat(value) {
-  return new Intl.NumberFormat('uz-UZ').format(Number(value || 0));
+function resolveLocale(language) {
+  if (language === 'ru') return 'ru-RU';
+  if (language === 'en') return 'en-US';
+  return 'uz-UZ';
+}
+
+function sumFormat(value, locale = 'uz-UZ') {
+  return new Intl.NumberFormat(locale).format(Number(value || 0));
 }
 
 function todayMonth() {
@@ -41,31 +51,23 @@ function buildMonthRange(startMonth, count) {
   return Array.from({ length: limit }, (_, idx) => fromMonthNumber(startValue + idx));
 }
 
-const OY_NOMLARI = [
-  'Yanvar',
-  'Fevral',
-  'Mart',
-  'Aprel',
-  'May',
-  'Iyun',
-  'Iyul',
-  'Avgust',
-  'Sentabr',
-  'Oktabr',
-  'Noyabr',
-  'Dekabr',
-];
+function monthNameByNumber(monthNo, locale = 'uz-UZ') {
+  if (!Number.isFinite(monthNo) || monthNo < 1 || monthNo > 12) return '';
+  return new Intl.DateTimeFormat(locale, { month: 'long', timeZone: 'UTC' }).format(
+    new Date(Date.UTC(2024, monthNo - 1, 1))
+  );
+}
 
 const BILLING_MONTH_OPTIONS = [9, 10, 11, 12];
 const SCHOOL_MONTH_ORDER = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
 
-function formatMonthKey(value) {
+function formatMonthKey(value, locale = 'uz-UZ') {
   const parts = String(value || '').split('-');
   if (parts.length !== 2) return value;
   const year = Number(parts[0]);
   const month = Number(parts[1]);
   if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return value;
-  return `${OY_NOMLARI[month - 1]} ${year}`;
+  return new Date(year, month - 1, 1).toLocaleDateString(locale, { month: 'long', year: 'numeric' });
 }
 
 function normalizeBillingMonths(value, fallback = 10) {
@@ -169,11 +171,11 @@ function MonthChips({ months = [], maxVisible = 3 }) {
   );
 }
 
-function statusBadge(holat) {
+function statusBadge(holat, t) {
   if (holat === 'QARZDOR') {
-    return <Badge variant="danger">Qarzdor</Badge>;
+    return <Badge variant="danger">{t('Qarzdor')}</Badge>;
   }
-  return <Badge variant="success">To'lagan</Badge>;
+  return <Badge variant="success">{t("To'lagan")}</Badge>;
 }
 
 function paymentTypeLabel(type) {
@@ -357,15 +359,16 @@ function PaymentPreviewCard({
   serverPreviewLoading,
   serverPreviewError,
 }) {
+  const { t } = useTranslation();
   return (
-    <Card title="To'lov preview">
+    <Card title={t("To'lov preview")}>
       {!paymentPreview ? (
         <StateView
           type={detailState.loading || (selectedStudentId && !isSelectedDetailReady) ? 'loading' : 'empty'}
           description={
             detailState.loading || (selectedStudentId && !isSelectedDetailReady)
-              ? "Student to'lov ma'lumoti yuklanmoqda"
-              : 'Preview mavjud emas'
+              ? t("Student to'lov ma'lumoti yuklanmoqda")
+              : t('Preview mavjud emas')
           }
         />
       ) : (
@@ -967,6 +970,8 @@ export default function FinanceSection({
   onExportDebtors,
   exporting,
 }) {
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language);
   const [activeTab, setActiveTab] = useState('payments');
   const [modalOpen, setModalOpen] = useState(false);
   const [paymentModalTab, setPaymentModalTab] = useState('payment');
@@ -1082,15 +1087,15 @@ export default function FinanceSection({
       10,
     );
     return [
-      { label: "Jami o'quvchilar soni", value: totalRows },
-      { label: "Qarzdor o'quvchilar soni", value: qarzdorlarSoni },
-      { label: "Umumiy qarzdorlik summasi", value: sumFormat(jamiQarz) },
-      { label: "Shu oy tushgan to'lovlar", value: `${sumFormat(buOyTolangan)} so'm` },
-      { label: "Shu oy yopilmagan qarz", value: `${sumFormat(buOyQarz)} so'm` },
-      { label: `Amaldagi tarif (oylik / yillik, ${tarifOylarSoni} oy)`, value: `${sumFormat(tarifOylik)} / ${sumFormat(tarifYillik)}` },
-      { label: `Sahifa: ${studentsState.page}/${studentsState.pages || 1}`, value: `Yozuvlar: ${studentsState.limit || 20}` },
+      { label: t("Jami o'quvchilar soni"), value: totalRows },
+      { label: t("Qarzdor o'quvchilar soni"), value: qarzdorlarSoni },
+      { label: t('Umumiy qarzdorlik summasi'), value: sumFormat(jamiQarz, locale) },
+      { label: t("Shu oy tushgan to'lovlar"), value: `${sumFormat(buOyTolangan, locale)} ${t("so'm")}` },
+      { label: t("Shu oy yopilmagan qarz"), value: `${sumFormat(buOyQarz, locale)} ${t("so'm")}` },
+      { label: `${t("Amaldagi tarif (oylik / yillik)")} (${tarifOylarSoni} ${t('oy')})`, value: `${sumFormat(tarifOylik, locale)} / ${sumFormat(tarifYillik, locale)}` },
+      { label: `${t('Sahifa')}: ${studentsState.page}/${studentsState.pages || 1}`, value: `${t('Yozuvlar')}: ${studentsState.limit || 20}` },
     ];
-  }, [studentsSummary, studentsState.page, studentsState.pages, studentsState.limit, settings]);
+  }, [studentsSummary, studentsState.page, studentsState.pages, studentsState.limit, settings, t, locale]);
 
   const billingAcademicYearOptions = useMemo(
     () => buildAcademicYearOptions(classrooms, settingsValidation.computed.billingAcademicYear),
@@ -1100,13 +1105,13 @@ export default function FinanceSection({
   const cashflowPanel = useMemo(() => {
     const flow = studentsSummary?.cashflow || {};
     return {
-      month: flow.monthFormatted || (flow.month ? formatMonthKey(flow.month) : formatMonthKey(todayMonth())),
+      month: flow.month ? formatMonthKey(flow.month, locale) : formatMonthKey(todayMonth(), locale),
       planAmount: Number(flow.planAmount || 0),
       collectedAmount: Number(flow.collectedAmount || 0),
       debtAmount: Number(flow.debtAmount || 0),
       diffAmount: Number(flow.diffAmount || 0),
     };
-  }, [studentsSummary]);
+  }, [studentsSummary, locale]);
 
   const localPaymentPreview = useFinancePaymentPreview({
     detailStudent,
@@ -1277,7 +1282,7 @@ export default function FinanceSection({
   return (
     <div className="space-y-4">
       <Card
-        title="Moliya bo'limi"
+        title={t("Moliya bo'limi")}
         actions={
           <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-1">
             <Button
@@ -1285,61 +1290,84 @@ export default function FinanceSection({
               variant={activeTab === 'payments' ? 'indigo' : 'secondary'}
               onClick={() => setActiveTab('payments')}
             >
-              To'lovlar
+              {t("To'lovlar")}
             </Button>
             <Button
               size="sm"
               variant={activeTab === 'settings' ? 'indigo' : 'secondary'}
               onClick={() => setActiveTab('settings')}
             >
-              Tarif sozlamalari
+              {t("Tarif sozlamalari")}
             </Button>
           </div>
         }
       >
-        <p className="text-sm text-slate-600">Bo'limni tanlang: To'lovlar yoki Tarif sozlamalari.</p>
+        <p className="text-sm text-slate-600">{t("Bo'limni tanlang: To'lovlar yoki Tarif sozlamalari.")}</p>
       </Card>
 
       {activeTab === 'settings' && (
-        <Card title="Tarif sozlamalari" subtitle="Oylik summa kiriting, yillik summa avtomatik hisoblanadi (to'lov oylar soni asosida).">
+        <FinanceSettingsPanelView
+          t={t}
+          settings={settings}
+          settingsMeta={settingsMeta}
+          settingsDraft={settingsDraft}
+          setSettingsDraft={setSettingsDraft}
+          settingsValidation={settingsValidation}
+          actionLoading={actionLoading}
+          handleSaveSettings={handleSaveSettings}
+          handleResetDraft={handleResetDraft}
+          handleDefaultDraft={handleDefaultDraft}
+          toggleBillingMonth={toggleBillingMonth}
+          billingAcademicYearOptions={billingAcademicYearOptions}
+          locale={locale}
+          sumFormat={sumFormat}
+          normalizeBillingMonths={normalizeBillingMonths}
+          isValidAcademicYearLabel={isValidAcademicYearLabel}
+          monthNameByNumber={monthNameByNumber}
+          SCHOOL_MONTH_ORDER={SCHOOL_MONTH_ORDER}
+          BILLING_MONTH_OPTIONS={BILLING_MONTH_OPTIONS}
+          FieldLabel={FieldLabel}
+          MiniStatCard={MiniStatCard}
+        >
           <form
             onSubmit={handleSaveSettings}
             className="space-y-3 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4 ring-1 ring-slate-200/50"
           >
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <div>
-                <FieldLabel>Oylik summa</FieldLabel>
+                <FieldLabel>{t("Oylik summa")}</FieldLabel>
                 <Input
                   type="number"
                   min={0}
                   value={settingsDraft.oylikSumma || settings.oylikSumma || ''}
                   onChange={(e) => setSettingsDraft((p) => ({ ...p, oylikSumma: e.target.value }))}
-                  placeholder="Oylik summa"
+                  placeholder={t("Oylik summa")}
                 />
                 {settingsValidation.errors.oylikSumma && (
                   <p className="mt-1 text-xs text-rose-600">{settingsValidation.errors.oylikSumma}</p>
                 )}
               </div>
               <div>
-                <FieldLabel>To'lov olinadigan oylar soni</FieldLabel>
-                <Input type="text" readOnly value={`${settingsValidation.computed.tolovOylarSoni} oy`} />
+                <FieldLabel>{t("To'lov olinadigan oylar soni")}</FieldLabel>
+                <Input type="text" readOnly value={`${settingsValidation.computed.tolovOylarSoni} ${t('oy')}`} />
                 <p className="mt-1 text-xs text-slate-500">
-                  Oylar pastdagi billing calendar'dan tanlanadi. Tanlanmagan oylar ta'til deb olinadi.
+                  {t("Oylar pastdagi billing calendar'dan tanlanadi. Tanlanmagan oylar ta'til deb olinadi.")}
                 </p>
                 {settingsValidation.errors.tolovOylarSoni && (
                   <p className="mt-1 text-xs text-rose-600">{settingsValidation.errors.tolovOylarSoni}</p>
                 )}
               </div>
               <div>
-                <FieldLabel>Yillik summa (avtomatik)</FieldLabel>
+                <FieldLabel>{t("Yillik summa (avtomatik)")}</FieldLabel>
                 <Input
                   type="text"
                   readOnly
                   value={settingsValidation.computed.yillik ? sumFormat(settingsValidation.computed.yillik) : ''}
-                  placeholder="Yillik summa avtomatik chiqadi"
+                  placeholder={t("Yillik summa avtomatik chiqadi")}
                 />
                 <p className="mt-1 text-xs text-slate-500">
-                  Formula: oylik summa × {settingsValidation.computed.tolovOylarSoni} oy
+                  {t('Formula')}: {t("Oylik summa").toLowerCase()} × {settingsValidation.computed.tolovOylarSoni}{' '}
+                  {t('oy')}
                 </p>
                 {settingsValidation.errors.yillikSumma && (
                   <p className="mt-1 text-xs text-rose-600">{settingsValidation.errors.yillikSumma}</p>
@@ -1349,7 +1377,7 @@ export default function FinanceSection({
 
             <div className="rounded-xl border border-slate-200/80 bg-white p-3">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <FieldLabel>Billing calendar (to'lov olinadigan oylar)</FieldLabel>
+                <FieldLabel>{t("Billing calendar (to'lov olinadigan oylar)")}</FieldLabel>
                 <div className="flex flex-wrap gap-2">
                   {(settingsMeta?.constraints?.billingMonthsOptions || BILLING_MONTH_OPTIONS).map((months) => (
                     <button
@@ -1363,14 +1391,14 @@ export default function FinanceSection({
                       }
                       className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 hover:border-indigo-300 hover:text-indigo-700"
                     >
-                      {months} oy preset
+                      {months} {t('oy')} {t('preset')}
                     </button>
                   ))}
                 </div>
               </div>
               <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-2">
                 <div>
-                  <FieldLabel>Billing calendar o'quv yili</FieldLabel>
+                  <FieldLabel>{t("Billing calendar o'quv yili")}</FieldLabel>
                   <Select
                     value={
                       isValidAcademicYearLabel(settingsDraft.billingAcademicYear)
@@ -1392,7 +1420,7 @@ export default function FinanceSection({
                   </Select>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                  Ushbu calendar faqat tanlangan o'quv yilidagi qaysi oylar to'lovli / ta'til ekanini belgilaydi.
+                  {t("Ushbu calendar faqat tanlangan o'quv yilidagi qaysi oylar to'lovli / ta'til ekanini belgilaydi.")}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
@@ -1409,29 +1437,34 @@ export default function FinanceSection({
                           : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
                       }`}
                     >
-                      <div className="font-medium">{OY_NOMLARI[monthNo - 1]}</div>
-                      <div className="mt-1 text-xs text-slate-500">{selected ? "To'lov olinadi" : "Ta'til"}</div>
+                      <div className="font-medium">{monthNameByNumber(monthNo, locale)}</div>
+                        <div className="mt-1 text-xs text-slate-500">{selected ? t("To'lov olinadi") : t("Ta'til")}</div>
                     </button>
                   );
                 })}
               </div>
               <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                  To'lov olinadigan oylar: {settingsValidation.computed.billingChargeableMonths.map((m) => OY_NOMLARI[m - 1]).join(', ') || '-'}
+                  {t("To'lov olinadigan oylar")}:{' '}
+                  {settingsValidation.computed.billingChargeableMonths
+                    .map((m) => monthNameByNumber(m, locale))
+                    .join(', ') || '-'}
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                  Ta'til oylar: {settingsValidation.computed.vacationMonths.map((m) => OY_NOMLARI[m - 1]).join(', ') || '-'}
+                  {t("Ta'til oylar")}:{' '}
+                  {settingsValidation.computed.vacationMonths.map((m) => monthNameByNumber(m, locale)).join(', ') ||
+                    '-'}
                 </div>
               </div>
             </div>
 
             <div>
-              <FieldLabel>Ichki izoh (ixtiyoriy)</FieldLabel>
+              <FieldLabel>{t("Ichki izoh (ixtiyoriy)")}</FieldLabel>
               <Textarea
                 rows={2}
                 value={settingsDraft.izoh}
                 onChange={(e) => setSettingsDraft((p) => ({ ...p, izoh: e.target.value }))}
-                placeholder="Masalan: Kelasi oy uchun yangi tarif"
+                placeholder={t("Masalan: Kelasi oy uchun yangi tarif")}
               />
             </div>
 
@@ -1441,418 +1474,108 @@ export default function FinanceSection({
                 variant="indigo"
                 disabled={actionLoading || !settingsValidation.changed || !settingsValidation.valid}
               >
-                {actionLoading ? 'Saqlanmoqda...' : 'Saqlash'}
+                  {actionLoading ? t("Saqlanmoqda...") : t("Saqlash")}
               </Button>
               <Button type="button" variant="secondary" onClick={handleResetDraft} disabled={actionLoading}>
-                Bekor qilish
+                {t("Bekor qilish")}
               </Button>
               <Button type="button" variant="secondary" onClick={handleDefaultDraft} disabled={actionLoading}>
-                Default
+                {t("Default")}
               </Button>
               <span className="text-xs text-slate-500">
-                {settingsValidation.changed ? "O'zgartirishlar tayyor" : "O'zgartirish yo'q"}
+                {settingsValidation.changed ? t("O'zgartirishlar tayyor") : t("O'zgartirish yo'q")}
               </span>
             </div>
           </form>
 
           <div className="mt-3 rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200/40">
-            Joriy tarif: oylik {sumFormat(settings.oylikSumma)} so'm, yillik {sumFormat(settings.yillikSumma)} so'm ({normalizeBillingMonths(settings?.tolovOylarSoni, 10)} oy)
-            {isValidAcademicYearLabel(settings?.billingCalendar?.academicYear) ? `, billing calendar: ${settings.billingCalendar.academicYear}` : ''}.
+            {t("Joriy tarif")}: {t("Oylik summa").toLowerCase()} {sumFormat(settings.oylikSumma)} {t("so'm")},{' '}
+            {t("Yillik summa (avtomatik)").toLowerCase()} {sumFormat(settings.yillikSumma)} {t("so'm")} ({normalizeBillingMonths(settings?.tolovOylarSoni, 10)} {t('oy')})
+            {isValidAcademicYearLabel(settings?.billingCalendar?.academicYear)
+              ? `, ${t("billing calendar")}: ${settings.billingCalendar.academicYear}`
+              : ''}
+            .
           </div>
 
           <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
-            <MiniStatCard label="Studentlar soni" value={Number(settingsMeta?.preview?.studentCount || 0)} tone="info" />
+            <MiniStatCard label={t("Studentlar soni")} value={Number(settingsMeta?.preview?.studentCount || 0)} tone="info" />
             <MiniStatCard
-              label="Oylik taxminiy tushum"
-              value={`${sumFormat(settingsMeta?.preview?.expectedMonthly || 0)} so'm`}
+              label={t("Oylik taxminiy tushum")}
+              value={`${sumFormat(settingsMeta?.preview?.expectedMonthly || 0)} ${t("so'm")}`}
             />
             <MiniStatCard
-              label="Yillik taxminiy tushum"
-              value={`${sumFormat(settingsMeta?.preview?.expectedYearly || 0)} so'm`}
+              label={t("Yillik taxminiy tushum")}
+              value={`${sumFormat(settingsMeta?.preview?.expectedYearly || 0)} ${t("so'm")}`}
             />
-            <MiniStatCard
-              label="Bu oy to'langan"
-              value={`${sumFormat(settingsMeta?.preview?.thisMonthPaidAmount || 0)} so'm`}
-              tone="success"
-            />
-            <MiniStatCard
-              label="Umumiy qarz"
-              value={`${sumFormat(settingsMeta?.preview?.gapYearly || 0)} so'm`}
-              tone="danger"
-            />
-          </div>
-        </Card>
-      )}
-
-      {activeTab === 'payments' && (
-        <Card title="To'lovlar ro'yxati">
-          <div className="mb-3 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 ring-1 ring-slate-200/50">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-semibold tracking-tight text-slate-800">Oylik pul oqimi (hisobot)</p>
-              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1">
-                <p className="text-xs text-slate-500">Qaysi oy bo'yicha hisobot</p>
-                <Input
-                  type="month"
-                  value={query.cashflowMonth || ''}
-                  onChange={(e) => onChangeQuery({ cashflowMonth: e.target.value || '' })}
-                />
-              </div>
-            </div>
-            <p className="mb-1 text-xs text-slate-600">Tanlangan hisobot oyi: {cashflowPanel.month}</p>
-            <p className="mb-2 text-xs text-slate-500">
-              Reja = kutilgan tushum, Tushum = amalda tushgan pul, Qarz = shu oy yopilmagan summa.
-            </p>
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
-              <MiniStatCard label="Oylik reja (kutilgan tushum)" value={`${sumFormat(cashflowPanel.planAmount)} so'm`} />
               <MiniStatCard
-                label="Amalda tushgan pul"
-                value={`${sumFormat(cashflowPanel.collectedAmount)} so'm`}
+                label={t("Shu oy tushgan to'lovlar")}
+                value={`${sumFormat(settingsMeta?.preview?.thisMonthPaidAmount || 0, locale)} ${t("so'm")}`}
                 tone="success"
               />
               <MiniStatCard
-                label="Shu oy qarz summasi"
-                value={`${sumFormat(cashflowPanel.debtAmount)} so'm`}
+                label={t("Umumiy qarzdorlik summasi")}
+                value={`${sumFormat(settingsMeta?.preview?.gapYearly || 0, locale)} ${t("so'm")}`}
                 tone="danger"
               />
-              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                <p className="text-xs text-slate-500">Rejaga nisbatan farq</p>
-                <p className={`mt-1 text-base font-semibold ${cashflowPanel.diffAmount > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
-                  {sumFormat(Math.abs(cashflowPanel.diffAmount))} so'm
-                  {cashflowPanel.diffAmount > 0
-                    ? " kam tushgan"
-                    : cashflowPanel.diffAmount < 0
-                      ? " ko'p tushgan"
-                      : ''}
-                </p>
-              </div>
-            </div>
           </div>
-
-          <div className="mb-3 space-y-3">
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-              {statusPanel.slice(0, 4).map((card) => (
-                <MiniStatCard key={card.label} label={card.label} value={card.value} />
-              ))}
-            </div>
-            {statusPanel.length > 4 && (
-              <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-2 ring-1 ring-slate-200/40">
-                <div className="mb-2 border-t border-slate-300/70 pt-2">
-                  <p className="text-xs font-medium text-slate-600">
-                    Quyidagi kartalar tanlangan sinf / ro'yxat ko'rinishiga bog'liq ma'lumotlar
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-                  {statusPanel.slice(4).map((card) => (
-                    <MiniStatCard key={card.label} label={card.label} value={card.value} />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="mb-3 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3 ring-1 ring-slate-200/50">
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
-              <Input
-                type="text"
-                value={query.search}
-                onChange={(e) => onChangeQuery({ search: e.target.value, page: 1 })}
-                placeholder="Ism yoki username..."
-              />
-              <Select
-                value={query.status}
-                onChange={(e) => onChangeQuery({ status: e.target.value, page: 1 })}
-              >
-                <option value="ALL">Hammasi</option>
-                <option value="QARZDOR">Faqat qarzdor</option>
-                <option value="TOLAGAN">Faqat to'lagan</option>
-              </Select>
-              <Select
-                value={query.classroomId}
-                onChange={(e) => onChangeQuery({ classroomId: e.target.value, page: 1 })}
-              >
-                <option value="all">Barcha sinflar</option>
-                {classrooms.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.academicYear})
-                  </option>
-                ))}
-              </Select>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Button
-                  variant="secondary"
-                  onClick={() => onExportDebtors('xlsx')}
-                  disabled={exporting === 'xlsx'}
-                  className="w-full"
-                >
-                  Qarzdorlar Excel
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => onExportDebtors('pdf')}
-                  disabled={exporting === 'pdf'}
-                  className="w-full"
-                >
-                  Qarzdorlar PDF
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {!isClassroomSelected && (
-            <StateView
-              type="empty"
-              description="Pastdagi jadvalni ko'rish uchun sinfni tanlang. Yuqoridagi umumiy statistika ko'rinishda qoladi."
-            />
-          )}
-          {isClassroomSelected && studentsState.loading && <StateView type="loading" />}
-          {isClassroomSelected && studentsState.error && <StateView type="error" description={studentsState.error} />}
-          {isClassroomSelected && !studentsState.loading && !studentsState.error && (
-            <>
-              <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1 lg:hidden">
-                {students.map((row) => (
-                  <div
-                    key={row.id}
-                    className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm ring-1 ring-slate-200/50"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-semibold text-slate-900">{row.fullName}</p>
-                        <p className="text-xs text-slate-500">@{row.username}</p>
-                        <p className="mt-1 text-xs text-slate-600">{row.classroom || '-'}</p>
-                      </div>
-                      {statusBadge(row.holat)}
-                    </div>
-                    <div className="mt-3 grid grid-cols-1 gap-2">
-                      <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
-                        <p className="text-xs text-slate-500">Qarz oylar</p>
-                        <div className="mt-1">
-                          <MonthChips months={row.qarzOylarFormatted || row.qarzOylar || []} />
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
-                        <p className="text-xs text-slate-500">Jami qarz</p>
-                        <p className="mt-1 font-semibold text-slate-900">
-                          {sumFormat(row.jamiQarzSumma)} so'm
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-3 grid grid-cols-1 gap-2">
-                      <Button
-                        size="sm"
-                        variant="indigo"
-                        onClick={() => openPaymentModal(row.id)}
-                        className="w-full"
-                      >
-                        To'lov
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-                {!students.length && (
-                  <StateView type="empty" description="To'lov ma'lumoti topilmadi" />
-                )}
-              </div>
-
-              <div className="hidden max-h-[60vh] overflow-auto rounded-xl border border-slate-200/80 ring-1 ring-slate-200/40 lg:block">
-                <table className="w-full min-w-[980px] text-sm">
-                  <thead className="bg-slate-100 text-left text-slate-600">
-                    <tr>
-                      <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em]">F.I.SH</th>
-                      <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em]">Username</th>
-                      <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em]">Sinf</th>
-                      <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em]">Holat</th>
-                      <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em]">Qarz oylar</th>
-                      <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em]">Jami qarz</th>
-                      <th className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em]">Amal</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {students.map((row) => (
-                      <tr key={row.id} className="border-t border-slate-100 bg-white hover:bg-slate-50/60">
-                        <td className="px-3 py-2 font-semibold text-slate-900">{row.fullName}</td>
-                        <td className="px-3 py-2">{row.username}</td>
-                        <td className="px-3 py-2">{row.classroom}</td>
-                        <td className="px-3 py-2">{statusBadge(row.holat)}</td>
-                        <td className="px-3 py-2">
-                          <MonthChips months={row.qarzOylarFormatted || row.qarzOylar || []} />
-                        </td>
-                        <td className="px-3 py-2 font-semibold">{sumFormat(row.jamiQarzSumma)} so'm</td>
-                        <td className="px-3 py-2">
-                          <div className="flex flex-wrap gap-1.5">
-                            <Button size="sm" variant="indigo" className="min-w-20" onClick={() => openPaymentModal(row.id)}>
-                              To'lov
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {!students.length && (
-                      <tr>
-                        <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
-                          To'lov ma'lumoti topilmadi
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-
-          {isClassroomSelected && (
-            <div className="mt-3 flex justify-end gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => onChangeQuery({ page: Math.max(1, query.page - 1) })}
-                disabled={query.page <= 1}
-              >
-                Oldingi
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => onChangeQuery({ page: Math.min(studentsState.pages || 1, query.page + 1) })}
-                disabled={query.page >= (studentsState.pages || 1)}
-              >
-                Keyingi
-              </Button>
-            </div>
-          )}
-        </Card>
+        </FinanceSettingsPanelView>
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Student to'lovini belgilash" maxWidth="max-w-3xl">
-        {!selectedStudentId ? (
-          <StateView type="empty" description="Student tanlanmagan" />
-        ) : (
-          <div className="space-y-4">
-            {detailState.loading ? (
-              <StateView type="loading" />
-            ) : detailState.error ? (
-              <StateView type="error" description={detailState.error} />
-            ) : (
-              <>
-                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 text-sm ring-1 ring-slate-200/50">
-              <p className="font-semibold text-slate-900">{detailStudent?.fullName || '-'}</p>
-                  <p className="mt-1 text-slate-600">Qarzdor oylar: {detailStudent?.qarzOylarSoni || 0} ta</p>
-                  <div className="mt-2">
-                    <MonthChips
-                      months={
-                        detailStudent?.qarzOylarFormatted?.length
-                          ? detailStudent.qarzOylarFormatted
-                          : (detailStudent?.qarzOylar || []).map(formatMonthKey)
-                      }
-                      maxVisible={5}
-                    />
-                  </div>
-                </div>
+      {activeTab === 'payments' && (
+        <FinancePaymentsListView
+          t={t}
+          query={query}
+          onChangeQuery={onChangeQuery}
+          classrooms={classrooms}
+          studentsState={studentsState}
+          students={students}
+          statusPanel={statusPanel}
+          cashflowPanel={cashflowPanel}
+          locale={locale}
+          sumFormat={sumFormat}
+          exporting={exporting}
+          onExportDebtors={onExportDebtors}
+          isClassroomSelected={isClassroomSelected}
+          openPaymentModal={openPaymentModal}
+          MiniStatCard={MiniStatCard}
+          MonthChips={MonthChips}
+          statusBadge={statusBadge}
+          formatMonthKey={formatMonthKey}
+        />
+      )}
 
-                <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-2 ring-1 ring-slate-200/50">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant={paymentModalTab === 'payment' ? 'indigo' : 'secondary'}
-                      onClick={() => setPaymentModalTab('payment')}
-                    >
-                      To'lov
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={paymentModalTab === 'imtiyoz' ? 'indigo' : 'secondary'}
-                      onClick={() => setPaymentModalTab('imtiyoz')}
-                    >
-                      Imtiyoz
-                      {!!detailImtiyozlar.length && ` (${detailImtiyozlar.length})`}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={paymentModalTab === 'history' ? 'indigo' : 'secondary'}
-                      onClick={() => setPaymentModalTab('history')}
-                    >
-                      Tarix
-                      {!!detailState.transactions?.length && ` (${detailState.transactions.length})`}
-                    </Button>
-                  </div>
-                </div>
-
-                {paymentModalTab === 'payment' && (
-                  <PaymentFormCard
-                    actionLoading={actionLoading}
-                    detailState={detailState}
-                    selectedStudentId={selectedStudentId}
-                    isSelectedDetailReady={isSelectedDetailReady}
-                    paymentForm={paymentForm}
-                    setPaymentForm={setPaymentForm}
-                    handleCreatePayment={handleCreatePayment}
-                    setModalOpen={setModalOpen}
-                    paymentPreview={paymentPreview}
-                    serverPreviewLoading={previewFinancePaymentState.isLoading}
-                    serverPreviewError={previewFinancePaymentState.error?.message || null}
-                  />
-                )}
-
-                {paymentModalTab === 'imtiyoz' && (
-                  <ImtiyozFormCard
-                    actionLoading={actionLoading}
-                    imtiyozForm={imtiyozForm}
-                    setImtiyozForm={setImtiyozForm}
-                    handleCreateImtiyoz={handleCreateImtiyoz}
-                    detailImtiyozlar={detailImtiyozlar}
-                    handleDeactivateImtiyoz={handleDeactivateImtiyoz}
-                  />
-                )}
-
-                {paymentModalTab === 'history' && !!settingsMeta?.tarifHistory?.length && (
-                  <Card title="Tarif versiyalari">
-                    <div className="space-y-2">
-                      {settingsMeta.tarifHistory.slice(0, 5).map((tarif) => {
-                        const isRollbackDisabled = actionLoading || !onRollbackTarif || tarif.holat === 'AKTIV';
-                        return (
-                          <div
-                            key={tarif.id}
-                            className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-2 shadow-sm"
-                          >
-                            <div>
-                              <p className="text-sm font-semibold text-slate-800">
-                                {sumFormat(tarif.oylikSumma)} / {sumFormat(tarif.yillikSumma)} so'm
-                              </p>
-                              <p className="text-xs text-slate-600">
-                                {tarif.boshlanishSana ? new Date(tarif.boshlanishSana).toLocaleDateString('uz-UZ') : '-'} | {tarif.holat}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {tarif.holat === 'AKTIV' ? <Badge variant="success">Aktiv</Badge> : <Badge>{tarif.holat || '-'}</Badge>}
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                disabled={isRollbackDisabled}
-                                onClick={() => onRollbackTarif?.(tarif.id)}
-                              >
-                                Rollback
-                              </Button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </Card>
-                )}
-
-                {paymentModalTab === 'history' && (
-                  <FinanceLedgerTimelineCard
-                    detailState={detailState}
-                    detailImtiyozlar={detailImtiyozlar}
-                    actionLoading={actionLoading}
-                    onRevertPayment={onRevertPayment}
-                  />
-                )}
-
-              </>
-            )}
-          </div>
-        )}
-      </Modal>
+      <FinancePaymentModalView
+        t={t}
+        modalOpen={modalOpen}
+        setModalOpen={setModalOpen}
+        selectedStudentId={selectedStudentId}
+        detailState={detailState}
+        detailStudent={detailStudent}
+        detailImtiyozlar={detailImtiyozlar}
+        paymentModalTab={paymentModalTab}
+        setPaymentModalTab={setPaymentModalTab}
+        actionLoading={actionLoading}
+        settingsMeta={settingsMeta}
+        onRollbackTarif={onRollbackTarif}
+        onRevertPayment={onRevertPayment}
+        PaymentFormCard={PaymentFormCard}
+        ImtiyozFormCard={ImtiyozFormCard}
+        FinanceLedgerTimelineCard={FinanceLedgerTimelineCard}
+        isSelectedDetailReady={isSelectedDetailReady}
+        paymentForm={paymentForm}
+        setPaymentForm={setPaymentForm}
+        handleCreatePayment={handleCreatePayment}
+        paymentPreview={paymentPreview}
+        serverPreviewLoading={previewFinancePaymentState.isLoading}
+        serverPreviewError={previewFinancePaymentState.error?.message || null}
+        imtiyozForm={imtiyozForm}
+        setImtiyozForm={setImtiyozForm}
+        handleCreateImtiyoz={handleCreateImtiyoz}
+        handleDeactivateImtiyoz={handleDeactivateImtiyoz}
+        MonthChips={MonthChips}
+        formatMonthKey={(value) => formatMonthKey(value, locale)}
+        sumFormat={(value) => sumFormat(value, locale)}
+      />
     </div>
   );
 }

@@ -67,6 +67,10 @@ function mapNoteRow(row) {
   };
 }
 
+function isDebtHolat(value) {
+  return value === "BELGILANDI" || value === "QISMAN_TOLANGAN";
+}
+
 async function getSettings() {
   let settings;
   try {
@@ -130,6 +134,131 @@ async function fetchLatestNotesMap(studentIds) {
   return map;
 }
 
+async function getDebtorsFallback({
+  page,
+  limit,
+  search,
+  classroomId,
+  currentYear,
+  currentMonth,
+}) {
+  const text = String(search || "").trim().toLowerCase();
+  const enrollmentWhere = classroomId
+    ? { isActive: true, classroomId }
+    : { isActive: true };
+
+  const students = await prisma.student.findMany({
+    where: {
+      enrollments: { some: enrollmentWhere },
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      parentPhone: true,
+      user: { select: { username: true, phone: true } },
+      enrollments: {
+        where: enrollmentWhere,
+        orderBy: [{ createdAt: "desc" }],
+        take: 1,
+        select: {
+          classroom: {
+            select: { id: true, name: true, academicYear: true },
+          },
+        },
+      },
+    },
+    orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+  });
+
+  if (!students.length) {
+    return { total: 0, totalDebtAmount: 0, items: [] };
+  }
+
+  const studentIds = students.map((s) => s.id);
+  const [notesMap, majburiyatRows] = await Promise.all([
+    fetchLatestNotesMap(studentIds),
+    prisma.studentOyMajburiyat.findMany({
+      where: {
+        studentId: { in: studentIds },
+        holat: { in: ["BELGILANDI", "QISMAN_TOLANGAN"] },
+        netSumma: { gt: 0 },
+        OR: [
+          { yil: { lt: currentYear } },
+          { yil: currentYear, oy: { lte: currentMonth } },
+        ],
+      },
+      select: {
+        studentId: true,
+        yil: true,
+        oy: true,
+        holat: true,
+        netSumma: true,
+        qoldiqSumma: true,
+      },
+      orderBy: [{ yil: "asc" }, { oy: "asc" }],
+    }),
+  ]);
+
+  const debtRowsByStudent = new Map();
+  for (const row of majburiyatRows) {
+    if (!isDebtHolat(row.holat)) continue;
+    const qoldiq = Number((row.qoldiqSumma ?? row.netSumma) || 0);
+    if (qoldiq <= 0) continue;
+    if (!debtRowsByStudent.has(row.studentId)) debtRowsByStudent.set(row.studentId, []);
+    debtRowsByStudent.get(row.studentId).push(row);
+  }
+
+  let items = students
+    .map((s) => {
+      const debtRows = debtRowsByStudent.get(s.id) || [];
+      const monthKeys = debtRows.map(
+        (r) => `${r.yil}-${String(r.oy).padStart(2, "0")}`,
+      );
+      const debtSum = debtRows.reduce(
+        (acc, r) => acc + Number((r.qoldiqSumma ?? r.netSumma) || 0),
+        0,
+      );
+      const classroom = s.enrollments?.[0]?.classroom;
+      return {
+        id: s.id,
+        fullName: `${s.firstName} ${s.lastName}`.trim(),
+        username: s.user?.username || "-",
+        phone: s.user?.phone || "-",
+        parentPhone: s.parentPhone || "-",
+        classroom: formatClassroomName(classroom?.name, classroom?.academicYear),
+        holat: debtSum > 0 ? "QARZDOR" : "TOLANGAN",
+        qarzOylarSoni: monthKeys.length,
+        qarzOylar: monthKeys,
+        qarzOylarFormatted: monthKeys.map((key) => safeFormatMonthKey(key)),
+        jamiQarzSumma: debtSum,
+        oxirgiIzoh: notesMap.get(s.id) || null,
+      };
+    })
+    .filter((item) => item.jamiQarzSumma > 0);
+
+  if (text) {
+    items = items.filter((item) => {
+      const haystack = [
+        item.fullName,
+        item.username,
+        item.parentPhone,
+        item.phone,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(text);
+    });
+  }
+
+  const total = items.length;
+  const totalDebtAmount = items.reduce((acc, item) => acc + item.jamiQarzSumma, 0);
+  const offset = (page - 1) * limit;
+  items = items.slice(offset, offset + limit);
+
+  return { total, totalDebtAmount, items };
+}
+
 function buildDebtorsWhereSql({ search, classroomId }) {
   const clauses = [Prisma.sql`d."debtMonths" > 0`];
   const text = String(search || "").trim();
@@ -168,7 +297,7 @@ async function getManagerClassrooms(_req, res) {
 
 async function getDebtors(req, res) {
   const page = parseIntSafe(req.query.page, 1);
-  const limit = Math.min(parseIntSafe(req.query.limit, 20), 100);
+  const limit = Math.min(parseIntSafe(req.query.limit, 500), 500);
   const offset = (page - 1) * limit;
   const search = String(req.query.search || "").trim();
   const classroomId = req.query.classroomId || null;
@@ -206,7 +335,9 @@ async function getDebtors(req, res) {
 
   const whereSql = buildDebtorsWhereSql({ search, classroomId });
 
-  const rows = await prisma.$queryRaw`
+  let rows;
+  try {
+    rows = await prisma.$queryRaw`
     WITH active_enrollment AS (
       SELECT DISTINCT ON (e."studentId")
         e."studentId",
@@ -254,6 +385,31 @@ async function getDebtors(req, res) {
     LIMIT ${limit}
     OFFSET ${offset}
   `;
+  } catch (error) {
+    // Fallback path for DB/version/schema-specific raw SQL failures.
+    const fallback = await getDebtorsFallback({
+      page,
+      limit,
+      search,
+      classroomId,
+      currentYear,
+      currentMonth,
+    });
+
+    return res.json({
+      ok: true,
+      page,
+      limit,
+      total: fallback.total,
+      pages: Math.ceil(fallback.total / limit),
+      summary: {
+        totalDebtors: fallback.total,
+        totalDebtAmount: fallback.totalDebtAmount,
+      },
+      students: fallback.items,
+      meta: { degradedMode: true },
+    });
+  }
 
   const total = Number(rows[0]?.__total || 0);
   const totalDebtAmount = Number(rows[0]?.__sum || 0);

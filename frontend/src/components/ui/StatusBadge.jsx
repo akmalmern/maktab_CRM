@@ -1,8 +1,12 @@
-import { useTranslation } from 'react-i18next';
+﻿import { useTranslation } from 'react-i18next';
 import Badge from './Badge';
 
 const STATUS_MAP = {
-  financeDebt: {
+  financeStudent: {
+    QARZDOR: { variant: 'danger', label: "Qarzdor" },
+    TOLANGAN: { variant: 'success', label: "To'lagan" },
+    QISMAN_TOLANGAN: { variant: 'default', label: "Qisman to'langan" },
+  },  financeDebt: {
     QARZDOR: { variant: 'danger', label: "Qarzdor" },
     TOLANGAN: { variant: 'success', label: "To'lagan" },
     QISMAN_TOLANGAN: { variant: 'default', label: "Qisman to'langan" },
@@ -37,7 +41,7 @@ export default function StatusBadge({
   fallbackLabel,
 }) {
   const { t } = useTranslation();
-  const normalizedValue = String(value || '').toUpperCase();
+  const normalizedValue = String(value || '').trim().toUpperCase();
   const entry = STATUS_MAP[domain]?.[normalizedValue];
 
   const labelBase = entry?.label || fallbackLabel || value || '-';
@@ -56,3 +60,4 @@ export default function StatusBadge({
     </Badge>
   );
 }
+

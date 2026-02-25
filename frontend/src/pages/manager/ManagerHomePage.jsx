@@ -21,7 +21,7 @@ export default function ManagerHomePage() {
           <p className="mt-2 text-sm font-semibold text-slate-900">{t("Izoh yozish, tarix ko'rish, tez to'lov belgilash")}</p>
         </div>
         <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm ring-1 ring-slate-200/50 sm:col-span-2 xl:col-span-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{t('Bo‘lim')}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{t("Bo'lim")}</p>
           <p className="mt-2 text-sm font-semibold text-slate-900">{t("Qarzdorlar ro'yxati")}</p>
         </div>
       </div>
