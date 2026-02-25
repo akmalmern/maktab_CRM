@@ -32,6 +32,10 @@ export default function PersonTable({
   onSortChange,
   pageSize,
   onPageSizeChange,
+  showDeleteAction = true,
+  detailButtonLabel,
+  deleteButtonLabel,
+  deleteActionVariant = 'danger',
 }) {
   const { t } = useTranslation();
 
@@ -108,20 +112,22 @@ export default function PersonTable({
           },
         ]
       : []),
-    {
-      key: 'actions',
-      header: t('Amallar'),
-      render: (row) => (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="indigo" className="min-w-24" onClick={() => onOpenDetail(row.id)}>
-            {t('Batafsil')}
-          </Button>
-          <Button size="sm" variant="danger" className="min-w-24" onClick={() => onDelete(row.id)}>
-            {t("O'chirish")}
-          </Button>
-        </div>
-      ),
-    },
+                {
+                  key: 'actions',
+                  header: t('Amallar'),
+                  render: (row) => (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button size="sm" variant="indigo" className="min-w-24" onClick={() => onOpenDetail(row.id)}>
+                        {detailButtonLabel || t('Batafsil')}
+                      </Button>
+                      {showDeleteAction && (
+                        <Button size="sm" variant={deleteActionVariant} className="min-w-24" onClick={() => onDelete(row.id)}>
+                          {deleteButtonLabel || t("O'chirish")}
+                        </Button>
+                      )}
+                    </div>
+                  ),
+                },
   ];
 
   return (

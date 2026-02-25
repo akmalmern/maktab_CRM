@@ -635,49 +635,45 @@ async function seedAttendanceAndGradesHistory() {
           izoh: holat === "SABABLI" ? "Seed: sababli yo'q" : null,
         });
 
-        const present = holat === "KELDI" || holat === "KECHIKDI";
-        if (present) {
-          // JORIY: deyarli har darsda bo'ladi
-          if (Math.random() < 0.7) {
-            bahoBatch.push({
-              darsJadvaliId: dars.id,
-              studentId,
-              teacherId: dars.oqituvchiId,
-              sana: day,
-              turi: "JORIY",
-              ball: randomBall(5),
-              maxBall: 5,
-              izoh: null,
-            });
-          }
+        // Barcha o'quvchilar profillarida baholar ko'rinishi uchun
+        // seedda har bir dars yozuvi bo'yicha JORIY baho yaratiladi.
+        bahoBatch.push({
+          darsJadvaliId: dars.id,
+          studentId,
+          teacherId: dars.oqituvchiId,
+          sana: day,
+          turi: "JORIY",
+          ball: randomBall(5),
+          maxBall: 5,
+          izoh: null,
+        });
 
-          // NAZORAT: oy o'rtalarida, ayrim darslarda
-          if (isNazoratDay && Math.random() < 0.45) {
-            bahoBatch.push({
-              darsJadvaliId: dars.id,
-              studentId,
-              teacherId: dars.oqituvchiId,
-              sana: day,
-              turi: "NAZORAT",
-              ball: randomBall(100),
-              maxBall: 100,
-              izoh: "Seed: nazorat bahosi",
-            });
-          }
+        // NAZORAT: belgilangan nazorat kunlarida barcha o'quvchilar uchun.
+        if (isNazoratDay) {
+          bahoBatch.push({
+            darsJadvaliId: dars.id,
+            studentId,
+            teacherId: dars.oqituvchiId,
+            sana: day,
+            turi: "NAZORAT",
+            ball: randomBall(100),
+            maxBall: 100,
+            izoh: "Seed: nazorat bahosi",
+          });
+        }
 
-          // ORALIQ: oy oxirida, ayrim darslarda
-          if (isOraliqDay && Math.random() < 0.35) {
-            bahoBatch.push({
-              darsJadvaliId: dars.id,
-              studentId,
-              teacherId: dars.oqituvchiId,
-              sana: day,
-              turi: "ORALIQ",
-              ball: randomBall(100),
-              maxBall: 100,
-              izoh: "Seed: oraliq bahosi",
-            });
-          }
+        // ORALIQ: belgilangan oraliq kunlarida barcha o'quvchilar uchun.
+        if (isOraliqDay) {
+          bahoBatch.push({
+            darsJadvaliId: dars.id,
+            studentId,
+            teacherId: dars.oqituvchiId,
+            sana: day,
+            turi: "ORALIQ",
+            ball: randomBall(100),
+            maxBall: 100,
+            izoh: "Seed: oraliq bahosi",
+          });
         }
 
         if (davomatBatch.length >= ATTENDANCE_BATCH_SIZE) {

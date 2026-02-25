@@ -1,3 +1,4 @@
+export { default as ArchiveSection } from './ArchiveSection';
 export { default as AttendanceSection } from './AttendanceSection';
 export { default as ClassroomsSection } from './ClassroomsSection';
 export { default as DashboardSection } from './DashboardSection';

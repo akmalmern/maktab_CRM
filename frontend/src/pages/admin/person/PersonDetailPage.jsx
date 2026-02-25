@@ -36,6 +36,18 @@ function formatDate(value, language = 'uz') {
   return new Date(value).toLocaleDateString(localeByLanguage[language] || 'uz-UZ');
 }
 
+function formatDateTime(value, language = 'uz') {
+  if (!value) return '-';
+  const localeByLanguage = {
+    uz: 'uz-UZ',
+    ru: 'ru-RU',
+    en: 'en-US',
+  };
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '-';
+  return d.toLocaleString(localeByLanguage[language] || 'uz-UZ');
+}
+
 function formatBytes(bytes) {
   if (!bytes) return '-';
   const sizes = ['B', 'KB', 'MB', 'GB'];
@@ -122,6 +134,15 @@ export default function PersonDetailPage() {
     return `${person.firstName} ${person.lastName}`;
   }, [person]);
   const backLink = type === 'teacher' ? '/admin/teachers' : '/admin/students';
+  const metrics = person?.activity?.metrics || {};
+  const recentGrades = person?.activity?.recentGrades || [];
+  const recentAttendance = person?.activity?.recentAttendance || [];
+  const recentPayments = person?.activity?.recentPayments || [];
+  const gradeStats = person?.activity?.gradeStats || [];
+  const attendanceStats = person?.activity?.attendanceStats || [];
+  const enrollmentHistory = person?.enrollments || [];
+  const teachingClassrooms = person?.teachingClassrooms || [];
+  const isArchived = Boolean(person?.user && person.user.isActive === false);
 
   function askConfirm(message, title = t('Tasdiqlash', { defaultValue: 'Tasdiqlash' })) {
     return new Promise((resolve) => {
@@ -347,6 +368,14 @@ export default function PersonDetailPage() {
                 </Button>
               </div>
               <p>
+                <span className="font-semibold">{t('Holati', { defaultValue: 'Holati' })}:</span>{' '}
+                <span className={isArchived ? 'text-amber-700 font-semibold' : 'text-emerald-700 font-semibold'}>
+                  {isArchived
+                    ? t('Arxivlangan', { defaultValue: 'Arxivlangan' })
+                    : t('Aktiv', { defaultValue: 'Aktiv' })}
+                </span>
+              </p>
+              <p>
                 <span className="font-semibold">{t('Telefon', { defaultValue: 'Telefon' })}:</span>{' '}
                 {person.user?.phone || '-'}
               </p>
@@ -384,6 +413,74 @@ export default function PersonDetailPage() {
               )}
             </div>
           </Card>
+
+          {type === 'student' && (
+            <Card
+              className="lg:col-span-3"
+              title={t('Sinf tarixi', { defaultValue: 'Sinf tarixi' })}
+              subtitle={t("Studentning barcha enrollment yozuvlari", {
+                defaultValue: "Studentning barcha enrollment yozuvlari",
+              })}
+            >
+              <DataTable
+                rows={enrollmentHistory}
+                emptyText={t("Sinf tarixi topilmadi", { defaultValue: "Sinf tarixi topilmadi" })}
+                columns={[
+                  {
+                    key: 'classroom',
+                    header: t('Sinf', { defaultValue: 'Sinf' }),
+                    render: (row) =>
+                      row.classroom
+                        ? `${row.classroom.name} (${row.classroom.academicYear})`
+                        : '-',
+                  },
+                  {
+                    key: 'status',
+                    header: t('Holat', { defaultValue: 'Holat' }),
+                    render: (row) =>
+                      row.isActive
+                        ? t('Aktiv', { defaultValue: 'Aktiv' })
+                        : t('Yopilgan', { defaultValue: 'Yopilgan' }),
+                  },
+                  {
+                    key: 'startDate',
+                    header: t('Boshlangan', { defaultValue: 'Boshlangan' }),
+                    render: (row) => formatDate(row.startDate, i18n.language),
+                  },
+                  {
+                    key: 'endDate',
+                    header: t('Tugagan', { defaultValue: 'Tugagan' }),
+                    render: (row) => formatDate(row.endDate, i18n.language),
+                  },
+                ]}
+              />
+            </Card>
+          )}
+
+          {type === 'teacher' && (
+            <Card
+              className="lg:col-span-3"
+              title={t("Biriktirilgan sinflar", { defaultValue: "Biriktirilgan sinflar" })}
+              subtitle={t("Teacher dars bergan sinflar ro'yxati", {
+                defaultValue: "Teacher dars bergan sinflar ro'yxati",
+              })}
+            >
+              <DataTable
+                rows={teachingClassrooms}
+                emptyText={t("Sinf ma'lumotlari topilmadi", {
+                  defaultValue: "Sinf ma'lumotlari topilmadi",
+                })}
+                columns={[
+                  { key: 'name', header: t('Sinf', { defaultValue: 'Sinf' }), render: (row) => row.name || '-' },
+                  {
+                    key: 'academicYear',
+                    header: t("O'quv yili", { defaultValue: "O'quv yili" }),
+                    render: (row) => row.academicYear || '-',
+                  },
+                ]}
+              />
+            </Card>
+          )}
         </section>
       )}
 
@@ -497,7 +594,7 @@ export default function PersonDetailPage() {
 
       {activeTab === 'activity' && (
         <Card title={t('Faoliyat', { defaultValue: 'Faoliyat' })}>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 {t('Profil yaratilgan sana', { defaultValue: 'Profil yaratilgan sana' })}
@@ -514,6 +611,252 @@ export default function PersonDetailPage() {
                 {person.documents?.length || 0} {t('ta', { defaultValue: 'ta' })}
               </p>
             </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {t('Jami baholar', { defaultValue: 'Jami baholar' })}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {metrics.totalGrades || 0}
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {t('Jami davomat', { defaultValue: 'Jami davomat' })}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {metrics.totalAttendance || 0}
+              </p>
+            </div>
+            {type === 'teacher' && (
+              <>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {t('Jadval yozuvlari', { defaultValue: 'Jadval yozuvlari' })}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {metrics.totalScheduleRows || 0}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {t('Sinf soni', { defaultValue: 'Sinf soni' })}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {metrics.totalClassrooms || 0}
+                  </p>
+                </div>
+              </>
+            )}
+            {type === 'student' && (
+              <>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {t("To'lovlar soni", { defaultValue: "To'lovlar soni" })}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {metrics.totalPayments || 0}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {t('Qarz (oy/summa)', { defaultValue: 'Qarz (oy/summa)' })}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {metrics.debtMonths || 0} / {Number(metrics.debtAmount || 0).toLocaleString('uz-UZ')}
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <Card title={t('Baho statistikasi', { defaultValue: 'Baho statistikasi' })}>
+              <DataTable
+                rows={gradeStats}
+                emptyText={t("Baho statistikasi yo'q", { defaultValue: "Baho statistikasi yo'q" })}
+                columns={[
+                  { key: 'turi', header: t('Turi', { defaultValue: 'Turi' }), render: (row) => row.turi || '-' },
+                  {
+                    key: 'count',
+                    header: t('Soni', { defaultValue: 'Soni' }),
+                    render: (row) => row?._count?._all || 0,
+                  },
+                  {
+                    key: 'avgPercent',
+                    header: t("O'rtacha %", { defaultValue: "O'rtacha %" }),
+                    render: (row) => {
+                      const sumBall = Number(row?._sum?.ball || 0);
+                      const sumMaxBall = Number(row?._sum?.maxBall || 0);
+                      if (!sumMaxBall) return '0%';
+                      return `${((sumBall / sumMaxBall) * 100).toFixed(1)}%`;
+                    },
+                  },
+                ]}
+              />
+            </Card>
+
+            <Card title={t('Davomat statistikasi', { defaultValue: 'Davomat statistikasi' })}>
+              <DataTable
+                rows={attendanceStats}
+                emptyText={t("Davomat statistikasi yo'q", { defaultValue: "Davomat statistikasi yo'q" })}
+                columns={[
+                  { key: 'holat', header: t('Holat', { defaultValue: 'Holat' }), render: (row) => row.holat || '-' },
+                  {
+                    key: 'count',
+                    header: t('Soni', { defaultValue: 'Soni' }),
+                    render: (row) => row?._count?._all || 0,
+                  },
+                ]}
+              />
+            </Card>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4">
+            <Card title={t("Oxirgi baholar", { defaultValue: "Oxirgi baholar" })}>
+              <DataTable
+                rows={recentGrades}
+                emptyText={t("Baholar topilmadi", { defaultValue: "Baholar topilmadi" })}
+                columns={[
+                  { key: 'sana', header: t('Sana', { defaultValue: 'Sana' }), render: (row) => formatDate(row.sana, i18n.language) },
+                  { key: 'turi', header: t('Turi', { defaultValue: 'Turi' }), render: (row) => row.turi || '-' },
+                  {
+                    key: 'fan',
+                    header: t('Fan', { defaultValue: 'Fan' }),
+                    render: (row) => row.darsJadvali?.fan?.name || '-',
+                  },
+                  {
+                    key: 'sinf',
+                    header: t('Sinf', { defaultValue: 'Sinf' }),
+                    render: (row) =>
+                      row.darsJadvali?.sinf
+                        ? `${row.darsJadvali.sinf.name} (${row.darsJadvali.sinf.academicYear})`
+                        : '-',
+                  },
+                  {
+                    key: 'person',
+                    header: type === 'teacher' ? t("O'quvchi", { defaultValue: "O'quvchi" }) : t("O'qituvchi", { defaultValue: "O'qituvchi" }),
+                    render: (row) => {
+                      const p = type === 'teacher' ? row.student : row.teacher;
+                      return p ? `${p.firstName || ''} ${p.lastName || ''}`.trim() : '-';
+                    },
+                  },
+                  {
+                    key: 'ball',
+                    header: t('Ball', { defaultValue: 'Ball' }),
+                    render: (row) => `${row.ball ?? '-'}${row.maxBall ? `/${row.maxBall}` : ''}`,
+                  },
+                  { key: 'izoh', header: t('Izoh', { defaultValue: 'Izoh' }), render: (row) => row.izoh || '-' },
+                ]}
+              />
+            </Card>
+
+            <Card title={t("Oxirgi davomat yozuvlari", { defaultValue: "Oxirgi davomat yozuvlari" })}>
+              <DataTable
+                rows={recentAttendance}
+                emptyText={t("Davomat yozuvlari topilmadi", { defaultValue: "Davomat yozuvlari topilmadi" })}
+                columns={[
+                  { key: 'sana', header: t('Sana', { defaultValue: 'Sana' }), render: (row) => formatDate(row.sana, i18n.language) },
+                  { key: 'holat', header: t('Holat', { defaultValue: 'Holat' }), render: (row) => row.holat || '-' },
+                  {
+                    key: 'fan',
+                    header: t('Fan', { defaultValue: 'Fan' }),
+                    render: (row) => row.darsJadvali?.fan?.name || '-',
+                  },
+                  {
+                    key: 'sinf',
+                    header: t('Sinf', { defaultValue: 'Sinf' }),
+                    render: (row) =>
+                      row.darsJadvali?.sinf
+                        ? `${row.darsJadvali.sinf.name} (${row.darsJadvali.sinf.academicYear})`
+                        : '-',
+                  },
+                  {
+                    key: 'vaqt',
+                    header: t('Vaqt', { defaultValue: 'Vaqt' }),
+                    render: (row) =>
+                      row.darsJadvali?.vaqtOraliq
+                        ? `${row.darsJadvali.vaqtOraliq.nomi} (${row.darsJadvali.vaqtOraliq.boshlanishVaqti})`
+                        : '-',
+                  },
+                  {
+                    key: 'teacher',
+                    header: t("O'qituvchi", { defaultValue: "O'qituvchi" }),
+                    render: (row) => {
+                      const p = row.darsJadvali?.oqituvchi;
+                      return p ? `${p.firstName || ''} ${p.lastName || ''}`.trim() : '-';
+                    },
+                  },
+                  { key: 'izoh', header: t('Izoh', { defaultValue: 'Izoh' }), render: (row) => row.izoh || '-' },
+                ]}
+              />
+            </Card>
+
+            {type === 'student' && (
+              <Card title={t("Oxirgi to'lovlar", { defaultValue: "Oxirgi to'lovlar" })}>
+                <DataTable
+                  rows={recentPayments}
+                  emptyText={t("To'lovlar topilmadi", { defaultValue: "To'lovlar topilmadi" })}
+                  columns={[
+                    { key: 'tolovSana', header: t('Sana', { defaultValue: 'Sana' }), render: (row) => formatDateTime(row.tolovSana || row.createdAt, i18n.language) },
+                    { key: 'turi', header: t('Turi', { defaultValue: 'Turi' }), render: (row) => row.turi || '-' },
+                    { key: 'holat', header: t('Holat', { defaultValue: 'Holat' }), render: (row) => row.holat || '-' },
+                    {
+                      key: 'summa',
+                      header: t('Summa', { defaultValue: 'Summa' }),
+                      render: (row) => Number(row.summa || 0).toLocaleString('uz-UZ'),
+                    },
+                    {
+                      key: 'qoplamalar',
+                      header: t('Qoplangan oylar', { defaultValue: 'Qoplangan oylar' }),
+                      render: (row) =>
+                        (row.qoplamalar || [])
+                          .map((q) => `${q.yil}-${String(q.oy).padStart(2, '0')}`)
+                          .join(', ') || '-',
+                    },
+                  ]}
+                />
+              </Card>
+            )}
+          </div>
+
+          <div className="mt-4">
+            <p className="mb-2 text-sm font-semibold text-slate-900">
+              {type === 'teacher'
+                ? t("O'quvchilar ro'yxati", { defaultValue: "O'quvchilar ro'yxati" })
+                : t("Sinfdoshlar ro'yxati", { defaultValue: "Sinfdoshlar ro'yxati" })}
+            </p>
+            <DataTable
+              rows={person.studentsList || []}
+              stickyFirstColumn
+              emptyText={t("Studentlar ro'yxati topilmadi", {
+                defaultValue: "Studentlar ro'yxati topilmadi",
+              })}
+              columns={[
+                {
+                  key: 'fullName',
+                  header: t('F.I.SH', { defaultValue: 'F.I.SH' }),
+                  render: (row) => `${row.firstName || ''} ${row.lastName || ''}`.trim() || '-',
+                },
+                {
+                  key: 'username',
+                  header: t('Username', { defaultValue: 'Username' }),
+                  render: (row) => row.user?.username || '-',
+                },
+                {
+                  key: 'phone',
+                  header: t('Telefon', { defaultValue: 'Telefon' }),
+                  render: (row) => row.user?.phone || '-',
+                },
+                {
+                  key: 'classroom',
+                  header: t('Sinf', { defaultValue: 'Sinf' }),
+                  render: (row) =>
+                    row.enrollments?.[0]?.classroom
+                      ? `${row.enrollments[0].classroom.name} (${row.enrollments[0].classroom.academicYear})`
+                      : '-',
+                },
+              ]}
+            />
           </div>
         </Card>
       )}

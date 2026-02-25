@@ -201,6 +201,11 @@ export default function AppLayout() {
           label: t("Moliya"),
           icon: "M3 7h18M6 4h12v6H6V4Zm-2 8h16a2 2 0 0 1 2 2v6H2v-6a2 2 0 0 1 2-2Zm6 3h4",
         },
+        {
+          to: "/admin/arxiv",
+          label: t("Arxiv"),
+          icon: "M4 7h16v12H4zM9 11h6M9 15h6M7 3h10v4H7z",
+        },
       ],
       TEACHER: [
         {
@@ -276,6 +281,7 @@ export default function AppLayout() {
       "dars-jadval": t("Dars Jadvali"),
       davomat: t("Davomat"),
       moliya: t("Moliya"),
+      arxiv: t("Arxiv"),
       baholar: t("Baholar"),
       jadval: t("Dars Jadvali"),
       qarzdorlar: t("Qarzdorlar"),

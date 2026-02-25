@@ -29,6 +29,7 @@ import {
 import { useGetSubjectsQuery } from '../../../services/api/subjectsApi';
 import { useGetClassroomsQuery } from '../../../services/api/classroomsApi';
 import {
+  ArchiveSection,
   AttendanceSection,
   ClassroomsSection,
   DashboardSection,
@@ -90,6 +91,7 @@ export default function AdminWorkspace({ section }) {
   const isJadvalSection = section === 'jadval';
   const isAttendanceSection = section === 'attendance';
   const isFinanceSection = section === 'finance';
+  const isArchiveSection = section === 'archive';
 
   const financeStudentsParams = {
     page: financeQuery.page,
@@ -108,8 +110,9 @@ export default function AdminWorkspace({ section }) {
   const financeSettingsQuery = useGetFinanceSettingsQuery(undefined, { skip: !isFinanceSection });
   const financeStudentsQuery = useGetFinanceStudentsQuery(financeStudentsParams, { skip: !isFinanceSection });
   const financeSummaryQuery = useGetFinanceStudentsQuery(financeSummaryParams, { skip: !isFinanceSection });
-  const shouldLoadSubjects = isTeachersSection || isStudentsSection || isJadvalSection;
-  const shouldLoadClassrooms = isTeachersSection || isStudentsSection || isJadvalSection || isAttendanceSection || isFinanceSection;
+  const shouldLoadSubjects = isTeachersSection || isStudentsSection || isJadvalSection || isArchiveSection;
+  const shouldLoadClassrooms =
+    isTeachersSection || isStudentsSection || isJadvalSection || isAttendanceSection || isFinanceSection || isArchiveSection;
   const subjectsQuery = useGetSubjectsQuery(undefined, { skip: !shouldLoadSubjects });
   const classroomsQuery = useGetClassroomsQuery(undefined, { skip: !shouldLoadClassrooms });
   const scheduleTeachersQuery = useGetTeachersQuery(
@@ -525,6 +528,15 @@ export default function AdminWorkspace({ section }) {
           studentQuery={studentQuery}
           setStudentQuery={setStudentQuery}
           onOpenDetail={(id) => navigate(`/admin/students/${id}`)}
+        />
+      )}
+
+      {isArchiveSection && (
+        <ArchiveSection
+          subjects={subjects.items}
+          classrooms={classrooms.items}
+          onOpenTeacherDetail={(id) => navigate(`/admin/teachers/${id}`)}
+          onOpenStudentDetail={(id) => navigate(`/admin/students/${id}`)}
         />
       )}
 

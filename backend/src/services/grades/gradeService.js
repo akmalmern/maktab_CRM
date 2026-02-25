@@ -30,7 +30,7 @@ function buildWeightedStats(rows = []) {
   return stats;
 }
 
-async function fetchStatsAggregation(where) {
+function fetchStatsAggregation(where) {
   return prisma.baho.groupBy({
     where,
     by: ["turi"],
@@ -70,15 +70,18 @@ function mapCommonGradeRow(row) {
 async function getTeacherGradesByUserId({ userId, query = {} }) {
   const teacher = await getTeacherByUserId(userId);
   const { page, limit, skip } = buildPaging(query);
+  const darsJadvaliWhere = {
+    ...(query.subjectId ? { fanId: query.subjectId } : {}),
+    ...(query.classroomId ? { sinfId: query.classroomId } : {}),
+  };
 
   const where = {
     ...buildBaseWhereFromQuery(query),
     teacherId: teacher.id,
     ...(query.studentId ? { studentId: query.studentId } : {}),
-    darsJadvali: {
-      ...(query.subjectId ? { fanId: query.subjectId } : {}),
-      ...(query.classroomId ? { sinfId: query.classroomId } : {}),
-    },
+    ...(Object.keys(darsJadvaliWhere).length
+      ? { darsJadvali: { is: darsJadvaliWhere } }
+      : {}),
   };
 
   const [items, total, statsAggregation] = await prisma.$transaction([
@@ -129,13 +132,16 @@ async function getTeacherGradesByUserId({ userId, query = {} }) {
 async function getStudentOwnGradesByUserId({ userId, query = {} }) {
   const student = await getStudentByUserId(userId);
   const { page, limit, skip } = buildPaging(query);
+  const darsJadvaliWhere = {
+    ...(query.subjectId ? { fanId: query.subjectId } : {}),
+  };
 
   const where = {
     ...buildBaseWhereFromQuery(query),
     studentId: student.id,
-    darsJadvali: {
-      ...(query.subjectId ? { fanId: query.subjectId } : {}),
-    },
+    ...(Object.keys(darsJadvaliWhere).length
+      ? { darsJadvali: { is: darsJadvaliWhere } }
+      : {}),
   };
 
   const [items, total, statsAggregation] = await prisma.$transaction([
@@ -186,8 +192,10 @@ async function getStudentClassGradesByUserId({ userId, query = {} }) {
   const where = {
     ...buildBaseWhereFromQuery(query),
     darsJadvali: {
-      sinfId: classroom.id,
-      ...(query.subjectId ? { fanId: query.subjectId } : {}),
+      is: {
+        sinfId: classroom.id,
+        ...(query.subjectId ? { fanId: query.subjectId } : {}),
+      },
     },
   };
 
@@ -265,15 +273,18 @@ async function getStudentClassGradesByUserId({ userId, query = {} }) {
 
 async function getAdminGrades({ query = {} }) {
   const { page, limit, skip } = buildPaging(query);
+  const darsJadvaliWhere = {
+    ...(query.subjectId ? { fanId: query.subjectId } : {}),
+    ...(query.classroomId ? { sinfId: query.classroomId } : {}),
+  };
 
   const where = {
     ...buildBaseWhereFromQuery(query),
     ...(query.studentId ? { studentId: query.studentId } : {}),
     ...(query.teacherId ? { teacherId: query.teacherId } : {}),
-    darsJadvali: {
-      ...(query.subjectId ? { fanId: query.subjectId } : {}),
-      ...(query.classroomId ? { sinfId: query.classroomId } : {}),
-    },
+    ...(Object.keys(darsJadvaliWhere).length
+      ? { darsJadvali: { is: darsJadvaliWhere } }
+      : {}),
   };
 
   const [items, total, statsAggregation] = await prisma.$transaction([
@@ -321,4 +332,3 @@ module.exports = {
   getStudentClassGradesByUserId,
   getAdminGrades,
 };
-

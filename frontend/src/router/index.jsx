@@ -4,6 +4,7 @@ import ProtectedRoute from '../components/ProtectedRoute';
 import RoleRoute from '../components/RoleRoute';
 import AdminClassroomsPage from '../pages/admin/classrooms/AdminClassroomsPage';
 import AdminAttendancePage from '../pages/admin/attendance/AdminAttendancePage';
+import AdminArchivePage from '../pages/admin/archive/AdminArchivePage';
 import AdminDashboardPage from '../pages/admin/dashboard/AdminDashboardPage';
 import AdminFinancePage from '../pages/admin/finance/AdminFinancePage';
 import AdminSchedulePage from '../pages/admin/schedule/AdminSchedulePage';
@@ -49,6 +50,7 @@ export const router = createBrowserRouter([
               { path: '/admin/dars-jadval', element: <AdminSchedulePage /> },
               { path: '/admin/davomat', element: <AdminAttendancePage /> },
               { path: '/admin/moliya', element: <AdminFinancePage /> },
+              { path: '/admin/arxiv', element: <AdminArchivePage /> },
               { path: '/admin/teachers/:teacherId', element: <PersonDetailPage /> },
               { path: '/admin/students/:studentId', element: <PersonDetailPage /> },
             ],

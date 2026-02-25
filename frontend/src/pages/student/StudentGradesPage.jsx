@@ -11,7 +11,6 @@ import {
   StateView,
   StatusBadge,
 } from '../../components/ui';
-import { getLocalDateInputValue } from '../../lib/dateUtils';
 import {
   useLazyGetStudentClassGradesQuery,
   useLazyGetStudentGradesQuery,
@@ -28,7 +27,7 @@ const BAHO_TURI_LABEL_KEYS = {
 
 export default function StudentGradesPage() {
   const { t } = useTranslation();
-  const [sana, setSana] = useState(getLocalDateInputValue());
+  const [sana, setSana] = useState('');
   const [bahoTuri, setBahoTuri] = useState('ALL');
   const [activeView, setActiveView] = useState('mine');
   const [page, setPage] = useState(1);
@@ -40,15 +39,18 @@ export default function StudentGradesPage() {
   const [fetchClassGrades] = useLazyGetStudentClassGradesQuery();
 
   async function load(next = {}) {
-    const nextPage = Number(next.page || page);
-    const nextLimit = Number(next.limit || limit);
+    const has = (key) => Object.prototype.hasOwnProperty.call(next, key);
+    const nextPage = Number(has('page') ? next.page : page);
+    const nextLimit = Number(has('limit') ? next.limit : limit);
+    const nextSana = has('sana') ? next.sana : sana;
+    const nextBahoTuri = has('bahoTuri') ? next.bahoTuri : bahoTuri;
     setLoading(true);
     setError('');
     try {
       const fetcher = activeView === 'mine' ? fetchMyGrades : fetchClassGrades;
       const res = await fetcher({
-        sana,
-        ...(bahoTuri !== 'ALL' ? { bahoTuri } : {}),
+        ...(nextSana ? { sana: nextSana } : {}),
+        ...(nextBahoTuri !== 'ALL' ? { bahoTuri: nextBahoTuri } : {}),
         page: nextPage,
         limit: nextLimit,
       }).unwrap();
@@ -135,12 +137,13 @@ export default function StudentGradesPage() {
           className="mb-0 mt-0"
           gridClassName="grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5"
           onReset={() => {
+            setSana('');
             setBahoTuri('ALL');
             setLimit(20);
-            load({ page: 1, limit: 20 });
+            load({ page: 1, limit: 20, sana: '', bahoTuri: 'ALL' });
           }}
           resetLabel={t('Filterlarni tozalash')}
-          resetDisabled={bahoTuri === 'ALL' && Number(limit) === 20}
+          resetDisabled={!sana && bahoTuri === 'ALL' && Number(limit) === 20}
           actions={(
             <Button variant="indigo" size="sm" onClick={() => load({ page: 1, limit })}>
               {t('Yangilash')}

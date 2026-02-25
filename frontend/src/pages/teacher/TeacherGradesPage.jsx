@@ -11,7 +11,6 @@ import {
   StateView,
   StatusBadge,
 } from '../../components/ui';
-import { getLocalDateInputValue } from '../../lib/dateUtils';
 import { useLazyGetTeacherGradesQuery, useLazyGetTeacherScheduleQuery } from '../../services/api/teacherApi';
 
 const BAHO_TURI_OPTIONS = ['ALL', 'JORIY', 'NAZORAT', 'ORALIQ', 'YAKUNIY'];
@@ -25,7 +24,7 @@ const BAHO_TURI_LABEL_KEYS = {
 
 export default function TeacherGradesPage() {
   const { t } = useTranslation();
-  const [sana, setSana] = useState(getLocalDateInputValue());
+  const [sana, setSana] = useState('');
   const [bahoTuri, setBahoTuri] = useState('ALL');
   const [classroomId, setClassroomId] = useState('ALL');
   const [page, setPage] = useState(1);
@@ -38,15 +37,19 @@ export default function TeacherGradesPage() {
   const [fetchTeacherSchedule] = useLazyGetTeacherScheduleQuery();
 
   async function load(opts = {}) {
-    const nextPage = Number(opts.page || page);
-    const nextLimit = Number(opts.limit || limit);
+    const has = (key) => Object.prototype.hasOwnProperty.call(opts, key);
+    const nextPage = Number(has('page') ? opts.page : page);
+    const nextLimit = Number(has('limit') ? opts.limit : limit);
+    const nextSana = has('sana') ? opts.sana : sana;
+    const nextBahoTuri = has('bahoTuri') ? opts.bahoTuri : bahoTuri;
+    const nextClassroomId = has('classroomId') ? opts.classroomId : classroomId;
     setLoading(true);
     setError('');
     try {
       const res = await fetchTeacherGrades({
-        sana,
-        ...(bahoTuri !== 'ALL' ? { bahoTuri } : {}),
-        ...(classroomId !== 'ALL' ? { classroomId } : {}),
+        ...(nextSana ? { sana: nextSana } : {}),
+        ...(nextBahoTuri !== 'ALL' ? { bahoTuri: nextBahoTuri } : {}),
+        ...(nextClassroomId !== 'ALL' ? { classroomId: nextClassroomId } : {}),
         page: nextPage,
         limit: nextLimit,
       }).unwrap();
@@ -109,13 +112,14 @@ export default function TeacherGradesPage() {
           className="mb-0 mt-0"
           gridClassName="grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5"
           onReset={() => {
+            setSana('');
             setClassroomId('ALL');
             setBahoTuri('ALL');
             setLimit(20);
-            load({ page: 1, limit: 20 });
+            load({ page: 1, limit: 20, sana: '', classroomId: 'ALL', bahoTuri: 'ALL' });
           }}
           resetLabel={t('Filterlarni tozalash')}
-          resetDisabled={classroomId === 'ALL' && bahoTuri === 'ALL' && Number(limit) === 20}
+          resetDisabled={!sana && classroomId === 'ALL' && bahoTuri === 'ALL' && Number(limit) === 20}
           actions={(
             <Button variant="indigo" size="sm" onClick={() => load({ page: 1, limit })}>
               {t('Yangilash')}

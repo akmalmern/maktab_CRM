@@ -48,6 +48,18 @@ const {
 } = require("../validators/financeSchemas");
 const SubjectIdParamSchema = z.object({ id: z.string().cuid() });
 const ClassroomIdParamSchema = z.object({ id: z.string().cuid() });
+const restorePersonBodySchema = z
+  .object({
+    newUsername: z.string().trim().min(1).max(100).optional(),
+    newPhone: z
+      .string()
+      .trim()
+      .min(7)
+      .max(30)
+      .regex(/^[+\d][\d\s\-()]+$/)
+      .optional(),
+  })
+  .strict();
 
 router.post(
   "/teachers",
@@ -154,11 +166,25 @@ router.delete(
   requireRole("ADMIN"),
   asyncHandler(people.deleteTeacher),
 );
+router.post(
+  "/teachers/:id/restore",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ body: restorePersonBodySchema }),
+  asyncHandler(people.restoreTeacher),
+);
 router.delete(
   "/students/:id",
   requireAuth,
   requireRole("ADMIN"),
   asyncHandler(people.deleteStudent),
+);
+router.post(
+  "/students/:id/restore",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ body: restorePersonBodySchema }),
+  asyncHandler(people.restoreStudent),
 );
 router.delete(
   "/subjects/:id",

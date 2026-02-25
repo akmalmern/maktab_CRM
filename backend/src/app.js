@@ -1,6 +1,8 @@
 const express = require("express");
 const cookieParser = require("cookie-parser");
+const compression = require("compression");
 const cors = require("cors");
+const helmet = require("helmet");
 const path = require("path");
 
 const authRoutes = require("./routes/authRoutes");
@@ -19,6 +21,8 @@ const { errorHandler } = require("./middlewares/errorhandler");
 
 const app = express();
 
+app.use(helmet());
+app.use(compression());
 app.use(cors(buildCorsOptions()));
 app.use(express.json());
 app.use(cookieParser());

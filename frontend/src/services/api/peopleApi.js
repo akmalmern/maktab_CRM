@@ -34,6 +34,24 @@ export const peopleApi = baseApi.injectEndpoints({
         { type: 'Teacher', id: 'LIST' },
       ],
     }),
+    restoreTeacher: builder.mutation({
+      query: (arg) => {
+        const teacherId = typeof arg === 'string' ? arg : arg?.teacherId;
+        const payload = typeof arg === 'string' ? {} : (arg?.payload || {});
+        return {
+          path: `/api/admin/teachers/${teacherId}/restore`,
+          method: 'POST',
+          body: payload,
+        };
+      },
+      invalidatesTags: (result, error, arg) => {
+        const teacherId = typeof arg === 'string' ? arg : arg?.teacherId;
+        return [
+          { type: 'Teacher', id: teacherId },
+          { type: 'Teacher', id: 'LIST' },
+        ];
+      },
+    }),
     deleteStudent: builder.mutation({
       query: (studentId) => ({
         path: `/api/admin/students/${studentId}`,
@@ -45,6 +63,26 @@ export const peopleApi = baseApi.injectEndpoints({
         { type: 'Classroom', id: 'LIST' },
         { type: 'Classroom', id: 'META' },
       ],
+    }),
+    restoreStudent: builder.mutation({
+      query: (arg) => {
+        const studentId = typeof arg === 'string' ? arg : arg?.studentId;
+        const payload = typeof arg === 'string' ? {} : (arg?.payload || {});
+        return {
+          path: `/api/admin/students/${studentId}/restore`,
+          method: 'POST',
+          body: payload,
+        };
+      },
+      invalidatesTags: (result, error, arg) => {
+        const studentId = typeof arg === 'string' ? arg : arg?.studentId;
+        return [
+          { type: 'Student', id: studentId },
+          { type: 'Student', id: 'LIST' },
+          { type: 'Classroom', id: 'LIST' },
+          { type: 'Classroom', id: 'META' },
+        ];
+      },
     }),
     createTeacher: builder.mutation({
       query: (payload) => ({
@@ -75,7 +113,9 @@ export const {
   useGetTeachersQuery,
   useGetStudentsQuery,
   useDeleteTeacherMutation,
+  useRestoreTeacherMutation,
   useDeleteStudentMutation,
+  useRestoreStudentMutation,
   useCreateTeacherMutation,
   useCreateStudentMutation,
 } = peopleApi;

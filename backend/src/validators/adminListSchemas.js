@@ -55,6 +55,11 @@ const studentSortSchema = z.preprocess(
     .optional(),
 );
 
+const personStatusSchema = z.preprocess(
+  emptyToUndefined,
+  z.enum(["active", "archived", "all"]).optional(),
+);
+
 const listTeachersQuerySchema = z
   .object({
     page: pageSchema,
@@ -62,6 +67,7 @@ const listTeachersQuerySchema = z
     search: searchSchema,
     filter: subjectFilterSchema,
     sort: teacherSortSchema,
+    status: personStatusSchema,
   })
   .strict();
 
@@ -72,6 +78,7 @@ const listStudentsQuerySchema = z
     search: searchSchema,
     filter: classroomFilterSchema,
     sort: studentSortSchema,
+    status: personStatusSchema,
   })
   .strict();
 
