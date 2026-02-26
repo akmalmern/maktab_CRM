@@ -160,6 +160,122 @@ async function assertTeacherExists(tx, teacherId) {
   return teacher;
 }
 
+function normalizeDisplayName(firstName, lastName, fallback = null) {
+  const full = `${firstName || ""} ${lastName || ""}`.trim();
+  return full || fallback || null;
+}
+
+async function assertEmployeeExists(tx, { employeeId, organizationId }) {
+  const employee = await tx.employee.findFirst({
+    where: { id: employeeId, organizationId },
+    include: {
+      user: { select: { id: true, username: true, isActive: true, role: true } },
+      teacher: { select: { id: true, firstName: true, lastName: true } },
+      admin: { select: { id: true, firstName: true, lastName: true } },
+    },
+  });
+  if (!employee) throw new ApiError(404, "EMPLOYEE_NOT_FOUND", "Xodim topilmadi");
+  return employee;
+}
+
+async function ensureEmployeeForTeacher(tx, { teacherId, organizationId }) {
+  const teacher = await tx.teacher.findUnique({
+    where: { id: teacherId },
+    include: {
+      user: { select: { id: true, username: true, isActive: true, role: true } },
+      employee: {
+        include: {
+          user: { select: { id: true, username: true, isActive: true, role: true } },
+        },
+      },
+    },
+  });
+  if (!teacher) throw new ApiError(404, "TEACHER_NOT_FOUND", "Teacher topilmadi");
+
+  let employee = teacher.employee;
+  if (!employee) {
+    employee = await tx.employee.findUnique({
+      where: { userId: teacher.userId },
+      include: {
+        user: { select: { id: true, username: true, isActive: true, role: true } },
+      },
+    });
+  }
+
+  if (!employee) {
+    employee = await tx.employee.create({
+      data: {
+        organizationId,
+        userId: teacher.userId,
+        kind: "TEACHER",
+        payrollMode: "LESSON_BASED",
+        employmentStatus: teacher.user?.isActive ? "ACTIVE" : "ARCHIVED",
+        isPayrollEligible: true,
+        firstName: teacher.firstName || null,
+        lastName: teacher.lastName || null,
+        note: "Auto-created from Teacher profile (payroll backfill)",
+      },
+      include: {
+        user: { select: { id: true, username: true, isActive: true, role: true } },
+      },
+    });
+  } else {
+    const patch = {};
+    if (!teacher.employeeId || teacher.employeeId !== employee.id) {
+      patch.employeeId = employee.id;
+    }
+    if (employee.organizationId !== organizationId) {
+      throw new ApiError(409, "EMPLOYEE_ORG_MISMATCH", "Teacher employee boshqa organization ga tegishli");
+    }
+    if ((employee.kind || "TEACHER") !== "TEACHER") {
+      patch.kind = "TEACHER";
+    }
+    if (employee.payrollMode !== "LESSON_BASED") {
+      patch.payrollMode = "LESSON_BASED";
+    }
+    const expectedStatus = teacher.user?.isActive ? "ACTIVE" : "ARCHIVED";
+    if (employee.employmentStatus !== expectedStatus) {
+      patch.employmentStatus = expectedStatus;
+    }
+    if ((teacher.firstName || null) !== (employee.firstName || null)) {
+      patch.firstName = teacher.firstName || null;
+    }
+    if ((teacher.lastName || null) !== (employee.lastName || null)) {
+      patch.lastName = teacher.lastName || null;
+    }
+    if (Object.keys(patch).some((k) => k !== "employeeId")) {
+      employee = await tx.employee.update({
+        where: { id: employee.id },
+        data: {
+          ...("kind" in patch ? { kind: patch.kind } : {}),
+          ...("payrollMode" in patch ? { payrollMode: patch.payrollMode } : {}),
+          ...("employmentStatus" in patch ? { employmentStatus: patch.employmentStatus } : {}),
+          ...("firstName" in patch ? { firstName: patch.firstName } : {}),
+          ...("lastName" in patch ? { lastName: patch.lastName } : {}),
+        },
+        include: {
+          user: { select: { id: true, username: true, isActive: true, role: true } },
+        },
+      });
+    }
+    if (patch.employeeId) {
+      await tx.teacher.update({
+        where: { id: teacher.id },
+        data: { employeeId: employee.id },
+      });
+    }
+  }
+
+  if (!teacher.employeeId || teacher.employeeId !== employee.id) {
+    await tx.teacher.update({
+      where: { id: teacher.id },
+      data: { employeeId: employee.id },
+    });
+  }
+
+  return { teacher, employee };
+}
+
 async function assertSubjectExists(tx, subjectId) {
   const subject = await tx.subject.findUnique({ where: { id: subjectId }, select: { id: true, name: true } });
   if (!subject) throw new ApiError(404, "SUBJECT_NOT_FOUND", "Fan topilmadi");
@@ -720,34 +836,80 @@ function calcLessonAmount(ratePerHour, minutes) {
   return money(decimal(ratePerHour).mul(decimal(minutes)).div(60));
 }
 
-async function getOrCreatePayrollItem(tx, { organizationId, payrollRunId, teacherId }) {
-  let item = await tx.payrollItem.findUnique({
-    where: { payrollRunId_teacherId: { payrollRunId, teacherId } },
-    select: { id: true, teacherId: true },
-  });
-  if (item) return item;
+async function getOrCreatePayrollItem(tx, { organizationId, payrollRunId, teacherId = null, employeeId = null }) {
+  if (!teacherId && !employeeId) {
+    throw new ApiError(400, "PAYROLL_ITEM_OWNER_REQUIRED", "Payroll item uchun teacherId yoki employeeId kerak");
+  }
 
-  const teacher = await tx.teacher.findUnique({
-    where: { id: teacherId },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      user: { select: { username: true } },
-    },
-  });
-  if (!teacher) throw new ApiError(404, "TEACHER_NOT_FOUND", "Teacher topilmadi");
+  let item = null;
+  if (employeeId) {
+    item = await tx.payrollItem.findUnique({
+      where: { payrollRunId_employeeId: { payrollRunId, employeeId } },
+      select: { id: true, teacherId: true, employeeId: true },
+    });
+  }
+  if (!item && teacherId) {
+    item = await tx.payrollItem.findUnique({
+      where: { payrollRunId_teacherId: { payrollRunId, teacherId } },
+      select: { id: true, teacherId: true, employeeId: true },
+    });
+  }
+  if (item) {
+    if (employeeId && !item.employeeId) {
+      item = await tx.payrollItem.update({
+        where: { id: item.id },
+        data: { employeeId },
+        select: { id: true, teacherId: true, employeeId: true },
+      });
+    }
+    return item;
+  }
+
+  let employee = null;
+  let teacher = null;
+
+  if (employeeId) {
+    employee = await tx.employee.findFirst({
+      where: { id: employeeId, organizationId },
+      include: {
+        user: { select: { username: true } },
+        teacher: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+    if (!employee) throw new ApiError(404, "EMPLOYEE_NOT_FOUND", "Xodim topilmadi");
+    if (!teacherId && employee.teacher?.id) {
+      teacherId = employee.teacher.id;
+    }
+  }
+
+  if (teacherId) {
+    teacher = await tx.teacher.findUnique({
+      where: { id: teacherId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        user: { select: { username: true } },
+      },
+    });
+    if (!teacher) throw new ApiError(404, "TEACHER_NOT_FOUND", "Teacher topilmadi");
+  }
+
+  const firstName = employee?.firstName || teacher?.firstName || null;
+  const lastName = employee?.lastName || teacher?.lastName || null;
+  const username = employee?.user?.username || teacher?.user?.username || null;
 
   item = await tx.payrollItem.create({
     data: {
       organizationId,
       payrollRunId,
-      teacherId,
-      teacherFirstNameSnapshot: teacher.firstName,
-      teacherLastNameSnapshot: teacher.lastName,
-      teacherUsernameSnapshot: teacher.user?.username || null,
+      employeeId: employeeId || null,
+      teacherId: teacherId || null,
+      teacherFirstNameSnapshot: firstName,
+      teacherLastNameSnapshot: lastName,
+      teacherUsernameSnapshot: username,
     },
-    select: { id: true, teacherId: true },
+    select: { id: true, teacherId: true, employeeId: true },
   });
   return item;
 }
@@ -804,11 +966,18 @@ async function recalculatePayrollRunAggregates(tx, { payrollRunId }) {
 
   const items = await tx.payrollItem.findMany({
     where: { payrollRunId },
-    select: { id: true, teacherId: true },
+    select: { id: true, teacherId: true, employeeId: true },
   });
   const lines = await tx.payrollLine.findMany({
     where: { payrollRunId },
     include: {
+      employee: {
+        select: {
+          firstName: true,
+          lastName: true,
+          user: { select: { username: true } },
+        },
+      },
       teacher: {
         select: {
           firstName: true,
@@ -819,11 +988,11 @@ async function recalculatePayrollRunAggregates(tx, { payrollRunId }) {
     },
   });
 
-  const itemByTeacher = new Map(items.map((i) => [i.teacherId, i]));
-  const linesByTeacher = new Map();
+  const itemById = new Map(items.map((i) => [i.id, i]));
+  const linesByItem = new Map();
   for (const line of lines) {
-    if (!linesByTeacher.has(line.teacherId)) linesByTeacher.set(line.teacherId, []);
-    linesByTeacher.get(line.teacherId).push(line);
+    if (!linesByItem.has(line.payrollItemId)) linesByItem.set(line.payrollItemId, []);
+    linesByItem.get(line.payrollItemId).push(line);
   }
 
   let runGross = DECIMAL_ZERO;
@@ -832,12 +1001,16 @@ async function recalculatePayrollRunAggregates(tx, { payrollRunId }) {
   let teacherCount = 0;
   let sourceLessonsCount = 0;
 
-  for (const [teacherId, teacherLines] of linesByTeacher.entries()) {
+  for (const [itemId, teacherLines] of linesByItem.entries()) {
     teacherCount += 1;
-    const item = itemByTeacher.get(teacherId);
+    const item = itemById.get(itemId);
     if (!item) throw new ApiError(500, "PAYROLL_ITEM_MISSING", "Payroll item topilmadi (data integrity)");
     const summary = buildItemSummaryFromLines(teacherLines);
-    const teacherSnap = teacherLines[0]?.teacher;
+    const personSnap = teacherLines[0]?.employee || teacherLines[0]?.teacher || null;
+    const usernameSnap =
+      teacherLines[0]?.employee?.user?.username ||
+      teacherLines[0]?.teacher?.user?.username ||
+      null;
     sourceLessonsCount += summary.lessonLineCount;
     runGross = runGross.plus(summary.grossAmount);
     runAdjustments = runAdjustments.plus(summary.adjustmentAmount);
@@ -856,9 +1029,9 @@ async function recalculatePayrollRunAggregates(tx, { payrollRunId }) {
         payableAmount: summary.payableAmount,
         lessonLineCount: summary.lessonLineCount,
         lineCount: summary.lineCount,
-        teacherFirstNameSnapshot: teacherSnap?.firstName || null,
-        teacherLastNameSnapshot: teacherSnap?.lastName || null,
-        teacherUsernameSnapshot: teacherSnap?.user?.username || null,
+        teacherFirstNameSnapshot: personSnap?.firstName || null,
+        teacherLastNameSnapshot: personSnap?.lastName || null,
+        teacherUsernameSnapshot: usernameSnap,
         summarySnapshot: {
           totalMinutes: summary.totalMinutes,
           totalHours: String(summary.totalHours),
@@ -875,11 +1048,11 @@ async function recalculatePayrollRunAggregates(tx, { payrollRunId }) {
     });
   }
 
-  const teacherIdsWithLines = [...linesByTeacher.keys()];
+  const itemIdsWithLines = [...linesByItem.keys()];
   await tx.payrollItem.deleteMany({
     where: {
       payrollRunId,
-      ...(teacherIdsWithLines.length ? { teacherId: { notIn: teacherIdsWithLines } } : {}),
+      ...(itemIdsWithLines.length ? { id: { notIn: itemIdsWithLines } } : {}),
     },
   });
 
@@ -1003,17 +1176,39 @@ async function generatePayrollRun({ body, actorUserId, req }) {
 
     const existingItems = await tx.payrollItem.findMany({
       where: { payrollRunId: run.id },
-      select: { id: true, teacherId: true },
+      select: { id: true, teacherId: true, employeeId: true },
     });
-    const itemCache = new Map(existingItems.map((r) => [r.teacherId, r]));
+    const itemCache = new Map(
+      existingItems
+        .filter((r) => r.teacherId)
+        .map((r) => [r.teacherId, r]),
+    );
+    const teacherEmployeeCache = new Map();
 
     for (const lesson of lessons) {
+      let owner = teacherEmployeeCache.get(lesson.teacherId);
+      if (!owner) {
+        owner = await ensureEmployeeForTeacher(tx, {
+          teacherId: lesson.teacherId,
+          organizationId: org.id,
+        });
+        teacherEmployeeCache.set(lesson.teacherId, owner);
+      }
+
       let item = itemCache.get(lesson.teacherId);
       if (!item) {
         item = await getOrCreatePayrollItem(tx, {
           organizationId: org.id,
           payrollRunId: run.id,
           teacherId: lesson.teacherId,
+          employeeId: owner.employee.id,
+        });
+        itemCache.set(lesson.teacherId, item);
+      } else if (!item.employeeId) {
+        item = await tx.payrollItem.update({
+          where: { id: item.id },
+          data: { employeeId: owner.employee.id },
+          select: { id: true, teacherId: true, employeeId: true },
         });
         itemCache.set(lesson.teacherId, item);
       }
@@ -1028,6 +1223,7 @@ async function generatePayrollRun({ body, actorUserId, req }) {
           organizationId: org.id,
           payrollRunId: run.id,
           payrollItemId: item.id,
+          employeeId: owner.employee.id,
           teacherId: lesson.teacherId,
           type: "LESSON",
           realLessonId: lesson.id,
@@ -1081,6 +1277,15 @@ async function generatePayrollRun({ body, actorUserId, req }) {
         items: {
           orderBy: [{ payableAmount: "desc" }, { teacherLastNameSnapshot: "asc" }],
           include: {
+            employee: {
+              select: {
+                id: true,
+                kind: true,
+                firstName: true,
+                lastName: true,
+                user: { select: { username: true } },
+              },
+            },
             teacher: {
               select: {
                 id: true,
@@ -1168,6 +1373,15 @@ async function getPayrollRunDetail({ runId, query }) {
         items: {
           orderBy: [{ payableAmount: "desc" }, { teacherLastNameSnapshot: "asc" }],
           include: {
+            employee: {
+              select: {
+                id: true,
+                kind: true,
+                firstName: true,
+                lastName: true,
+                user: { select: { username: true } },
+              },
+            },
             teacher: {
               select: {
                 id: true,
@@ -1184,6 +1398,7 @@ async function getPayrollRunDetail({ runId, query }) {
 
     const linesWhere = { payrollRunId: run.id };
     if (query.teacherId) linesWhere.teacherId = query.teacherId;
+    if (query.employeeId) linesWhere.employeeId = query.employeeId;
     if (query.type) linesWhere.type = query.type;
 
     const [items, total] = await Promise.all([
@@ -1193,6 +1408,9 @@ async function getPayrollRunDetail({ runId, query }) {
         take: limit,
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         include: {
+          employee: {
+            select: { id: true, kind: true, firstName: true, lastName: true, user: { select: { username: true } } },
+          },
           teacher: { select: { id: true, firstName: true, lastName: true } },
           subject: { select: { id: true, name: true } },
           classroom: { select: { id: true, name: true, academicYear: true } },
@@ -1224,6 +1442,15 @@ async function exportPayrollRunCsv({ runId, query }) {
         items: {
           orderBy: [{ payableAmount: "desc" }, { teacherLastNameSnapshot: "asc" }],
           include: {
+            employee: {
+              select: {
+                id: true,
+                kind: true,
+                firstName: true,
+                lastName: true,
+                user: { select: { username: true } },
+              },
+            },
             teacher: {
               select: {
                 id: true,
@@ -1240,12 +1467,22 @@ async function exportPayrollRunCsv({ runId, query }) {
 
     const linesWhere = { payrollRunId: run.id };
     if (query?.teacherId) linesWhere.teacherId = query.teacherId;
+    if (query?.employeeId) linesWhere.employeeId = query.employeeId;
     if (query?.type) linesWhere.type = query.type;
 
     const lines = await tx.payrollLine.findMany({
       where: linesWhere,
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       include: {
+        employee: {
+          select: {
+            id: true,
+            kind: true,
+            firstName: true,
+            lastName: true,
+            user: { select: { username: true } },
+          },
+        },
         teacher: { select: { id: true, firstName: true, lastName: true, user: { select: { username: true } } } },
         subject: { select: { id: true, name: true } },
         classroom: { select: { id: true, name: true, academicYear: true } },
@@ -1253,7 +1490,7 @@ async function exportPayrollRunCsv({ runId, query }) {
       },
     });
 
-    const itemByTeacherId = new Map((run.items || []).map((item) => [item.teacherId, item]));
+    const itemById = new Map((run.items || []).map((item) => [item.id, item]));
 
     const rows = [
       [
@@ -1286,17 +1523,20 @@ async function exportPayrollRunCsv({ runId, query }) {
 
     for (const item of run.items || []) {
       const teacherName =
+        (item.employee && `${item.employee.firstName || ""} ${item.employee.lastName || ""}`.trim()) ||
         (item.teacher && `${item.teacher.firstName || ""} ${item.teacher.lastName || ""}`.trim()) ||
         `${item.teacherFirstNameSnapshot || ""} ${item.teacherLastNameSnapshot || ""}`.trim() ||
-        item.teacherId;
+        item.teacherId ||
+        item.employeeId ||
+        "";
       const teacherUsername =
-        item.teacher?.user?.username || item.teacherUsernameSnapshot || "";
+        item.employee?.user?.username || item.teacher?.user?.username || item.teacherUsernameSnapshot || "";
       rows.push([
         "ITEM",
         run.id,
         run.periodMonth,
         run.status,
-        item.teacherId,
+        item.teacherId || item.employeeId || "",
         teacherName,
         teacherUsername,
         item.totalMinutes ?? 0,
@@ -1320,19 +1560,25 @@ async function exportPayrollRunCsv({ runId, query }) {
     }
 
     for (const line of lines) {
+      const item = itemById.get(line.payrollItemId);
       const teacherName =
+        (line.employee && `${line.employee.firstName || ""} ${line.employee.lastName || ""}`.trim()) ||
         (line.teacher && `${line.teacher.firstName || ""} ${line.teacher.lastName || ""}`.trim()) ||
-        itemByTeacherId.get(line.teacherId)?.teacherFirstNameSnapshot ||
-        line.teacherId;
+        `${item?.teacherFirstNameSnapshot || ""} ${item?.teacherLastNameSnapshot || ""}`.trim() ||
+        line.teacherId ||
+        line.employeeId ||
+        "";
       const teacherUsername =
-        line.teacher?.user?.username || itemByTeacherId.get(line.teacherId)?.teacherUsernameSnapshot || "";
-      const item = itemByTeacherId.get(line.teacherId);
+        line.employee?.user?.username ||
+        line.teacher?.user?.username ||
+        item?.teacherUsernameSnapshot ||
+        "";
       rows.push([
         "LINE",
         run.id,
         run.periodMonth,
         run.status,
-        line.teacherId,
+        line.teacherId || line.employeeId || "",
         teacherName,
         teacherUsername,
         item?.totalMinutes ?? "",
@@ -1367,11 +1613,47 @@ async function addPayrollAdjustment({ runId, body, actorUserId, req }) {
     const run = await getPayrollRunOrThrow(tx, { runId, organizationId: org.id });
     assertRunStatus(run, ["DRAFT"]);
 
-    await assertTeacherExists(tx, body.teacherId);
+    let employee = null;
+    let teacher = null;
+
+    if (body.employeeId) {
+      employee = await assertEmployeeExists(tx, { employeeId: body.employeeId, organizationId: org.id });
+    }
+    if (body.teacherId) {
+      teacher = await assertTeacherExists(tx, body.teacherId);
+    }
+
+    if (!employee && teacher) {
+      const ensured = await ensureEmployeeForTeacher(tx, {
+        teacherId: teacher.id,
+        organizationId: org.id,
+      });
+      employee = ensured.employee;
+      teacher = teacher || ensured.teacher;
+    }
+
+    if (!employee) {
+      throw new ApiError(400, "PAYROLL_ADJUSTMENT_OWNER_REQUIRED", "teacherId yoki employeeId kerak");
+    }
+
+    let teacherIdForLine = teacher?.id || null;
+    if (employee.teacher?.id) {
+      if (teacherIdForLine && teacherIdForLine !== employee.teacher.id) {
+        throw new ApiError(
+          409,
+          "PAYROLL_ADJUSTMENT_OWNER_MISMATCH",
+          "employeeId va teacherId bir-biriga mos emas",
+          { employeeId: employee.id, employeeTeacherId: employee.teacher.id, teacherId: teacherIdForLine },
+        );
+      }
+      teacherIdForLine = employee.teacher.id;
+    }
+
     const item = await getOrCreatePayrollItem(tx, {
       organizationId: org.id,
       payrollRunId: run.id,
-      teacherId: body.teacherId,
+      teacherId: teacherIdForLine,
+      employeeId: employee.id,
     });
 
     let signedAmount = money(body.amount);
@@ -1382,7 +1664,8 @@ async function addPayrollAdjustment({ runId, body, actorUserId, req }) {
         organizationId: org.id,
         payrollRunId: run.id,
         payrollItemId: item.id,
-        teacherId: body.teacherId,
+        employeeId: employee.id,
+        teacherId: teacherIdForLine,
         type: body.type,
         amount: signedAmount,
         description: body.description,
@@ -1400,6 +1683,7 @@ async function addPayrollAdjustment({ runId, body, actorUserId, req }) {
       entityId: line.id,
       payrollRunId: run.id,
       after: {
+        employeeId: line.employeeId,
         teacherId: line.teacherId,
         type: line.type,
         amount: String(line.amount),
@@ -1420,7 +1704,7 @@ async function deletePayrollAdjustment({ runId, lineId, actorUserId, req }) {
 
     const line = await tx.payrollLine.findFirst({
       where: { id: lineId, payrollRunId: run.id, organizationId: org.id },
-      select: { id: true, type: true, amount: true, description: true, teacherId: true },
+      select: { id: true, type: true, amount: true, description: true, teacherId: true, employeeId: true },
     });
     if (!line) throw new ApiError(404, "PAYROLL_LINE_NOT_FOUND", "Payroll line topilmadi");
     if (line.type === "LESSON") {
@@ -1438,6 +1722,7 @@ async function deletePayrollAdjustment({ runId, lineId, actorUserId, req }) {
       entityId: line.id,
       payrollRunId: run.id,
       before: {
+        employeeId: line.employeeId,
         teacherId: line.teacherId,
         type: line.type,
         amount: String(line.amount),

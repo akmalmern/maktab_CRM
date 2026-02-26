@@ -106,6 +106,26 @@ enum PayrollRateSource {
   SUBJECT_DEFAULT_RATE
 }
 
+enum EmployeeKind {
+  ADMIN
+  MANAGER
+  TEACHER
+  STAFF
+}
+
+enum EmployeePayrollMode {
+  LESSON_BASED
+  FIXED
+  MIXED
+  MANUAL_ONLY
+}
+
+enum EmploymentStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
 model User {
   id   String   @id @default(cuid())
   role UserRole
@@ -123,6 +143,7 @@ model User {
   admin   Admin?
   teacher Teacher?
   student Student?
+  employee Employee?
   adminTolovTranzaksiyalari TolovTranzaksiya[] @relation("AdminTolovTranzaksiyalari")
   bekorQilganTolovTranzaksiyalari TolovTranzaksiya[] @relation("BekorQilganTolovTranzaksiyalari")
   adminTolovImtiyozlari TolovImtiyozi[] @relation("AdminTolovImtiyozlari")
@@ -147,6 +168,8 @@ model Admin {
   id     String @id @default(cuid())
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  employeeId String? @unique
+  employee Employee? @relation("AdminEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
 
   firstName      String
   lastName       String
@@ -168,6 +191,8 @@ model Teacher {
   id     String @id @default(cuid())
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  employeeId String? @unique
+  employee Employee? @relation("TeacherEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
 
   firstName      String
   lastName       String
@@ -414,6 +439,7 @@ model Organization {
   key  String @unique
   name String
 
+  employees           Employee[]
   realLessons         RealLesson[]
   teacherRates        TeacherRate[]
   subjectDefaultRates SubjectDefaultRate[]
@@ -424,6 +450,45 @@ model Organization {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Employee {
+  id String @id @default(cuid())
+
+  organizationId String
+  userId String @unique
+
+  kind EmployeeKind
+  payrollMode EmployeePayrollMode @default(MANUAL_ONLY)
+  employmentStatus EmploymentStatus @default(ACTIVE)
+  isPayrollEligible Boolean @default(true)
+
+  firstName String?
+  lastName String?
+  hireDate DateTime?
+  terminationDate DateTime?
+
+  bankName String?
+  bankAccount String?
+  cardNumber String?
+
+  note String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  teacher Teacher? @relation("TeacherEmployee")
+  admin Admin? @relation("AdminEmployee")
+
+  payrollItems PayrollItem[]
+  payrollLines PayrollLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, kind, employmentStatus])
+  @@index([organizationId, isPayrollEligible])
+  @@index([organizationId, payrollMode])
 }
 
 model RealLesson {
@@ -578,7 +643,8 @@ model PayrollItem {
 
   organizationId String
   payrollRunId String
-  teacherId String
+  employeeId String?
+  teacherId String?
 
   totalMinutes Int @default(0)
   totalHours Decimal @default(0) @db.Decimal(14, 2)
@@ -600,15 +666,18 @@ model PayrollItem {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
-  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
 
   lines PayrollLine[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([payrollRunId, employeeId])
   @@unique([payrollRunId, teacherId])
   @@index([organizationId, payrollRunId])
+  @@index([organizationId, employeeId, createdAt])
   @@index([organizationId, teacherId, createdAt])
 }
 
@@ -618,7 +687,8 @@ model PayrollLine {
   organizationId String
   payrollRunId String
   payrollItemId String
-  teacherId String
+  employeeId String?
+  teacherId String?
 
   type PayrollLineType
 
@@ -643,7 +713,8 @@ model PayrollLine {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
   payrollItem PayrollItem @relation(fields: [payrollItemId], references: [id], onDelete: Cascade)
-  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
   subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
   classroom Classroom? @relation(fields: [classroomId], references: [id], onDelete: SetNull)
   realLesson RealLesson? @relation("PayrollLineRealLesson", fields: [realLessonId], references: [id], onDelete: SetNull)
@@ -655,6 +726,7 @@ model PayrollLine {
   updatedAt DateTime @updatedAt
 
   @@unique([payrollRunId, realLessonId])
+  @@index([organizationId, payrollRunId, employeeId])
   @@index([organizationId, payrollRunId, teacherId])
   @@index([payrollItemId, type])
   @@index([realLessonId])

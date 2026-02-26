@@ -3,6 +3,8 @@ require("dotenv").config();
 const prisma = require("../src/prisma");
 const bcrypt = require("bcrypt");
 const { syncStudentOyMajburiyatlar } = require("../src/services/financeMajburiyatService");
+const payrollService = require("../src/services/payroll/payrollService");
+const { combineLocalDateAndTimeToUtc, utcDateToTashkentIsoDate } = require("../src/utils/tashkentTime");
 
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "admin123";
@@ -16,6 +18,7 @@ const STUDENTS_PER_CLASSROOM = 30;
 const TEACHERS_PER_SUBJECT = 3;
 const ATTENDANCE_BATCH_SIZE = 5000;
 const GRADE_BATCH_SIZE = 5000;
+const REAL_LESSON_BATCH_SIZE = 3000;
 
 const SCHOOL_SUBJECTS = [
   "Ona tili va adabiyot",
@@ -97,6 +100,44 @@ function buildBirthDate(yearOffset) {
   return new Date(1989 + yearOffset, yearOffset % 12, (yearOffset % 27) + 1);
 }
 
+async function pickUniqueTeacherBirthDate({ firstName, lastName, seedIndex, excludeTeacherId = null }) {
+  // Existing DBda manual teacher bo'lsa yoki oldingi seeddan orphan data qolgan bo'lsa
+  // (firstName,lastName,birthDate) unique collision bo'lishi mumkin.
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const candidate = buildBirthDate((seedIndex % 20) + (attempt * 23));
+    const conflict = await prisma.teacher.findFirst({
+      where: {
+        firstName,
+        lastName,
+        birthDate: candidate,
+        ...(excludeTeacherId ? { id: { not: excludeTeacherId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (!conflict) return candidate;
+  }
+
+  throw new Error(`Teacher birthDate unique topilmadi: ${firstName} ${lastName} (seedIndex=${seedIndex})`);
+}
+
+async function pickUniqueStudentBirthDate({ firstName, lastName, seedIndex, excludeStudentId = null }) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const candidate = buildBirthDate((seedIndex % 15) + (attempt * 19));
+    const conflict = await prisma.student.findFirst({
+      where: {
+        firstName,
+        lastName,
+        birthDate: candidate,
+        ...(excludeStudentId ? { id: { not: excludeStudentId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (!conflict) return candidate;
+  }
+
+  throw new Error(`Student birthDate unique topilmadi: ${firstName} ${lastName} (seedIndex=${seedIndex})`);
+}
+
 function toUtcDateOnly(date) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
@@ -138,6 +179,42 @@ function buildRecentMonthTuples(baseDate, count) {
 function defaultEnrollmentStartDate() {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1));
+}
+
+function startOfPayrollSeasonUtc(baseDate = new Date()) {
+  const year = baseDate.getUTCFullYear();
+  const month = baseDate.getUTCMonth() + 1;
+  const startYear = month >= 9 ? year : year - 1;
+  return new Date(Date.UTC(startYear, 8, 1)); // September 1
+}
+
+function formatUtcDateToIso(date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function buildMonthTuplesBetweenUtc(startDate, endDate) {
+  const out = [];
+  const cursor = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), 1));
+  const endMonth = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), 1));
+
+  while (cursor <= endMonth) {
+    out.push({
+      yil: cursor.getUTCFullYear(),
+      oy: cursor.getUTCMonth() + 1,
+      key: buildMonthKey(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1),
+    });
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return out;
+}
+
+function endOfMonthUtc(year, month1to12) {
+  return new Date(Date.UTC(year, month1to12, 0, 23, 59, 59, 0));
+}
+
+function payrollRateForSubjectIndex(index) {
+  // 25 000..57 500 oralig'ida, fanlar bo'yicha differensial
+  return 25000 + ((index % 14) * 2500);
 }
 
 function randomDavomatHolati() {
@@ -321,23 +398,34 @@ async function seedTeachers(subjectIds) {
 
     if (existingUser) {
       if (!existingUser.teacher) {
+        const birthDate = await pickUniqueTeacherBirthDate({
+          firstName: row.firstName,
+          lastName: row.lastName,
+          seedIndex: i,
+        });
         await prisma.teacher.create({
           data: {
             userId: existingUser.id,
             firstName: row.firstName,
             lastName: row.lastName,
-            birthDate: buildBirthDate(i % 20),
+            birthDate,
             yashashManzili: "Toshkent shahri",
             subjectId,
           },
         });
       } else {
+        const birthDate = await pickUniqueTeacherBirthDate({
+          firstName: row.firstName,
+          lastName: row.lastName,
+          seedIndex: i,
+          excludeTeacherId: existingUser.teacher.id,
+        });
         await prisma.teacher.update({
           where: { id: existingUser.teacher.id },
           data: {
             firstName: row.firstName,
             lastName: row.lastName,
-            birthDate: buildBirthDate(i % 20),
+            birthDate,
             yashashManzili: "Toshkent shahri",
             subjectId,
           },
@@ -360,12 +448,17 @@ async function seedTeachers(subjectIds) {
       },
     });
 
+    const birthDate = await pickUniqueTeacherBirthDate({
+      firstName: row.firstName,
+      lastName: row.lastName,
+      seedIndex: i,
+    });
     await prisma.teacher.create({
       data: {
         userId: user.id,
         firstName: row.firstName,
         lastName: row.lastName,
-        birthDate: buildBirthDate(i % 20),
+        birthDate,
         yashashManzili: "Toshkent shahri",
         subjectId,
       },
@@ -395,24 +488,35 @@ async function seedStudents(count, classrooms) {
     if (existingUser) {
       let studentId = existingUser.student?.id;
       if (!existingUser.student) {
+        const birthDate = await pickUniqueStudentBirthDate({
+          firstName: `Student${pad(i)}`,
+          lastName: "User",
+          seedIndex: i,
+        });
         const student = await prisma.student.create({
           data: {
             userId: existingUser.id,
             firstName: `Student${pad(i)}`,
             lastName: "User",
-            birthDate: buildBirthDate(i % 15),
+            birthDate,
             yashashManzili: "Farg'ona viloyati",
             parentPhone: `+9989300${pad(i, 4)}`,
           },
         });
         studentId = student.id;
       } else {
+        const birthDate = await pickUniqueStudentBirthDate({
+          firstName: `Student${pad(i)}`,
+          lastName: "User",
+          seedIndex: i,
+          excludeStudentId: existingUser.student.id,
+        });
         await prisma.student.update({
           where: { id: existingUser.student.id },
           data: {
             firstName: `Student${pad(i)}`,
             lastName: "User",
-            birthDate: buildBirthDate(i % 15),
+            birthDate,
             yashashManzili: "Farg'ona viloyati",
             parentPhone: `+9989300${pad(i, 4)}`,
           },
@@ -450,12 +554,17 @@ async function seedStudents(count, classrooms) {
       },
     });
 
+    const birthDate = await pickUniqueStudentBirthDate({
+      firstName: `Student${pad(i)}`,
+      lastName: "User",
+      seedIndex: i,
+    });
     const student = await prisma.student.create({
       data: {
         userId: user.id,
         firstName: `Student${pad(i)}`,
         lastName: "User",
-        birthDate: buildBirthDate(i % 15),
+        birthDate,
         yashashManzili: "Farg'ona viloyati",
         parentPhone: `+9989300${pad(i, 4)}`,
       },
@@ -943,6 +1052,400 @@ async function seedFinanceData() {
   };
 }
 
+async function ensurePayrollOrganization() {
+  return prisma.organization.upsert({
+    where: { key: "MAIN" },
+    update: { name: "Asosiy tashkilot" },
+    create: { key: "MAIN", name: "Asosiy tashkilot" },
+    select: { id: true, key: true, name: true },
+  });
+}
+
+function seedEmployeeNameFromUsername(username, role) {
+  if (!username) {
+    return {
+      firstName: role === "MANAGER" ? "Manager" : role === "ADMIN" ? "Admin" : "Xodim",
+      lastName: null,
+    };
+  }
+  return {
+    firstName: role === "MANAGER" ? "Manager" : role === "ADMIN" ? "Admin" : "Teacher",
+    lastName: username,
+  };
+}
+
+async function seedEmployeesForStaff({ organizationId }) {
+  const users = await prisma.user.findMany({
+    where: {
+      role: { in: ["ADMIN", "MANAGER", "TEACHER"] },
+    },
+    include: {
+      admin: { select: { id: true, firstName: true, lastName: true, employeeId: true } },
+      teacher: { select: { id: true, firstName: true, lastName: true, employeeId: true } },
+      employee: { select: { id: true, organizationId: true } },
+    },
+    orderBy: [{ role: "asc" }, { username: "asc" }],
+  });
+
+  let created = 0;
+  let updated = 0;
+  let linkedTeachers = 0;
+  let linkedAdmins = 0;
+  const byKind = { ADMIN: 0, MANAGER: 0, TEACHER: 0 };
+
+  for (const user of users) {
+    let kind = "STAFF";
+    let payrollMode = "MANUAL_ONLY";
+    if (user.role === "TEACHER") {
+      kind = "TEACHER";
+      payrollMode = "LESSON_BASED";
+    } else if (user.role === "ADMIN") {
+      kind = "ADMIN";
+    } else if (user.role === "MANAGER") {
+      kind = "MANAGER";
+    }
+
+    if (byKind[kind] == null) byKind[kind] = 0;
+    byKind[kind] += 1;
+
+    const fallbackNames = seedEmployeeNameFromUsername(user.username, user.role);
+    const firstName = user.teacher?.firstName || user.admin?.firstName || fallbackNames.firstName;
+    const lastName = user.teacher?.lastName || user.admin?.lastName || fallbackNames.lastName;
+
+    const before = user.employee;
+    const employee = await prisma.employee.upsert({
+      where: { userId: user.id },
+      update: {
+        organizationId,
+        kind,
+        payrollMode,
+        employmentStatus: user.isActive ? "ACTIVE" : "ARCHIVED",
+        isPayrollEligible: true,
+        firstName: firstName || null,
+        lastName: lastName || null,
+      },
+      create: {
+        organizationId,
+        userId: user.id,
+        kind,
+        payrollMode,
+        employmentStatus: user.isActive ? "ACTIVE" : "ARCHIVED",
+        isPayrollEligible: true,
+        firstName: firstName || null,
+        lastName: lastName || null,
+        note: "Seed: unified employee payroll owner",
+      },
+      select: { id: true },
+    });
+
+    if (before?.id) {
+      updated += 1;
+    } else {
+      created += 1;
+    }
+
+    if (user.teacher && user.teacher.employeeId !== employee.id) {
+      await prisma.teacher.update({
+        where: { id: user.teacher.id },
+        data: { employeeId: employee.id },
+      });
+      linkedTeachers += 1;
+    }
+    if (user.admin && user.admin.employeeId !== employee.id) {
+      await prisma.admin.update({
+        where: { id: user.admin.id },
+        data: { employeeId: employee.id },
+      });
+      linkedAdmins += 1;
+    }
+  }
+
+  return {
+    totalUsers: users.length,
+    created,
+    updated,
+    linkedTeachers,
+    linkedAdmins,
+    byKind,
+  };
+}
+
+async function seedPayrollSubjectRates({ organizationId, startDateUtc }) {
+  const scheduleSubjects = await prisma.darsJadvali.findMany({
+    where: { oquvYili: DEFAULT_ACADEMIC_YEAR },
+    select: { fanId: true, fan: { select: { id: true, name: true } } },
+    distinct: ["fanId"],
+    orderBy: { fanId: "asc" },
+  });
+
+  if (!scheduleSubjects.length) {
+    return { deletedTeacherRates: 0, deletedSubjectRates: 0, createdSubjectRates: 0, coveredSubjects: 0 };
+  }
+
+  const [deletedTeacherRates, deletedSubjectRates] = await Promise.all([
+    prisma.teacherRate.deleteMany({ where: { organizationId } }),
+    prisma.subjectDefaultRate.deleteMany({ where: { organizationId } }),
+  ]);
+
+  const rows = scheduleSubjects.map((row, idx) => ({
+    organizationId,
+    subjectId: row.fanId,
+    ratePerHour: payrollRateForSubjectIndex(idx),
+    effectiveFrom: startDateUtc,
+    effectiveTo: null,
+    note: `Seed payroll rate (${row.fan?.name || row.fanId})`,
+  }));
+
+  if (rows.length) {
+    await prisma.subjectDefaultRate.createMany({ data: rows });
+  }
+
+  return {
+    deletedTeacherRates: deletedTeacherRates.count,
+    deletedSubjectRates: deletedSubjectRates.count,
+    createdSubjectRates: rows.length,
+    coveredSubjects: rows.length,
+  };
+}
+
+async function seedPayrollRealLessonsHistory({ organizationId, startDateUtc, endDateUtc }) {
+  const darslar = await prisma.darsJadvali.findMany({
+    where: { oquvYili: DEFAULT_ACADEMIC_YEAR },
+    select: {
+      id: true,
+      sinfId: true,
+      oqituvchiId: true,
+      fanId: true,
+      haftaKuni: true,
+      vaqtOraliq: {
+        select: {
+          boshlanishVaqti: true,
+          tugashVaqti: true,
+        },
+      },
+    },
+    orderBy: [{ haftaKuni: "asc" }, { vaqtOraliq: { tartib: "asc" } }],
+  });
+
+  if (!darslar.length) {
+    return {
+      deleted: 0,
+      created: 0,
+      startDate: startDateUtc,
+      endDate: endDateUtc,
+      months: 0,
+    };
+  }
+
+  const rangeEndExclusive = addDaysUtc(endDateUtc, 1);
+  const deleted = await prisma.realLesson.deleteMany({
+    where: {
+      organizationId,
+      startAt: { gte: startDateUtc, lt: rangeEndExclusive },
+    },
+  });
+
+  const darslarByDay = new Map();
+  for (const dars of darslar) {
+    const key = dars.haftaKuni;
+    if (!darslarByDay.has(key)) darslarByDay.set(key, []);
+    darslarByDay.get(key).push(dars);
+  }
+
+  let created = 0;
+  let batch = [];
+
+  async function flushBatch() {
+    if (!batch.length) return;
+    await prisma.realLesson.createMany({ data: batch });
+    created += batch.length;
+    batch = [];
+  }
+
+  for (let day = new Date(startDateUtc); day <= endDateUtc; day = addDaysUtc(day, 1)) {
+    const haftaKuni = HAFTA_KUNI_BY_JS_DAY[day.getUTCDay()];
+    if (!haftaKuni) continue; // Yakshanba yo'q
+
+    const rows = darslarByDay.get(haftaKuni) || [];
+    if (!rows.length) continue;
+
+    const localDateIso = formatUtcDateToIso(day);
+    for (const dars of rows) {
+      const startAt = combineLocalDateAndTimeToUtc(localDateIso, dars.vaqtOraliq?.boshlanishVaqti);
+      const endAt = combineLocalDateAndTimeToUtc(localDateIso, dars.vaqtOraliq?.tugashVaqti);
+      if (!startAt || !endAt || endAt <= startAt) continue;
+
+      const durationMinutes = Math.round((endAt.getTime() - startAt.getTime()) / 60000);
+      if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) continue;
+
+      batch.push({
+        organizationId,
+        teacherId: dars.oqituvchiId,
+        subjectId: dars.fanId,
+        classroomId: dars.sinfId,
+        darsJadvaliId: dars.id,
+        startAt,
+        endAt,
+        durationMinutes,
+        status: "DONE",
+        note: "Seed payroll lesson",
+      });
+
+      if (batch.length >= REAL_LESSON_BATCH_SIZE) {
+        await flushBatch();
+      }
+    }
+  }
+
+  await flushBatch();
+
+  return {
+    deleted: deleted.count,
+    created,
+    startDate: startDateUtc,
+    endDate: endDateUtc,
+    months: buildMonthTuplesBetweenUtc(startDateUtc, endDateUtc).length,
+  };
+}
+
+async function seedPayrollRunsHistory({ adminUserId, startDateUtc, endDateUtc }) {
+  const monthTuples = buildMonthTuplesBetweenUtc(startDateUtc, endDateUtc);
+  if (!monthTuples.length) {
+    return { months: [], generated: 0, approved: 0, paid: 0, totals: [] };
+  }
+
+  const org = await ensurePayrollOrganization();
+  await prisma.payrollRun.deleteMany({
+    where: {
+      organizationId: org.id,
+      periodMonth: { in: monthTuples.map((m) => m.key) },
+    },
+  });
+
+  const totals = [];
+  let generated = 0;
+  let approved = 0;
+  let paid = 0;
+
+  for (const month of monthTuples) {
+    const generatedRes = await payrollService.generatePayrollRun({
+      body: { periodMonth: month.key },
+      actorUserId: adminUserId,
+      req: null,
+    });
+    generated += 1;
+
+    const run = generatedRes?.run;
+    if (!run?.id) {
+      throw new Error(`Payroll run generate natijasi noto'g'ri: ${month.key}`);
+    }
+
+    if ((run.sourceLessonsCount || 0) > 0) {
+      await payrollService.approvePayrollRun({
+        runId: run.id,
+        actorUserId: adminUserId,
+        req: null,
+      });
+      approved += 1;
+
+      const isCurrentMonth =
+        month.yil === endDateUtc.getUTCFullYear() &&
+        month.oy === endDateUtc.getUTCMonth() + 1;
+
+      const paidAt = isCurrentMonth
+        ? new Date()
+        : endOfMonthUtc(month.yil, month.oy);
+
+      const payRes = await payrollService.payPayrollRun({
+        runId: run.id,
+        body: {
+          paymentMethod: "BANK",
+          paidAt,
+          externalRef: `SEED-PAYROLL-${month.key}`,
+          note: "Seed payroll to'lovi",
+        },
+        actorUserId: adminUserId,
+        req: null,
+      });
+      paid += 1;
+
+      totals.push({
+        periodMonth: month.key,
+        status: payRes?.run?.status || "PAID",
+        teacherCount: Number(payRes?.run?.teacherCount || run.teacherCount || 0),
+        lessons: Number(payRes?.run?.sourceLessonsCount || run.sourceLessonsCount || 0),
+        payableAmount: Number(payRes?.run?.payableAmount || run.payableAmount || 0),
+      });
+    } else {
+      totals.push({
+        periodMonth: month.key,
+        status: run.status || "DRAFT",
+        teacherCount: Number(run.teacherCount || 0),
+        lessons: Number(run.sourceLessonsCount || 0),
+        payableAmount: Number(run.payableAmount || 0),
+      });
+    }
+  }
+
+  return {
+    months: monthTuples.map((m) => m.key),
+    generated,
+    approved,
+    paid,
+    totals,
+  };
+}
+
+async function seedPayrollFromSeptemberToCurrentMonth() {
+  const todayUtc = toUtcDateOnly(new Date());
+  const payrollStartDate = startOfPayrollSeasonUtc(todayUtc);
+
+  const adminUser = await prisma.user.findFirst({
+    where: { role: "ADMIN", isActive: true },
+    select: { id: true, username: true },
+  });
+  if (!adminUser) {
+    throw new Error("Payroll seed uchun ADMIN user topilmadi");
+  }
+
+  const org = await ensurePayrollOrganization();
+  const employeesResult = await seedEmployeesForStaff({ organizationId: org.id });
+
+  const ratesResult = await seedPayrollSubjectRates({
+    organizationId: org.id,
+    startDateUtc: payrollStartDate,
+  });
+
+  const realLessonsResult = await seedPayrollRealLessonsHistory({
+    organizationId: org.id,
+    startDateUtc: payrollStartDate,
+    endDateUtc: todayUtc,
+  });
+
+  const runsResult = await seedPayrollRunsHistory({
+    adminUserId: adminUser.id,
+    startDateUtc: payrollStartDate,
+    endDateUtc: todayUtc,
+  });
+
+  const totalPayable = runsResult.totals.reduce(
+    (acc, row) => acc + Number(row.payableAmount || 0),
+    0,
+  );
+
+  return {
+    organizationKey: org.key,
+    startDate: payrollStartDate,
+    endDate: todayUtc,
+    localEndDate: utcDateToTashkentIsoDate(todayUtc),
+    employees: employeesResult,
+    rates: ratesResult,
+    realLessons: realLessonsResult,
+    runs: runsResult,
+    totalPayable,
+  };
+}
+
 async function seedAttendanceHistory(months = 0) {
   // Eski nom bilan chaqirilgan joylar bo'lsa moslik uchun qoldirildi.
   if (months) {
@@ -1020,6 +1523,7 @@ async function main() {
   const historyResult = await seedAttendanceAndGradesHistory();
   const todayAttendance = await seedTodayAttendanceIfMissing();
   const financeResult = await seedFinanceData();
+  const payrollResult = await seedPayrollFromSeptemberToCurrentMonth();
 
   console.log("Seed completed");
   console.log(`Subjects => total: ${Object.keys(subjectIds).length}`);
@@ -1039,6 +1543,27 @@ async function main() {
   );
   console.log(
     `Finance segments => shu oy qarzdor: ${financeResult.thisMonthDebtors}, 2-3 oy qarzdor: ${financeResult.twoThreeMonthDebtors}, qarzi yo'q: ${financeResult.debtFree}`,
+  );
+  console.log(
+    `Payroll range (Sep -> current month) => ${payrollResult.startDate.toISOString().slice(0, 10)}..${payrollResult.endDate.toISOString().slice(0, 10)} (${payrollResult.runs.months.length} oy)`,
+  );
+  console.log(
+    `Payroll employees => total: ${payrollResult.employees.totalUsers}, created: ${payrollResult.employees.created}, updated: ${payrollResult.employees.updated}, linkedTeachers: ${payrollResult.employees.linkedTeachers}, linkedAdmins: ${payrollResult.employees.linkedAdmins}`,
+  );
+  console.log(
+    `Payroll employees by kind => ADMIN: ${payrollResult.employees.byKind.ADMIN || 0}, MANAGER: ${payrollResult.employees.byKind.MANAGER || 0}, TEACHER: ${payrollResult.employees.byKind.TEACHER || 0}`,
+  );
+  console.log(
+    `Payroll rates => subjectRates created: ${payrollResult.rates.createdSubjectRates}, deletedTeacherRates: ${payrollResult.rates.deletedTeacherRates}, deletedSubjectRates: ${payrollResult.rates.deletedSubjectRates}`,
+  );
+  console.log(
+    `Payroll realLessons => deleted: ${payrollResult.realLessons.deleted}, created: ${payrollResult.realLessons.created}`,
+  );
+  console.log(
+    `Payroll runs => generated: ${payrollResult.runs.generated}, approved: ${payrollResult.runs.approved}, paid: ${payrollResult.runs.paid}, total payable: ${Math.round(payrollResult.totalPayable)}`,
+  );
+  console.log(
+    `Payroll months => ${payrollResult.runs.totals.map((row) => `${row.periodMonth}:${row.status}`).join(", ")}`,
   );
   console.log(`Default password for teacher/student: ${DEFAULT_PASSWORD}`);
   console.log(`Manager credentials: ${MANAGER_USERNAME} / ${MANAGER_PASSWORD}`);

@@ -193,17 +193,24 @@ const listPayrollRunsQuerySchema = z.object({
 
 const payrollRunLinesQuerySchema = z.object({
   teacherId: z.string().cuid().optional(),
+  employeeId: z.string().cuid().optional(),
   type: z.enum(["LESSON", "BONUS", "PENALTY", "MANUAL"]).optional(),
   page: z.coerce.number().int().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 
-const addPayrollAdjustmentSchema = z.object({
-  teacherId: z.string().cuid("teacherId noto'g'ri"),
-  type: z.enum(["BONUS", "PENALTY", "MANUAL"]),
-  amount: z.coerce.number().positive("amount musbat bo'lishi kerak"),
-  description: z.string().trim().min(3).max(500),
-});
+const addPayrollAdjustmentSchema = z
+  .object({
+    teacherId: z.string().cuid("teacherId noto'g'ri").optional(),
+    employeeId: z.string().cuid("employeeId noto'g'ri").optional(),
+    type: z.enum(["BONUS", "PENALTY", "MANUAL"]),
+    amount: z.coerce.number().positive("amount musbat bo'lishi kerak"),
+    description: z.string().trim().min(3).max(500),
+  })
+  .refine((value) => Boolean(value.teacherId || value.employeeId), {
+    message: "teacherId yoki employeeId kerak",
+    path: ["teacherId"],
+  });
 
 const payPayrollRunSchema = z.object({
   paymentMethod: z.enum(["CASH", "BANK", "CLICK", "PAYME"]),
