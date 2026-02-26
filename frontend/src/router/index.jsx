@@ -7,6 +7,7 @@ import AdminAttendancePage from '../pages/admin/attendance/AdminAttendancePage';
 import AdminArchivePage from '../pages/admin/archive/AdminArchivePage';
 import AdminDashboardPage from '../pages/admin/dashboard/AdminDashboardPage';
 import AdminFinancePage from '../pages/admin/finance/AdminFinancePage';
+import AdminPayrollPage from '../pages/admin/payroll/AdminPayrollPage';
 import AdminSchedulePage from '../pages/admin/schedule/AdminSchedulePage';
 import AdminStudentsPage from '../pages/admin/students/AdminStudentsPage';
 import AdminSubjectsPage from '../pages/admin/subjects/AdminSubjectsPage';
@@ -22,9 +23,11 @@ import StudentSchedulePage from '../pages/student/StudentSchedulePage';
 import TeacherAttendancePage from '../pages/teacher/TeacherAttendancePage';
 import TeacherGradesPage from '../pages/teacher/TeacherGradesPage';
 import TeacherHomePage from '../pages/teacher/TeacherHomePage';
+import TeacherPayrollPage from '../pages/teacher/TeacherPayrollPage';
 import TeacherSchedulePage from '../pages/teacher/TeacherSchedulePage';
 import ManagerHomePage from '../pages/manager/ManagerHomePage';
 import ManagerDebtorsPage from '../pages/manager/ManagerDebtorsPage';
+import ManagerPayrollPage from '../pages/manager/ManagerPayrollPage';
 
 export const router = createBrowserRouter([
   {
@@ -50,6 +53,7 @@ export const router = createBrowserRouter([
               { path: '/admin/dars-jadval', element: <AdminSchedulePage /> },
               { path: '/admin/davomat', element: <AdminAttendancePage /> },
               { path: '/admin/moliya', element: <AdminFinancePage /> },
+              { path: '/admin/oylik', element: <AdminPayrollPage /> },
               { path: '/admin/arxiv', element: <AdminArchivePage /> },
               { path: '/admin/teachers/:teacherId', element: <PersonDetailPage /> },
               { path: '/admin/students/:studentId', element: <PersonDetailPage /> },
@@ -63,6 +67,7 @@ export const router = createBrowserRouter([
               { path: '/teacher/jadval', element: <TeacherSchedulePage /> },
               { path: '/teacher/davomat', element: <TeacherAttendancePage /> },
               { path: '/teacher/baholar', element: <TeacherGradesPage /> },
+              { path: '/teacher/oyliklar', element: <TeacherPayrollPage /> },
             ],
           },
 
@@ -81,6 +86,7 @@ export const router = createBrowserRouter([
             children: [
               { path: '/manager', element: <ManagerHomePage /> },
               { path: '/manager/qarzdorlar', element: <ManagerDebtorsPage /> },
+              { path: '/manager/oylik', element: <ManagerPayrollPage /> },
             ],
           },
 

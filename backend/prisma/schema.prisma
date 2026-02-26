@@ -74,6 +74,38 @@ enum StudentOyMajburiyatHolati {
   TOLANGAN
 }
 
+enum RealLessonStatus {
+  DONE
+  CANCELED
+  REPLACED
+}
+
+enum PayrollRunStatus {
+  DRAFT
+  APPROVED
+  PAID
+  REVERSED
+}
+
+enum PayrollLineType {
+  LESSON
+  BONUS
+  PENALTY
+  MANUAL
+}
+
+enum PayrollPaymentMethod {
+  CASH
+  BANK
+  CLICK
+  PAYME
+}
+
+enum PayrollRateSource {
+  TEACHER_RATE
+  SUBJECT_DEFAULT_RATE
+}
+
 model User {
   id   String   @id @default(cuid())
   role UserRole
@@ -98,6 +130,14 @@ model User {
   yaratganMoliyaTariflari MoliyaTarifVersion[] @relation("YaratganMoliyaTariflari")
   moliyaTarifAuditlari MoliyaTarifAudit[] @relation("MoliyaTarifAuditlari")
   managerQarzdorIzohlari QarzdorIzoh[] @relation("ManagerQarzdorIzohlari")
+  createdTeacherRates TeacherRate[] @relation("TeacherRateCreatedBy")
+  createdSubjectDefaultRates SubjectDefaultRate[] @relation("SubjectDefaultRateCreatedBy")
+  createdPayrollRuns PayrollRun[] @relation("PayrollRunCreatedBy")
+  approvedPayrollRuns PayrollRun[] @relation("PayrollRunApprovedBy")
+  paidPayrollRuns PayrollRun[] @relation("PayrollRunPaidBy")
+  reversedPayrollRuns PayrollRun[] @relation("PayrollRunReversedBy")
+  createdPayrollLines PayrollLine[] @relation("PayrollLineCreatedBy")
+  payrollAuditLogs AuditLog[] @relation("AuditActorUser")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -144,6 +184,11 @@ model Teacher {
   darsJadvallari DarsJadvali[]
   belgilaganDavomatlar Davomat[] @relation("TeacherBelgilaganDavomat")
   qoyganBaholar Baho[] @relation("TeacherQoyganBaholar")
+  realLessonsAsTeacher RealLesson[] @relation("RealLessonTeacher")
+  realLessonsAsReplacement RealLesson[] @relation("RealLessonReplacedByTeacher")
+  teacherRates TeacherRate[]
+  payrollItems PayrollItem[]
+  payrollLines PayrollLine[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -216,6 +261,10 @@ model Subject {
 
   teachers Teacher[]
   darsJadvallari DarsJadvali[]
+  realLessons RealLesson[]
+  teacherRates TeacherRate[]
+  subjectDefaultRates SubjectDefaultRate[]
+  payrollLines PayrollLine[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -229,6 +278,8 @@ model Classroom {
 
   enrollments Enrollment[]
   darsJadvallari DarsJadvali[]
+  realLessons RealLesson[]
+  payrollLines PayrollLine[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -291,6 +342,7 @@ model DarsJadvali {
   vaqtOraliq VaqtOraliq @relation(fields: [vaqtOraliqId], references: [id], onDelete: Restrict)
   davomatlar Davomat[]
   baholar    Baho[]
+  realLessons RealLesson[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -355,6 +407,288 @@ model Baho {
   @@index([teacherId, sana])
   @@index([darsJadvaliId, sana])
   @@unique([darsJadvaliId, studentId, sana, turi])
+}
+
+model Organization {
+  id   String @id @default(cuid())
+  key  String @unique
+  name String
+
+  realLessons         RealLesson[]
+  teacherRates        TeacherRate[]
+  subjectDefaultRates SubjectDefaultRate[]
+  payrollRuns         PayrollRun[]
+  payrollItems        PayrollItem[]
+  payrollLines        PayrollLine[]
+  auditLogs           AuditLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model RealLesson {
+  id String @id @default(cuid())
+
+  organizationId String
+  teacherId String
+  subjectId String
+  classroomId String
+  darsJadvaliId String?
+
+  startAt DateTime
+  endAt DateTime
+  durationMinutes Int
+
+  status RealLessonStatus @default(DONE)
+  replacedByTeacherId String?
+  note String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  teacher Teacher @relation("RealLessonTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  darsJadvali DarsJadvali? @relation(fields: [darsJadvaliId], references: [id], onDelete: SetNull)
+  replacedByTeacher Teacher? @relation("RealLessonReplacedByTeacher", fields: [replacedByTeacherId], references: [id], onDelete: SetNull)
+  payrollLines PayrollLine[] @relation("PayrollLineRealLesson")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, startAt])
+  @@index([organizationId, status, startAt])
+  @@index([teacherId, startAt])
+  @@index([subjectId, startAt])
+  @@index([classroomId, startAt])
+  @@index([replacedByTeacherId, startAt])
+  @@index([darsJadvaliId])
+}
+
+model TeacherRate {
+  id String @id @default(cuid())
+
+  organizationId String
+  teacherId String
+  subjectId String
+
+  ratePerHour Decimal @db.Decimal(14, 2)
+  currencyCode String @default("UZS")
+
+  effectiveFrom DateTime
+  effectiveTo DateTime?
+  note String?
+
+  createdByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  createdByUser User? @relation("TeacherRateCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  payrollLines PayrollLine[] @relation("PayrollLineTeacherRate")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, teacherId, subjectId, effectiveFrom])
+  @@index([organizationId, teacherId, subjectId, effectiveTo])
+}
+
+model SubjectDefaultRate {
+  id String @id @default(cuid())
+
+  organizationId String
+  subjectId String
+
+  ratePerHour Decimal @db.Decimal(14, 2)
+  currencyCode String @default("UZS")
+
+  effectiveFrom DateTime
+  effectiveTo DateTime?
+  note String?
+
+  createdByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  createdByUser User? @relation("SubjectDefaultRateCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  payrollLines PayrollLine[] @relation("PayrollLineSubjectDefaultRate")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, subjectId, effectiveFrom])
+  @@index([organizationId, subjectId, effectiveTo])
+}
+
+model PayrollRun {
+  id String @id @default(cuid())
+
+  organizationId String
+  periodMonth String
+  periodStart DateTime
+  periodEnd DateTime
+  timezone String @default("Asia/Tashkent")
+
+  status PayrollRunStatus @default(DRAFT)
+  calcVersion Int @default(1)
+
+  generatedAt DateTime?
+  approvedAt DateTime?
+  paidAt DateTime?
+  reversedAt DateTime?
+
+  createdByUserId String
+  approvedByUserId String?
+  paidByUserId String?
+  reversedByUserId String?
+
+  paymentMethod PayrollPaymentMethod?
+  externalRef String?
+  paymentNote String?
+  reverseReason String?
+
+  sourceLessonsCount Int @default(0)
+  teacherCount Int @default(0)
+  grossAmount Decimal @default(0) @db.Decimal(14, 2)
+  adjustmentAmount Decimal @default(0) @db.Decimal(14, 2)
+  payableAmount Decimal @default(0) @db.Decimal(14, 2)
+
+  generationSummary Json?
+  meta Json?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdByUser User @relation("PayrollRunCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  approvedByUser User? @relation("PayrollRunApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  paidByUser User? @relation("PayrollRunPaidBy", fields: [paidByUserId], references: [id], onDelete: Restrict)
+  reversedByUser User? @relation("PayrollRunReversedBy", fields: [reversedByUserId], references: [id], onDelete: Restrict)
+
+  items PayrollItem[]
+  lines PayrollLine[]
+  auditLogs AuditLog[] @relation("AuditLogPayrollRun")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, periodMonth])
+  @@index([organizationId, status, periodStart])
+  @@index([status, createdAt])
+}
+
+model PayrollItem {
+  id String @id @default(cuid())
+
+  organizationId String
+  payrollRunId String
+  teacherId String
+
+  totalMinutes Int @default(0)
+  totalHours Decimal @default(0) @db.Decimal(14, 2)
+
+  grossAmount Decimal @default(0) @db.Decimal(14, 2)
+  bonusAmount Decimal @default(0) @db.Decimal(14, 2)
+  penaltyAmount Decimal @default(0) @db.Decimal(14, 2)
+  manualAmount Decimal @default(0) @db.Decimal(14, 2)
+  adjustmentAmount Decimal @default(0) @db.Decimal(14, 2)
+  payableAmount Decimal @default(0) @db.Decimal(14, 2)
+
+  lessonLineCount Int @default(0)
+  lineCount Int @default(0)
+
+  teacherFirstNameSnapshot String?
+  teacherLastNameSnapshot String?
+  teacherUsernameSnapshot String?
+  summarySnapshot Json?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+
+  lines PayrollLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([payrollRunId, teacherId])
+  @@index([organizationId, payrollRunId])
+  @@index([organizationId, teacherId, createdAt])
+}
+
+model PayrollLine {
+  id String @id @default(cuid())
+
+  organizationId String
+  payrollRunId String
+  payrollItemId String
+  teacherId String
+
+  type PayrollLineType
+
+  realLessonId String?
+  subjectId String?
+  classroomId String?
+  lessonStartAt DateTime?
+  minutes Int?
+  ratePerHour Decimal? @db.Decimal(14, 2)
+
+  amount Decimal @db.Decimal(14, 2)
+
+  rateSource PayrollRateSource?
+  teacherRateId String?
+  subjectDefaultRateId String?
+
+  description String?
+  meta Json?
+
+  createdByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  payrollItem PayrollItem @relation(fields: [payrollItemId], references: [id], onDelete: Cascade)
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  classroom Classroom? @relation(fields: [classroomId], references: [id], onDelete: SetNull)
+  realLesson RealLesson? @relation("PayrollLineRealLesson", fields: [realLessonId], references: [id], onDelete: SetNull)
+  teacherRate TeacherRate? @relation("PayrollLineTeacherRate", fields: [teacherRateId], references: [id], onDelete: SetNull)
+  subjectDefaultRate SubjectDefaultRate? @relation("PayrollLineSubjectDefaultRate", fields: [subjectDefaultRateId], references: [id], onDelete: SetNull)
+  createdByUser User? @relation("PayrollLineCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([payrollRunId, realLessonId])
+  @@index([organizationId, payrollRunId, teacherId])
+  @@index([payrollItemId, type])
+  @@index([realLessonId])
+  @@index([type, createdAt])
+}
+
+model AuditLog {
+  id String @id @default(cuid())
+
+  organizationId String
+  actorUserId String?
+
+  action String
+  entityType String
+  entityId String
+  payrollRunId String?
+
+  before Json?
+  after Json?
+
+  reason String?
+  ip String?
+  userAgent String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actorUser User? @relation("AuditActorUser", fields: [actorUserId], references: [id], onDelete: SetNull)
+  payrollRun PayrollRun? @relation("AuditLogPayrollRun", fields: [payrollRunId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([payrollRunId, createdAt])
 }
 
 model MoliyaSozlama {

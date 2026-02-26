@@ -144,6 +144,27 @@ function mapPrismaError(err) {
         );
       }
 
+      if (targetStr.includes("payrollRunId") && targetStr.includes("realLessonId")) {
+        return new ApiError(
+          409,
+          "PAYROLL_LESSON_DUPLICATE",
+          "Bu dars ushbu payroll run ichida allaqachon mavjud",
+          { target },
+        );
+      }
+
+      if (
+        (targetStr.includes("organizationId") && targetStr.includes("periodMonth")) ||
+        targetLower.includes("ux_payroll_run_active_period")
+      ) {
+        return new ApiError(
+          409,
+          "PAYROLL_RUN_PERIOD_CONFLICT",
+          "Bu oy uchun aktiv payroll run allaqachon mavjud",
+          { target },
+        );
+      }
+
       // default unique
       return new ApiError(
         409,

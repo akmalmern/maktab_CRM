@@ -34,6 +34,7 @@ import {
   ClassroomsSection,
   DashboardSection,
   FinanceSection,
+  PayrollSection,
   ScheduleSection,
   StudentsSection,
   SubjectsSection,
@@ -91,6 +92,7 @@ export default function AdminWorkspace({ section }) {
   const isJadvalSection = section === 'jadval';
   const isAttendanceSection = section === 'attendance';
   const isFinanceSection = section === 'finance';
+  const isPayrollSection = section === 'payroll';
   const isArchiveSection = section === 'archive';
 
   const financeStudentsParams = {
@@ -110,9 +112,9 @@ export default function AdminWorkspace({ section }) {
   const financeSettingsQuery = useGetFinanceSettingsQuery(undefined, { skip: !isFinanceSection });
   const financeStudentsQuery = useGetFinanceStudentsQuery(financeStudentsParams, { skip: !isFinanceSection });
   const financeSummaryQuery = useGetFinanceStudentsQuery(financeSummaryParams, { skip: !isFinanceSection });
-  const shouldLoadSubjects = isTeachersSection || isStudentsSection || isJadvalSection || isArchiveSection;
+  const shouldLoadSubjects = isTeachersSection || isStudentsSection || isJadvalSection || isArchiveSection || isPayrollSection;
   const shouldLoadClassrooms =
-    isTeachersSection || isStudentsSection || isJadvalSection || isAttendanceSection || isFinanceSection || isArchiveSection;
+    isTeachersSection || isStudentsSection || isJadvalSection || isAttendanceSection || isFinanceSection || isArchiveSection || isPayrollSection;
   const subjectsQuery = useGetSubjectsQuery(undefined, { skip: !shouldLoadSubjects });
   const classroomsQuery = useGetClassroomsQuery(undefined, { skip: !shouldLoadClassrooms });
   const scheduleTeachersQuery = useGetTeachersQuery(
@@ -503,6 +505,10 @@ export default function AdminWorkspace({ section }) {
           onExportDebtors={handleExportFinanceDebtors}
           exporting={exporting}
         />
+      )}
+
+      {isPayrollSection && (
+        <PayrollSection />
       )}
 
       {isTeachersSection && (

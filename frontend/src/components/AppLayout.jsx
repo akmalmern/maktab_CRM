@@ -202,6 +202,11 @@ export default function AppLayout() {
           icon: "M3 7h18M6 4h12v6H6V4Zm-2 8h16a2 2 0 0 1 2 2v6H2v-6a2 2 0 0 1 2-2Zm6 3h4",
         },
         {
+          to: "/admin/oylik",
+          label: t("Oyliklar"),
+          icon: "M4 7h16M7 4h10v4H7V4Zm-3 7h18v9H4v-9Zm4 3h8M8 17h5",
+        },
+        {
           to: "/admin/arxiv",
           label: t("Arxiv"),
           icon: "M4 7h16v12H4zM9 11h6M9 15h6M7 3h10v4H7z",
@@ -227,6 +232,11 @@ export default function AppLayout() {
           to: "/teacher/baholar",
           label: t("Baholar"),
           icon: "M12 3v18M3 12h18",
+        },
+        {
+          to: "/teacher/oyliklar",
+          label: t("Oyliklar"),
+          icon: "M4 7h16M7 4h10v4H7V4Zm-3 7h18v9H4v-9Zm4 3h8M8 17h5",
         },
       ],
       STUDENT: [
@@ -262,6 +272,11 @@ export default function AppLayout() {
           label: t("Qarzdorlar"),
           icon: "M3 7h18M6 4h12v6H6V4Zm-2 8h16a2 2 0 0 1 2 2v6H2v-6a2 2 0 0 1 2-2Zm6 3h4",
         },
+        {
+          to: "/manager/oylik",
+          label: t("Oyliklar"),
+          icon: "M4 7h16M7 4h10v4H7V4Zm-3 7h18v9H4v-9Zm4 3h8M8 17h5",
+        },
       ],
     }),
     [t],
@@ -281,6 +296,8 @@ export default function AppLayout() {
       "dars-jadval": t("Dars Jadvali"),
       davomat: t("Davomat"),
       moliya: t("Moliya"),
+      oylik: t("Oyliklar"),
+      oyliklar: t("Oyliklar"),
       arxiv: t("Arxiv"),
       baholar: t("Baholar"),
       jadval: t("Dars Jadvali"),

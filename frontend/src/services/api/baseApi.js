@@ -45,6 +45,10 @@ export const baseApi = createApi({
     'FinanceStudents',
     'FinanceStudentDetail',
     'PersonDetail',
+    'PayrollRun',
+    'PayrollRate',
+    'PayrollRealLesson',
+    'PayrollPayslip',
   ],
   endpoints: () => ({}),
 });
