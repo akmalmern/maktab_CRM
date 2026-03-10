@@ -3,6 +3,7 @@ const { asyncHandler } = require("../middlewares/asyncHandler");
 const { requireAuth, requireRole } = require("../middlewares/auth");
 const {
   uploadAvatar,
+  verifyUploadedAvatarSignature,
   handleMulterErrors,
 } = require("../middlewares/avatarUpload");
 
@@ -14,6 +15,7 @@ router.post(
   requireAuth,
   requireRole("ADMIN"),
   uploadAvatar.single("file"),
+  verifyUploadedAvatarSignature,
   handleMulterErrors,
   asyncHandler(c.adminUploadAvatar),
 );

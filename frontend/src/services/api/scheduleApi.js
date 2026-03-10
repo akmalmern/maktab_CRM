@@ -63,6 +63,34 @@ export const scheduleApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: [{ type: 'Schedule', id: 'LIST' }],
     }),
+    getAdminTeacherWorkloadPlans: builder.query({
+      query: (params = {}) => ({
+        path: '/api/admin/teacher-workload-plans',
+        query: params,
+      }),
+      providesTags: (result) => {
+        const rows = result?.plans || [];
+        return [
+          { type: 'ScheduleWorkload', id: 'LIST' },
+          ...rows.map((row) => ({ type: 'ScheduleWorkload', id: row.id })),
+        ];
+      },
+    }),
+    upsertAdminTeacherWorkloadPlan: builder.mutation({
+      query: (payload) => ({
+        path: '/api/admin/teacher-workload-plans',
+        method: 'PUT',
+        body: payload,
+      }),
+      invalidatesTags: [{ type: 'ScheduleWorkload', id: 'LIST' }],
+    }),
+    deleteAdminTeacherWorkloadPlan: builder.mutation({
+      query: (id) => ({
+        path: `/api/admin/teacher-workload-plans/${id}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: [{ type: 'ScheduleWorkload', id: 'LIST' }],
+    }),
   }),
 });
 
@@ -74,4 +102,7 @@ export const {
   useCreateAdminDarsJadvaliMutation,
   useDeleteAdminDarsJadvaliMutation,
   useUpdateAdminDarsJadvaliMutation,
+  useGetAdminTeacherWorkloadPlansQuery,
+  useUpsertAdminTeacherWorkloadPlanMutation,
+  useDeleteAdminTeacherWorkloadPlanMutation,
 } = scheduleApi;

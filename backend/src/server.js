@@ -1,8 +1,10 @@
 require("dotenv").config();
+const { env } = require("./config/env");
 const app = require("./app");
 const { applyAnnualPromotion } = require("./services/classroomPromotionService");
 
-const PORT = process.env.PORT || 5000;
+const PORT = env.PORT;
+const ENABLE_AUTO_CLASS_PROMOTION = env.ENABLE_AUTO_CLASS_PROMOTION;
 
 async function runAutoClassroomPromotion() {
   try {
@@ -26,6 +28,8 @@ async function runAutoClassroomPromotion() {
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
-  runAutoClassroomPromotion();
-  setInterval(runAutoClassroomPromotion, 12 * 60 * 60 * 1000);
+  if (ENABLE_AUTO_CLASS_PROMOTION) {
+    runAutoClassroomPromotion();
+    setInterval(runAutoClassroomPromotion, 12 * 60 * 60 * 1000);
+  }
 });

@@ -41,14 +41,22 @@ test("resolvePaymentAmount returns expected summa when not provided", () => {
   assert.equal(amount, 600000);
 });
 
-test("resolvePaymentAmount rejects mismatched summa", () => {
+test("resolvePaymentAmount allows partial payment when requested summa is lower", () => {
+  const amount = resolvePaymentAmount({
+    expectedSumma: 600000,
+    requestedSumma: 500000,
+  });
+  assert.equal(amount, 500000);
+});
+
+test("resolvePaymentAmount rejects summa above expected", () => {
   assert.throws(
     () =>
       resolvePaymentAmount({
         expectedSumma: 600000,
-        requestedSumma: 500000,
+        requestedSumma: 700000,
       }),
-    { code: "PAYMENT_AMOUNT_MISMATCH" },
+    { code: "PAYMENT_AMOUNT_EXCEEDS_REMAINING" },
   );
 });
 

@@ -41,6 +41,10 @@ const {
   mapTarifAuditRow: mapTarifAuditRowShared,
 } = require("../shared/tarifMappers");
 const { utcDateToTashkentIsoDate } = require("../../../../utils/tashkentTime");
+const {
+  resolveManagerScopedClassroomFilter,
+  ensureManagerCanAccessStudent,
+} = require("../../../../services/managerScopeService");
 
 const DEFAULT_OYLIK_SUMMA = 300000;
 const DEFAULT_TOLOV_OYLAR_SONI = 10;
@@ -212,8 +216,8 @@ function mapImtiyozRow(row) {
   return mapImtiyozRowShared(row, { safeFormatMonthKey, monthKeyToSerial });
 }
 
-function buildWhereSql({ search, classroomId }) {
-  return buildWhereSqlShared({ search, classroomId });
+function buildWhereSql({ search, classroomId, classroomIds }) {
+  return buildWhereSqlShared({ search, classroomId, classroomIds });
 }
 
 function buildStatusSql(status) {
@@ -231,14 +235,18 @@ function buildDebtMonthSql(debtMonth, debtTargetMonth) {
 async function fetchFinancePageRows({
   search,
   classroomId,
+  classroomIds,
+  status = "ALL",
+  debtMonth = "ALL",
   debtTargetMonth,
   page,
   limit,
   settings,
+  syncMajburiyat = true,
 }) {
-  const whereSql = buildWhereSql({ search, classroomId });
-  const statusSql = buildStatusSql();
-  const debtMonthSql = buildDebtMonthSql();
+  const whereSql = buildWhereSql({ search, classroomId, classroomIds });
+  const statusSql = buildStatusSql(status);
+  const debtMonthSql = buildDebtMonthSql(debtMonth, debtTargetMonth);
   const offset = (page - 1) * limit;
   const targetYear = debtTargetMonth?.year || null;
   const targetMonth = debtTargetMonth?.month || null;
@@ -373,7 +381,7 @@ async function fetchFinancePageRows({
 
   const total = rawRows[0]?.__total || 0;
   const studentIds = rawRows.map((row) => row.id);
-  if (studentIds.length) {
+  if (syncMajburiyat && studentIds.length) {
     await syncStudentOyMajburiyatlar({
       studentIds,
       oylikSumma: settings.oylikSumma,
@@ -426,6 +434,7 @@ async function fetchFinancePageRows({
 async function fetchFinanceSummary({
   search,
   classroomId,
+  classroomIds,
   status,
   debtMonth,
   debtTargetMonth,
@@ -438,6 +447,7 @@ async function fetchFinanceSummary({
     : await fetchAllFinanceRows({
         search,
         classroomId,
+        classroomIds,
         settings,
       });
   const now = new Date();
@@ -649,7 +659,15 @@ async function fetchFinanceSummary({
   };
 }
 
-async function fetchAllFinanceRows({ search, classroomId, settings }) {
+async function fetchAllFinanceRows({
+  search,
+  classroomId,
+  classroomIds,
+  status = "ALL",
+  debtMonth = "ALL",
+  debtTargetMonth = null,
+  settings,
+}) {
   const limit = 500;
   let page = 1;
   let total = 0;
@@ -659,9 +677,14 @@ async function fetchAllFinanceRows({ search, classroomId, settings }) {
     const result = await fetchFinancePageRows({
       search,
       classroomId,
+      classroomIds,
+      status,
+      debtMonth,
+      debtTargetMonth,
       page,
       limit,
       settings,
+      syncMajburiyat: false,
     });
     total = result.total;
     all.push(...result.items);
@@ -999,44 +1022,59 @@ async function getFinanceStudents(req, res) {
   const limit = Math.min(parseIntSafe(req.query.limit, 20), 100);
   const search = String(req.query.search || "").trim();
   const status = req.query.status || "ALL";
-  const classroomId = req.query.classroomId || null;
+  const requestedClassroomId = req.query.classroomId || null;
   const debtMonth = req.query.debtMonth || "ALL";
   const debtTargetMonth = parseDebtTargetMonth(req.query.debtTargetMonth);
   const cashflowMonth = parseDebtTargetMonth(req.query.cashflowMonth);
+  const scopedClassroom = req.user?.role === "MANAGER"
+    ? await resolveManagerScopedClassroomFilter({
+        managerUserId: req.user.sub,
+        requestedClassroomId,
+      })
+    : {
+        classroomId: requestedClassroomId,
+        classroomIds: null,
+      };
+  const classroomId = scopedClassroom.classroomId;
+  const classroomIds = scopedClassroom.classroomIds;
 
   const settings = await getOrCreateSettings();
-  const allRows = await fetchAllFinanceRows({
+  const pageResult = await fetchFinancePageRows({
     search,
     classroomId,
-    settings,
-  });
-  const filteredRows = filterFinanceRowsByQuery(allRows, {
+    classroomIds,
     status,
     debtMonth,
     debtTargetMonth,
+    page,
+    limit,
+    settings,
   });
-  const total = filteredRows.length;
-  const pages = Math.ceil(total / limit);
-  const offset = (page - 1) * limit;
-  const resultItems = filteredRows.slice(offset, offset + limit);
+  const summaryRows = await fetchAllFinanceRows({
+    search,
+    classroomId,
+    classroomIds,
+    settings,
+  });
 
   const summary = await fetchFinanceSummary({
     search,
     classroomId,
+    classroomIds,
     status,
     debtMonth,
     debtTargetMonth,
     cashflowMonth,
     settings,
-    rows: allRows,
+    rows: summaryRows,
   });
 
   res.json({
     ok: true,
     page,
     limit,
-    total,
-    pages,
+    total: pageResult.total,
+    pages: pageResult.pages,
     settings: {
       oylikSumma: settings.oylikSumma,
       yillikSumma: settings.yillikSumma,
@@ -1045,7 +1083,7 @@ async function getFinanceStudents(req, res) {
       faolTarifId: settings.faolTarifId || null,
     },
     summary,
-    students: resultItems,
+    students: pageResult.items,
   });
 }
 
@@ -1129,6 +1167,13 @@ async function exportDebtorsPdf(req, res) {
 
 async function getStudentFinanceDetail(req, res) {
   const { studentId } = req.params;
+  if (req.user?.role === "MANAGER") {
+    await ensureManagerCanAccessStudent({
+      managerUserId: req.user.sub,
+      studentId,
+    });
+  }
+
   const settings = await getOrCreateSettings();
 
   const student = await prisma.student.findUnique({
@@ -1273,6 +1318,13 @@ async function getStudentFinanceDetail(req, res) {
 
 async function createStudentImtiyoz(req, res) {
   const { studentId } = req.params;
+  if (req.user?.role === "MANAGER") {
+    await ensureManagerCanAccessStudent({
+      managerUserId: req.user.sub,
+      studentId,
+    });
+  }
+
   const { turi, qiymat, boshlanishOy, oylarSoni, sabab, izoh } = req.body;
   const { boshlanishYil, boshlanishOyRaqam } = parseImtiyozStartPartsFromKey(
     boshlanishOy,
@@ -1363,6 +1415,12 @@ async function deactivateStudentImtiyoz(req, res) {
   });
   if (!existing) {
     throw new ApiError(404, "IMTIYOZ_NOT_FOUND", "Imtiyoz topilmadi");
+  }
+  if (req.user?.role === "MANAGER") {
+    await ensureManagerCanAccessStudent({
+      managerUserId: req.user.sub,
+      studentId: existing.studentId,
+    });
   }
   if (!existing.isActive) {
     throw new ApiError(
@@ -1703,6 +1761,13 @@ async function buildPaymentAllocationPreview({
 
 async function createStudentPayment(req, res) {
   const { studentId } = req.params;
+  if (req.user?.role === "MANAGER") {
+    await ensureManagerCanAccessStudent({
+      managerUserId: req.user.sub,
+      studentId,
+    });
+  }
+
   const settings = await getOrCreateSettings();
   const { startMonth, turi, requestedMonthsRaw, requestedSumma, idempotencyKey } =
     getPaymentRequestInput(req);
@@ -1825,6 +1890,13 @@ async function createStudentPayment(req, res) {
 
 async function previewStudentPayment(req, res) {
   const { studentId } = req.params;
+  if (req.user?.role === "MANAGER") {
+    await ensureManagerCanAccessStudent({
+      managerUserId: req.user.sub,
+      studentId,
+    });
+  }
+
   const settings = await getOrCreateSettings();
   const { startMonth, turi, requestedMonthsRaw, requestedSumma } =
     getPaymentRequestInput(req);
@@ -1905,6 +1977,12 @@ async function revertPayment(req, res) {
 
   if (!txn) {
     throw new ApiError(404, "PAYMENT_NOT_FOUND", "To'lov topilmadi");
+  }
+  if (req.user?.role === "MANAGER") {
+    await ensureManagerCanAccessStudent({
+      managerUserId: req.user.sub,
+      studentId: txn.studentId,
+    });
   }
   if (txn.holat === "BEKOR_QILINGAN") {
     throw new ApiError(

@@ -1,20 +1,45 @@
 const { ApiError } = require("../utils/apiError");
 
+function normalizeIp(req) {
+  const xff = req?.headers?.["x-forwarded-for"];
+  if (typeof xff === "string" && xff.trim()) {
+    return xff.split(",")[0].trim();
+  }
+  return req?.ip || req?.socket?.remoteAddress || "unknown";
+}
+
 function createMemoryRateLimiter({
   windowMs,
   max,
   code = "RATE_LIMITED",
   message = "Juda ko'p so'rov yuborildi",
   keyGenerator,
+  sweepEvery = 200,
 }) {
   const store = new Map();
   const resolveKey =
     keyGenerator ||
-    ((req) => req.ip || req.headers["x-forwarded-for"] || "unknown");
+    ((req) => normalizeIp(req));
+
+  let hits = 0;
+
+  function sweepExpired(now) {
+    for (const [key, value] of store.entries()) {
+      if (!value || now > value.resetAt) {
+        store.delete(key);
+      }
+    }
+  }
 
   return function rateLimit(req, res, next) {
-    const key = resolveKey(req);
+    const key = String(resolveKey(req) || "unknown");
     const now = Date.now();
+
+    hits += 1;
+    if (hits % sweepEvery === 0) {
+      sweepExpired(now);
+    }
+
     const entry = store.get(key);
 
     if (!entry || now > entry.resetAt) {
@@ -36,16 +61,22 @@ function createMemoryRateLimiter({
 
 const loginRateLimit = createMemoryRateLimiter({
   windowMs: 10 * 60 * 1000,
-  max: 20,
+  max: 12,
   code: "LOGIN_RATE_LIMIT",
   message: "Juda ko'p login urinishlari. Keyinroq qayta urinib ko'ring.",
+  keyGenerator: (req) => {
+    const ip = normalizeIp(req);
+    const username = String(req?.body?.username || "").trim().toLowerCase() || "_";
+    return `${ip}:${username}`;
+  },
 });
 
 const refreshRateLimit = createMemoryRateLimiter({
   windowMs: 10 * 60 * 1000,
-  max: 60,
+  max: 40,
   code: "REFRESH_RATE_LIMIT",
   message: "Token yangilash so'rovlari haddan oshdi.",
+  keyGenerator: (req) => normalizeIp(req),
 });
 
 module.exports = {

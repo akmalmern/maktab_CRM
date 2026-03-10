@@ -10,7 +10,11 @@ function buildStudentToken() {
   return jwt.sign(
     { sub: "user-student-1", role: "STUDENT" },
     process.env.JWT_ACCESS_SECRET,
-    { expiresIn: "1h" },
+    {
+      expiresIn: "1h",
+      issuer: process.env.JWT_ISSUER || "maktab-crm",
+      audience: process.env.JWT_AUDIENCE || "maktab-crm-users",
+    },
   );
 }
 

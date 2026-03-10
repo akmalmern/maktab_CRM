@@ -12,6 +12,7 @@ const attendance = require("../controllers/admin/attendanceController");
 const grades = require("../controllers/admin/gradeController");
 const finance = require("../controllers/admin/financeController");
 const payroll = require("../controllers/admin/payrollController");
+const managerScope = require("../controllers/admin/managerScopeController");
 const {
   createTeacherSchema,
   createStudentSchema,
@@ -30,6 +31,8 @@ const {
   createDarsJadvaliSchema,
   updateDarsJadvaliSchema,
   listDarsJadvaliQuerySchema,
+  listTeacherWorkloadPlansQuerySchema,
+  upsertTeacherWorkloadPlanSchema,
   idParamSchema,
 } = require("../validators/jadvalSchemas");
 const { adminHisobotQuerySchema } = require("../validators/attendanceSchemas");
@@ -48,6 +51,10 @@ const {
   financeTarifRollbackSchema,
 } = require("../validators/financeSchemas");
 const {
+  managerUserIdParamSchema,
+  replaceManagerClassroomAccessSchema,
+} = require("../validators/managerScopeSchemas");
+const {
   payrollRunIdParamSchema,
   payrollLineIdParamSchema,
   realLessonIdParamSchema,
@@ -61,6 +68,7 @@ const {
   listSubjectDefaultRatesQuerySchema,
   createRealLessonSchema,
   updateRealLessonStatusSchema,
+  bulkUpdateRealLessonStatusSchema,
   listRealLessonsQuerySchema,
   generatePayrollRunSchema,
   listPayrollRunsQuerySchema,
@@ -276,6 +284,29 @@ router.delete(
   asyncHandler(jadval.deleteDarsJadvali),
 );
 
+// Jadval: o'qituvchi haftalik yuklama (o'quv yili bo'yicha)
+router.get(
+  "/teacher-workload-plans",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ query: listTeacherWorkloadPlansQuerySchema }),
+  asyncHandler(jadval.listTeacherWorkloadPlans),
+);
+router.put(
+  "/teacher-workload-plans",
+  requireAuth,
+  requireRole("ADMIN"),
+  validateBody(upsertTeacherWorkloadPlanSchema),
+  asyncHandler(jadval.upsertTeacherWorkloadPlan),
+);
+router.delete(
+  "/teacher-workload-plans/:id",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: idParamSchema }),
+  asyncHandler(jadval.deleteTeacherWorkloadPlan),
+);
+
 router.get(
   "/davomat/hisobot",
   requireAuth,
@@ -304,6 +335,30 @@ router.get(
   requireRole("ADMIN"),
   validate({ query: listBaholarQuerySchema }),
   asyncHandler(grades.getAdminBaholar),
+);
+
+router.get(
+  "/managers",
+  requireAuth,
+  requireRole("ADMIN"),
+  asyncHandler(managerScope.listManagers),
+);
+router.get(
+  "/managers/:managerUserId/classroom-access",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: managerUserIdParamSchema }),
+  asyncHandler(managerScope.getManagerClassroomAccess),
+);
+router.put(
+  "/managers/:managerUserId/classroom-access",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({
+    params: managerUserIdParamSchema,
+    body: replaceManagerClassroomAccessSchema,
+  }),
+  asyncHandler(managerScope.replaceManagerClassroomAccess),
 );
 
 router.get(
@@ -404,6 +459,13 @@ router.post(
   requireRole("ADMIN"),
   validateBody(createRealLessonSchema),
   asyncHandler(payroll.createRealLesson),
+);
+router.patch(
+  "/moliya/oylik/real-lessons/bulk-status",
+  requireAuth,
+  requireRole("ADMIN"),
+  validateBody(bulkUpdateRealLessonStatusSchema),
+  asyncHandler(payroll.bulkUpdateRealLessonStatus),
 );
 router.patch(
   "/moliya/oylik/real-lessons/:lessonId/status",

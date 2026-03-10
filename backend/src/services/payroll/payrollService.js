@@ -1,7 +1,7 @@
 const prisma = require("../../prisma");
 const { Prisma } = require("@prisma/client");
 const { ApiError } = require("../../utils/apiError");
-const { localDayStartUtc } = require("../../utils/tashkentTime");
+const { localDayStartUtc, utcDateToTashkentIsoDate } = require("../../utils/tashkentTime");
 
 const MAIN_ORG_KEY = "MAIN";
 const MAIN_ORG_NAME = "Asosiy tashkilot";
@@ -375,6 +375,24 @@ async function createRealLesson({ body, actorUserId, req }) {
         throw new ApiError(409, "REAL_LESSON_SCHEDULE_MISMATCH", "Real lesson dars jadvali bilan mos emas");
       }
     }
+    if (body.darsJadvaliId) {
+      const duplicateBySchedule = await tx.realLesson.findFirst({
+        where: {
+          organizationId: org.id,
+          darsJadvaliId: body.darsJadvaliId,
+          startAt: body.startAt,
+        },
+        select: { id: true },
+      });
+      if (duplicateBySchedule) {
+        throw new ApiError(
+          409,
+          "REAL_LESSON_DUPLICATE",
+          "Bu jadval uchun shu vaqtga RealLesson allaqachon mavjud",
+          { realLessonId: duplicateBySchedule.id },
+        );
+      }
+    }
     const durationMinutes = computeDurationMinutes(body.startAt, body.endAt, body.durationMinutes);
     const lesson = await tx.realLesson.create({
       data: {
@@ -450,6 +468,102 @@ async function updateRealLessonStatus({ lessonId, body, actorUserId, req }) {
       req,
     });
     return { lesson };
+  });
+}
+
+async function bulkUpdateRealLessonStatus({ body, actorUserId, req }) {
+  return prisma.$transaction(async (tx) => {
+    const org = await ensureMainOrganization(tx);
+    const lessonIds = [...new Set((body.lessonIds || []).filter(Boolean))];
+    if (!lessonIds.length) {
+      throw new ApiError(400, "REAL_LESSON_IDS_REQUIRED", "lessonIds bo'sh bo'lmasligi kerak");
+    }
+
+    if (body.replacedByTeacherId) {
+      await assertTeacherExists(tx, body.replacedByTeacherId);
+    }
+
+    const lessons = await tx.realLesson.findMany({
+      where: { organizationId: org.id, id: { in: lessonIds } },
+      select: {
+        id: true,
+        status: true,
+        note: true,
+        replacedByTeacherId: true,
+        payrollLines: { select: { id: true }, take: 1 },
+      },
+    });
+    const byId = new Map(lessons.map((row) => [row.id, row]));
+
+    const updated = [];
+    const skipped = [];
+
+    for (const lessonId of lessonIds) {
+      const before = byId.get(lessonId);
+      if (!before) {
+        skipped.push({ lessonId, code: "REAL_LESSON_NOT_FOUND", reason: "Real lesson topilmadi" });
+        continue;
+      }
+      if (before.payrollLines?.length) {
+        skipped.push({
+          lessonId,
+          code: "REAL_LESSON_LOCKED_BY_PAYROLL",
+          reason: "Dars payrollga tushgan. Statusni o'zgartirib bo'lmaydi",
+        });
+        continue;
+      }
+
+      const lesson = await tx.realLesson.update({
+        where: { id: lessonId },
+        data: {
+          status: body.status,
+          replacedByTeacherId: body.replacedByTeacherId || null,
+          note: body.note === undefined ? undefined : cleanOptional(body.note) || null,
+        },
+        select: {
+          id: true,
+          status: true,
+          note: true,
+          replacedByTeacherId: true,
+        },
+      });
+      updated.push({
+        lessonId: lesson.id,
+        before: { status: before.status, replacedByTeacherId: before.replacedByTeacherId, note: before.note },
+        after: { status: lesson.status, replacedByTeacherId: lesson.replacedByTeacherId, note: lesson.note },
+      });
+    }
+
+    await createAuditLog(tx, {
+      organizationId: org.id,
+      actorUserId,
+      action: "REAL_LESSON_STATUS_BULK_UPDATE",
+      entityType: "REAL_LESSON_BULK",
+      entityId: `BULK_${Date.now()}`,
+      before: {
+        selectedCount: lessonIds.length,
+      },
+      after: {
+        status: body.status,
+        replacedByTeacherId: body.replacedByTeacherId || null,
+        noteProvided: body.note !== undefined,
+        updatedCount: updated.length,
+        skippedCount: skipped.length,
+        updatedLessonIds: updated.slice(0, 100).map((row) => row.lessonId),
+        skipped: skipped.slice(0, 100),
+      },
+      req,
+    });
+
+    return {
+      summary: {
+        selectedCount: lessonIds.length,
+        updatedCount: updated.length,
+        skippedCount: skipped.length,
+      },
+      updatedLessonIds: updated.map((row) => row.lessonId),
+      skipped,
+    };
   });
 }
 
@@ -763,7 +877,14 @@ function rateMatchesAt(rate, at) {
 }
 
 async function loadRatesForPeriod(tx, { organizationId, lessons, periodStart, periodEnd }) {
-  const teacherIds = [...new Set(lessons.map((l) => l.teacherId))];
+  // REPLACED darslarda hisob replacement teacher orqali yuradi, shuning uchun ikkalasini preload qilamiz.
+  const teacherIds = [
+    ...new Set(
+      lessons
+        .flatMap((lesson) => [lesson.teacherId, lesson.replacedByTeacherId])
+        .filter(Boolean),
+    ),
+  ];
   const subjectIds = [...new Set(lessons.map((l) => l.subjectId))];
   const commonOverlap = {
     organizationId,
@@ -836,33 +957,24 @@ function calcLessonAmount(ratePerHour, minutes) {
   return money(decimal(ratePerHour).mul(decimal(minutes)).div(60));
 }
 
+function resolvePayrollTeacherIdForLesson(lesson) {
+  if (lesson.status === "REPLACED") {
+    if (!lesson.replacedByTeacherId) {
+      throw new ApiError(
+        409,
+        "REAL_LESSON_REPLACED_TEACHER_REQUIRED",
+        "REPLACED statusdagi darsda replacedByTeacherId bo'lishi kerak",
+        { realLessonId: lesson.id },
+      );
+    }
+    return lesson.replacedByTeacherId;
+  }
+  return lesson.teacherId;
+}
+
 async function getOrCreatePayrollItem(tx, { organizationId, payrollRunId, teacherId = null, employeeId = null }) {
   if (!teacherId && !employeeId) {
     throw new ApiError(400, "PAYROLL_ITEM_OWNER_REQUIRED", "Payroll item uchun teacherId yoki employeeId kerak");
-  }
-
-  let item = null;
-  if (employeeId) {
-    item = await tx.payrollItem.findUnique({
-      where: { payrollRunId_employeeId: { payrollRunId, employeeId } },
-      select: { id: true, teacherId: true, employeeId: true },
-    });
-  }
-  if (!item && teacherId) {
-    item = await tx.payrollItem.findUnique({
-      where: { payrollRunId_teacherId: { payrollRunId, teacherId } },
-      select: { id: true, teacherId: true, employeeId: true },
-    });
-  }
-  if (item) {
-    if (employeeId && !item.employeeId) {
-      item = await tx.payrollItem.update({
-        where: { id: item.id },
-        data: { employeeId },
-        select: { id: true, teacherId: true, employeeId: true },
-      });
-    }
-    return item;
   }
 
   let employee = null;
@@ -895,22 +1007,82 @@ async function getOrCreatePayrollItem(tx, { organizationId, payrollRunId, teache
     if (!teacher) throw new ApiError(404, "TEACHER_NOT_FOUND", "Teacher topilmadi");
   }
 
+  if (employee?.teacher?.id && teacherId && employee.teacher.id !== teacherId) {
+    throw new ApiError(
+      409,
+      "PAYROLL_ITEM_OWNER_MISMATCH",
+      "employeeId va teacherId bir-biriga mos emas",
+      { employeeId: employee.id, employeeTeacherId: employee.teacher.id, teacherId },
+    );
+  }
+
+  let item = null;
+  if (employeeId) {
+    item = await tx.payrollItem.findUnique({
+      where: { payrollRunId_employeeId: { payrollRunId, employeeId } },
+      select: { id: true, teacherId: true, employeeId: true },
+    });
+  }
+  if (!item && teacherId) {
+    item = await tx.payrollItem.findUnique({
+      where: { payrollRunId_teacherId: { payrollRunId, teacherId } },
+      select: { id: true, teacherId: true, employeeId: true },
+    });
+  }
+  if (item) {
+    const patch = {};
+    if (employeeId && item.employeeId !== employeeId) patch.employeeId = employeeId;
+    if (teacherId && item.teacherId !== teacherId) patch.teacherId = teacherId;
+    if (Object.keys(patch).length) {
+      try {
+        item = await tx.payrollItem.update({
+          where: { id: item.id },
+          data: patch,
+          select: { id: true, teacherId: true, employeeId: true },
+        });
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+          throw new ApiError(
+            409,
+            "PAYROLL_ITEM_OWNER_CONFLICT",
+            "Payroll item owner update qilishda konflikt bo'ldi",
+            { payrollRunId, teacherId, employeeId },
+          );
+        }
+        throw error;
+      }
+    }
+    return item;
+  }
+
   const firstName = employee?.firstName || teacher?.firstName || null;
   const lastName = employee?.lastName || teacher?.lastName || null;
   const username = employee?.user?.username || teacher?.user?.username || null;
 
-  item = await tx.payrollItem.create({
-    data: {
-      organizationId,
-      payrollRunId,
-      employeeId: employeeId || null,
-      teacherId: teacherId || null,
-      teacherFirstNameSnapshot: firstName,
-      teacherLastNameSnapshot: lastName,
-      teacherUsernameSnapshot: username,
-    },
-    select: { id: true, teacherId: true, employeeId: true },
-  });
+  try {
+    item = await tx.payrollItem.create({
+      data: {
+        organizationId,
+        payrollRunId,
+        employeeId: employeeId || null,
+        teacherId: teacherId || null,
+        teacherFirstNameSnapshot: firstName,
+        teacherLastNameSnapshot: lastName,
+        teacherUsernameSnapshot: username,
+      },
+      select: { id: true, teacherId: true, employeeId: true },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new ApiError(
+        409,
+        "PAYROLL_ITEM_OWNER_CONFLICT",
+        "Payroll item create qilishda owner konflikti yuz berdi",
+        { payrollRunId, teacherId, employeeId },
+      );
+    }
+    throw error;
+  }
   return item;
 }
 
@@ -1088,10 +1260,233 @@ async function getActiveRunForPeriod(tx, { organizationId, periodMonth }) {
   return runs[0] || null;
 }
 
+function periodMonthFromLessonStart(startAt) {
+  const localDate = utcDateToTashkentIsoDate(startAt);
+  const periodMonth = String(localDate || "").slice(0, 7);
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodMonth)) {
+    throw new ApiError(400, "INVALID_PERIOD_MONTH", "RealLesson sanasidan periodMonth ajratib bo'lmadi");
+  }
+  return periodMonth;
+}
+
+async function refreshDraftPayrollForLesson({ lessonId, actorUserId, req }) {
+  return prisma.$transaction(async (tx) => {
+    const org = await ensureMainOrganization(tx);
+    const lesson = await tx.realLesson.findFirst({
+      where: { id: lessonId, organizationId: org.id },
+      select: {
+        id: true,
+        teacherId: true,
+        status: true,
+        replacedByTeacherId: true,
+        subjectId: true,
+        classroomId: true,
+        startAt: true,
+        durationMinutes: true,
+        teacher: { select: { userId: true } },
+      },
+    });
+    if (!lesson) throw new ApiError(404, "REAL_LESSON_NOT_FOUND", "Real lesson topilmadi");
+
+    const periodMonth = periodMonthFromLessonStart(lesson.startAt);
+    const { periodStart, periodEnd } = monthKeyToUtcRange(periodMonth);
+    const lessonEligible = lesson.status === "DONE" || lesson.status === "REPLACED";
+
+    // Org-level lock to avoid duplicate run/line writes in parallel refresh calls.
+    await tx.$executeRaw`SELECT id FROM "Organization" WHERE id = ${org.id} FOR UPDATE`;
+
+    let run = await getActiveRunForPeriod(tx, { organizationId: org.id, periodMonth });
+    if (run && run.status !== "DRAFT") {
+      throw new ApiError(409, "PAYROLL_RUN_LOCKED", `Bu oy uchun payroll run ${run.status} holatida`);
+    }
+
+    if (!run && !lessonEligible) {
+      return {
+        runId: null,
+        periodMonth,
+        lessonId: lesson.id,
+        refreshed: false,
+        skipped: true,
+        reason: "LESSON_NOT_PAYROLL_ELIGIBLE",
+      };
+    }
+
+    if (!run) {
+      const createdByUserId = actorUserId || lesson.teacher?.userId || null;
+      if (!createdByUserId) {
+        throw new ApiError(
+          400,
+          "PAYROLL_RUN_ACTOR_REQUIRED",
+          "Payroll run yaratish uchun actorUserId topilmadi",
+        );
+      }
+      run = await tx.payrollRun.create({
+        data: {
+          organizationId: org.id,
+          periodMonth,
+          periodStart,
+          periodEnd,
+          timezone: "Asia/Tashkent",
+          status: "DRAFT",
+          createdByUserId,
+        },
+      });
+      await createAuditLog(tx, {
+        organizationId: org.id,
+        actorUserId: createdByUserId,
+        action: "PAYROLL_RUN_CREATE",
+        entityType: "PAYROLL_RUN",
+        entityId: run.id,
+        payrollRunId: run.id,
+        after: { periodMonth, periodStart, periodEnd, status: "DRAFT" },
+        req,
+      });
+    }
+
+    const existingLine = await tx.payrollLine.findFirst({
+      where: { payrollRunId: run.id, realLessonId: lesson.id },
+      select: { id: true },
+    });
+
+    let linePayload = null;
+    if (lessonEligible) {
+      const { teacherMap, subjectMap } = await loadRatesForPeriod(tx, {
+        organizationId: org.id,
+        lessons: [lesson],
+        periodStart,
+        periodEnd,
+      });
+      const payrollTeacherId = resolvePayrollTeacherIdForLesson(lesson);
+      const resolved = resolveRateForLesson({
+        lesson: { ...lesson, teacherId: payrollTeacherId },
+        teacherRateMap: teacherMap,
+        subjectDefaultRateMap: subjectMap,
+      });
+      if (!resolved) {
+        throw new ApiError(
+          409,
+          "PAYROLL_RATE_NOT_FOUND",
+          "Dars uchun rate topilmadi. Avval rate kiriting",
+          {
+            totalMissing: 1,
+            missingRateLessons: [
+              {
+                realLessonId: lesson.id,
+                teacherId: payrollTeacherId,
+                sourceTeacherId: lesson.teacherId,
+                status: lesson.status,
+                replacedByTeacherId: lesson.replacedByTeacherId || null,
+                subjectId: lesson.subjectId,
+                classroomId: lesson.classroomId,
+                startAt: lesson.startAt,
+              },
+            ],
+          },
+        );
+      }
+      const owner = await ensureEmployeeForTeacher(tx, {
+        teacherId: payrollTeacherId,
+        organizationId: org.id,
+      });
+      const item = await getOrCreatePayrollItem(tx, {
+        organizationId: org.id,
+        payrollRunId: run.id,
+        teacherId: payrollTeacherId,
+        employeeId: owner.employee.id,
+      });
+      const amount = calcLessonAmount(resolved.ratePerHour, lesson.durationMinutes);
+      linePayload = {
+        organizationId: org.id,
+        payrollRunId: run.id,
+        payrollItemId: item.id,
+        employeeId: owner.employee.id,
+        teacherId: payrollTeacherId,
+        type: "LESSON",
+        realLessonId: lesson.id,
+        subjectId: lesson.subjectId,
+        classroomId: lesson.classroomId,
+        lessonStartAt: lesson.startAt,
+        minutes: lesson.durationMinutes,
+        ratePerHour: resolved.ratePerHour,
+        amount,
+        rateSource: resolved.rateSource,
+        teacherRateId: resolved.teacherRateId,
+        subjectDefaultRateId: resolved.subjectDefaultRateId,
+        createdByUserId: actorUserId || null,
+        meta: {
+          resolution: { rateSource: resolved.rateSource },
+          sourceTeacherId: lesson.teacherId,
+          lessonStatus: lesson.status,
+          replacedByTeacherId: lesson.replacedByTeacherId || null,
+        },
+      };
+    }
+
+    if (existingLine) {
+      await tx.payrollLine.delete({
+        where: { id: existingLine.id },
+      });
+    }
+    if (linePayload) {
+      await tx.payrollLine.create({ data: linePayload });
+    }
+
+    await recalculatePayrollRunAggregates(tx, { payrollRunId: run.id });
+
+    const beforeGeneratedAt = run.generatedAt;
+    const now = new Date();
+    await tx.payrollRun.update({
+      where: { id: run.id },
+      data: {
+        generatedAt: now,
+        generationSummary: {
+          mode: "INCREMENTAL_LESSON_REFRESH",
+          periodMonth,
+          lessonId: lesson.id,
+          refreshedAt: now.toISOString(),
+        },
+        ...(beforeGeneratedAt ? { calcVersion: { increment: 1 } } : {}),
+      },
+    });
+
+    await createAuditLog(tx, {
+      organizationId: org.id,
+      actorUserId: actorUserId || null,
+      action: "PAYROLL_RUN_REFRESH_LESSON",
+      entityType: "PAYROLL_RUN",
+      entityId: run.id,
+      payrollRunId: run.id,
+      before: {
+        generatedAt: beforeGeneratedAt || null,
+        hadExistingLine: Boolean(existingLine),
+      },
+      after: {
+        generatedAt: now,
+        lessonId: lesson.id,
+        lessonStatus: lesson.status,
+        lineUpserted: Boolean(linePayload),
+      },
+      req,
+    });
+
+    return {
+      runId: run.id,
+      periodMonth,
+      lessonId: lesson.id,
+      refreshed: true,
+      skipped: false,
+      reason: null,
+    };
+  });
+}
+
 async function generatePayrollRun({ body, actorUserId, req }) {
   return prisma.$transaction(async (tx) => {
     const org = await ensureMainOrganization(tx);
     const { periodMonth, periodStart, periodEnd } = monthKeyToUtcRange(body.periodMonth);
+
+    // Parallel generate chaqiriqlarida bitta oyga duplicate run ochilib ketmasligi uchun org-level lock.
+    await tx.$executeRaw`SELECT id FROM "Organization" WHERE id = ${org.id} FOR UPDATE`;
 
     let run = await getActiveRunForPeriod(tx, { organizationId: org.id, periodMonth });
     if (run && run.status !== "DRAFT") {
@@ -1127,13 +1522,15 @@ async function generatePayrollRun({ body, actorUserId, req }) {
     const lessons = await tx.realLesson.findMany({
       where: {
         organizationId: org.id,
-        status: "DONE",
+        status: { in: ["DONE", "REPLACED"] },
         startAt: { gte: periodStart, lt: periodEnd },
       },
       orderBy: [{ startAt: "asc" }, { createdAt: "asc" }],
       select: {
         id: true,
         teacherId: true,
+        status: true,
+        replacedByTeacherId: true,
         subjectId: true,
         classroomId: true,
         startAt: true,
@@ -1150,15 +1547,19 @@ async function generatePayrollRun({ body, actorUserId, req }) {
 
     const missingRateLessons = [];
     for (const lesson of lessons) {
+      const payrollTeacherId = resolvePayrollTeacherIdForLesson(lesson);
       const resolved = resolveRateForLesson({
-        lesson,
+        lesson: { ...lesson, teacherId: payrollTeacherId },
         teacherRateMap: teacherMap,
         subjectDefaultRateMap: subjectMap,
       });
       if (!resolved) {
         missingRateLessons.push({
           realLessonId: lesson.id,
-          teacherId: lesson.teacherId,
+          teacherId: payrollTeacherId,
+          sourceTeacherId: lesson.teacherId,
+          status: lesson.status,
+          replacedByTeacherId: lesson.replacedByTeacherId || null,
           subjectId: lesson.subjectId,
           classroomId: lesson.classroomId,
           startAt: lesson.startAt,
@@ -1186,34 +1587,35 @@ async function generatePayrollRun({ body, actorUserId, req }) {
     const teacherEmployeeCache = new Map();
 
     for (const lesson of lessons) {
-      let owner = teacherEmployeeCache.get(lesson.teacherId);
+      const payrollTeacherId = resolvePayrollTeacherIdForLesson(lesson);
+      let owner = teacherEmployeeCache.get(payrollTeacherId);
       if (!owner) {
         owner = await ensureEmployeeForTeacher(tx, {
-          teacherId: lesson.teacherId,
+          teacherId: payrollTeacherId,
           organizationId: org.id,
         });
-        teacherEmployeeCache.set(lesson.teacherId, owner);
+        teacherEmployeeCache.set(payrollTeacherId, owner);
       }
 
-      let item = itemCache.get(lesson.teacherId);
+      let item = itemCache.get(payrollTeacherId);
       if (!item) {
         item = await getOrCreatePayrollItem(tx, {
           organizationId: org.id,
           payrollRunId: run.id,
-          teacherId: lesson.teacherId,
+          teacherId: payrollTeacherId,
           employeeId: owner.employee.id,
         });
-        itemCache.set(lesson.teacherId, item);
+        itemCache.set(payrollTeacherId, item);
       } else if (!item.employeeId) {
         item = await tx.payrollItem.update({
           where: { id: item.id },
           data: { employeeId: owner.employee.id },
           select: { id: true, teacherId: true, employeeId: true },
         });
-        itemCache.set(lesson.teacherId, item);
+        itemCache.set(payrollTeacherId, item);
       }
       const resolved = resolveRateForLesson({
-        lesson,
+        lesson: { ...lesson, teacherId: payrollTeacherId },
         teacherRateMap: teacherMap,
         subjectDefaultRateMap: subjectMap,
       });
@@ -1224,7 +1626,7 @@ async function generatePayrollRun({ body, actorUserId, req }) {
           payrollRunId: run.id,
           payrollItemId: item.id,
           employeeId: owner.employee.id,
-          teacherId: lesson.teacherId,
+          teacherId: payrollTeacherId,
           type: "LESSON",
           realLessonId: lesson.id,
           subjectId: lesson.subjectId,
@@ -1237,7 +1639,12 @@ async function generatePayrollRun({ body, actorUserId, req }) {
           teacherRateId: resolved.teacherRateId,
           subjectDefaultRateId: resolved.subjectDefaultRateId,
           createdByUserId: actorUserId || null,
-          meta: { resolution: { rateSource: resolved.rateSource } },
+          meta: {
+            resolution: { rateSource: resolved.rateSource },
+            sourceTeacherId: lesson.teacherId,
+            lessonStatus: lesson.status,
+            replacedByTeacherId: lesson.replacedByTeacherId || null,
+          },
         },
       });
     }
@@ -1915,9 +2322,12 @@ async function getTeacherPayslipDetailByUserId({ userId, runId, query }) {
     });
     if (!item) throw new ApiError(404, "PAYSLIP_NOT_FOUND", "Payslip topilmadi");
 
+    const linesWhere = { payrollRunId: runId, teacherId: teacher.id };
+    if (query.type) linesWhere.type = query.type;
+
     const [items, total] = await Promise.all([
       tx.payrollLine.findMany({
-        where: { payrollRunId: runId, teacherId: teacher.id },
+        where: linesWhere,
         skip,
         take: limit,
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -1927,7 +2337,7 @@ async function getTeacherPayslipDetailByUserId({ userId, runId, query }) {
           realLesson: { select: { id: true, startAt: true, endAt: true, durationMinutes: true, status: true } },
         },
       }),
-      tx.payrollLine.count({ where: { payrollRunId: runId, teacherId: teacher.id } }),
+      tx.payrollLine.count({ where: linesWhere }),
     ]);
 
     return {
@@ -1948,6 +2358,7 @@ module.exports = {
   listRealLessons,
   createRealLesson,
   updateRealLessonStatus,
+  bulkUpdateRealLessonStatus,
   listTeacherRates,
   createTeacherRate,
   updateTeacherRate,
@@ -1956,6 +2367,7 @@ module.exports = {
   createSubjectDefaultRate,
   updateSubjectDefaultRate,
   deleteSubjectDefaultRate,
+  refreshDraftPayrollForLesson,
   generatePayrollRun,
   listPayrollRuns,
   getPayrollRunDetail,

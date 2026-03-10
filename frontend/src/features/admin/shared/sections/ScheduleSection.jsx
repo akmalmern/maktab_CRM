@@ -5,9 +5,12 @@ import {
   useCreateAdminDarsJadvaliMutation,
   useCreateAdminVaqtOraliqMutation,
   useDeleteAdminDarsJadvaliMutation,
+  useDeleteAdminTeacherWorkloadPlanMutation,
   useDeleteAdminVaqtOraliqMutation,
   useGetAdminDarsJadvaliQuery,
+  useGetAdminTeacherWorkloadPlansQuery,
   useGetAdminVaqtOraliqlariQuery,
+  useUpsertAdminTeacherWorkloadPlanMutation,
   useUpdateAdminDarsJadvaliMutation,
 } from '../../../../services/api/scheduleApi';
 
@@ -19,20 +22,26 @@ export default function ScheduleSection({
   const { t } = useTranslation();
   const vaqtQuery = useGetAdminVaqtOraliqlariQuery();
   const darslarQuery = useGetAdminDarsJadvaliQuery();
+  const workloadPlansQuery = useGetAdminTeacherWorkloadPlansQuery();
   const [createVaqtOraliq, createVaqtState] = useCreateAdminVaqtOraliqMutation();
   const [deleteVaqtOraliq, deleteVaqtState] = useDeleteAdminVaqtOraliqMutation();
   const [createDars, createDarsState] = useCreateAdminDarsJadvaliMutation();
   const [deleteDars, deleteDarsState] = useDeleteAdminDarsJadvaliMutation();
   const [updateDars, updateDarsState] = useUpdateAdminDarsJadvaliMutation();
+  const [upsertWorkloadPlan, upsertWorkloadPlanState] = useUpsertAdminTeacherWorkloadPlanMutation();
+  const [deleteWorkloadPlan, deleteWorkloadPlanState] = useDeleteAdminTeacherWorkloadPlanMutation();
   const vaqtOraliqlari = vaqtQuery.data?.vaqtOraliqlari || [];
   const darslar = darslarQuery.data?.darslar || [];
+  const workloadPlans = workloadPlansQuery.data?.plans || [];
   const darslarLoading = darslarQuery.isLoading || darslarQuery.isFetching;
   const actionLoading =
     createVaqtState.isLoading ||
     deleteVaqtState.isLoading ||
     createDarsState.isLoading ||
     deleteDarsState.isLoading ||
-    updateDarsState.isLoading;
+    updateDarsState.isLoading ||
+    upsertWorkloadPlanState.isLoading ||
+    deleteWorkloadPlanState.isLoading;
 
   function parseScheduleError(error, fallback) {
     return error?.message || error?.data?.message || fallback;
@@ -67,7 +76,7 @@ export default function ScheduleSection({
       return { ok: true };
     } catch (error) {
       const message = parseScheduleError(error, t("Dars qo`shilmadi"));
-      const isConflict = /conflict|to'qnash|to`qnash|shu vaqtda|band|mavjud/i.test(message);
+      const isConflict = /conflict|to'qnash|to`qnash|shu vaqtda|band|mavjud|yuklama|limit/i.test(message);
       if (isConflict) toast.warning(message);
       else toast.error(message);
       return { ok: false, isConflict, message };
@@ -92,10 +101,36 @@ export default function ScheduleSection({
       return { ok: true };
     } catch (error) {
       const message = parseScheduleError(error, t("Dars ko`chirilmadi"));
-      const isConflict = /conflict|to'qnash|to`qnash|shu vaqtda|band|mavjud/i.test(message);
+      const isConflict = /conflict|to'qnash|to`qnash|shu vaqtda|band|mavjud|yuklama|limit/i.test(message);
       if (isConflict) toast.warning(message);
       else toast.error(message);
       return { ok: false, isConflict, message };
+    }
+  }
+
+  async function handleSaveTeacherWorkloadPlan(payload) {
+    try {
+      await upsertWorkloadPlan(payload).unwrap();
+      toast.success(t("O'qituvchi yuklama limiti saqlandi"));
+      return { ok: true };
+    } catch (error) {
+      const message = parseScheduleError(error, t("Yuklama limiti saqlanmadi"));
+      toast.error(message);
+      return { ok: false, message };
+    }
+  }
+
+  async function handleDeleteTeacherWorkloadPlan(id) {
+    const ok = window.confirm(t("Yuklama limitini o'chirish"));
+    if (!ok) return { ok: false };
+    try {
+      await deleteWorkloadPlan(id).unwrap();
+      toast.success(t("Yuklama limiti o'chirildi"));
+      return { ok: true };
+    } catch (error) {
+      const message = parseScheduleError(error, t("Yuklama limiti o'chirilmadi"));
+      toast.error(message);
+      return { ok: false, message };
     }
   }
 
@@ -109,11 +144,14 @@ export default function ScheduleSection({
         vaqtOraliqlari={vaqtOraliqlari}
         darslar={darslar}
         darslarLoading={darslarLoading}
+        workloadPlans={workloadPlans}
         onCreateVaqtOraliq={handleCreateVaqtOraliq}
         onDeleteVaqtOraliq={handleDeleteVaqtOraliq}
         onCreateDars={handleCreateDars}
         onDeleteDars={handleDeleteDars}
         onMoveDars={handleMoveDars}
+        onSaveTeacherWorkloadPlan={handleSaveTeacherWorkloadPlan}
+        onDeleteTeacherWorkloadPlan={handleDeleteTeacherWorkloadPlan}
       />
     </div>
   );

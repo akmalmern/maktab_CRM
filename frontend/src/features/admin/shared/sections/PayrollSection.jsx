@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { useAppSelector } from '../../../../app/hooks';
@@ -6,9 +6,12 @@ import AutoTranslate from '../../../../components/AutoTranslate';
 import {
   Button,
   Card,
+  Combobox,
   DataTable,
+  Drawer,
   Input,
   Modal,
+  MoneyInputUz,
   Select,
   StateView,
   Tabs,
@@ -25,6 +28,7 @@ import {
   useCreatePayrollRealLessonMutation,
   useCreatePayrollSubjectRateMutation,
   useCreatePayrollTeacherRateMutation,
+  useBulkUpdatePayrollRealLessonStatusMutation,
   useDeletePayrollAdjustmentMutation,
   useDeletePayrollSubjectRateMutation,
   useDeletePayrollTeacherRateMutation,
@@ -74,6 +78,43 @@ function formatMoney(value) {
   return new Intl.NumberFormat('uz-UZ').format(Number.isFinite(n) ? n : 0);
 }
 
+function formatPersonLabel(person, fallback = '') {
+  if (!person) return fallback;
+  const fullName = `${person.firstName || ''} ${person.lastName || ''}`.trim();
+  const username = person.user?.username || '';
+  if (fullName && username) return `${fullName} (@${username})`;
+  return fullName || (username ? `@${username}` : fallback);
+}
+
+function buildOwnerKey({ teacherId, employeeId }) {
+  if (teacherId) return `teacher:${teacherId}`;
+  if (employeeId) return `employee:${employeeId}`;
+  return '';
+}
+
+function parseOwnerKey(ownerKey) {
+  const value = String(ownerKey || '');
+  if (value.startsWith('teacher:')) {
+    const teacherId = value.slice('teacher:'.length).trim();
+    return teacherId ? { teacherId } : {};
+  }
+  if (value.startsWith('employee:')) {
+    const employeeId = value.slice('employee:'.length).trim();
+    return employeeId ? { employeeId } : {};
+  }
+  return {};
+}
+
+function formatOwnerName({ teacher, employee, fallbackName = '', fallbackId = '' }) {
+  return (
+    formatPersonLabel(teacher, '') ||
+    formatPersonLabel(employee, '') ||
+    fallbackName ||
+    fallbackId ||
+    '-'
+  );
+}
+
 function StatusPill({ value }) {
   const colorMap = {
     DRAFT: 'bg-slate-100 text-slate-700 border-slate-200',
@@ -104,8 +145,26 @@ function Field({ label, children }) {
   );
 }
 
+function StatWidget({ label, value, tone = 'slate', subtitle }) {
+  const toneClasses = {
+    slate: 'border-slate-200 bg-slate-50',
+    indigo: 'border-indigo-200 bg-indigo-50/60',
+    emerald: 'border-emerald-200 bg-emerald-50/60',
+    amber: 'border-amber-200 bg-amber-50/60',
+    rose: 'border-rose-200 bg-rose-50/60',
+  };
+
+  return (
+    <div className={`rounded-xl border p-3 ${toneClasses[tone] || toneClasses.slate}`}>
+      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-1 text-lg font-semibold text-slate-900">{value}</div>
+      {subtitle ? <div className="mt-1 text-xs text-slate-500">{subtitle}</div> : null}
+    </div>
+  );
+}
+
 const DEFAULT_RUN_FILTERS = { page: 1, limit: 20, status: '', periodMonth: '' };
-const DEFAULT_LINE_FILTERS = { page: 1, limit: 50, teacherId: '', type: '' };
+const DEFAULT_LINE_FILTERS = { page: 1, limit: 50, ownerKey: '', type: '' };
 const DEFAULT_LESSON_FILTERS = { page: 1, limit: 20, periodMonth: '', status: 'DONE', teacherId: '', subjectId: '', classroomId: '' };
 
 export default function PayrollSection() {
@@ -148,7 +207,7 @@ export default function PayrollSection() {
     note: '',
   });
   const [adjustmentForm, setAdjustmentForm] = useState({
-    teacherId: '',
+    ownerKey: '',
     type: 'BONUS',
     amount: '',
     description: '',
@@ -180,6 +239,14 @@ export default function PayrollSection() {
     note: '',
     lessonLabel: '',
   });
+  const [rateCreateDrawer, setRateCreateDrawer] = useState({ open: false, kind: 'teacher' });
+  const [adjustmentDrawerOpen, setAdjustmentDrawerOpen] = useState(false);
+  const [selectedRealLessonIds, setSelectedRealLessonIds] = useState([]);
+  const [bulkLessonStatusForm, setBulkLessonStatusForm] = useState({
+    status: 'DONE',
+    replacedByTeacherId: '',
+    note: '',
+  });
 
   const teacherListQuery = useGetTeachersQuery(
     { page: 1, limit: 100, filter: 'all', sort: 'name:asc' },
@@ -188,9 +255,9 @@ export default function PayrollSection() {
   const subjectsQuery = useGetSubjectsQuery(undefined, { skip: isManagerView });
   const classroomsQuery = useGetClassroomsQuery(undefined, { skip: isManagerView });
 
-  const teachers = teacherListQuery.data?.teachers || [];
-  const subjects = subjectsQuery.data?.subjects || [];
-  const classrooms = classroomsQuery.data?.classrooms || [];
+  const teachers = useMemo(() => teacherListQuery.data?.teachers || [], [teacherListQuery.data?.teachers]);
+  const subjects = useMemo(() => subjectsQuery.data?.subjects || [], [subjectsQuery.data?.subjects]);
+  const classrooms = useMemo(() => classroomsQuery.data?.classrooms || [], [classroomsQuery.data?.classrooms]);
 
   const payrollRunsQuery = useGetPayrollRunsQuery({
     page: runFilters.page,
@@ -198,11 +265,12 @@ export default function PayrollSection() {
     ...(runFilters.status ? { status: runFilters.status } : {}),
     ...(runFilters.periodMonth ? { periodMonth: runFilters.periodMonth } : {}),
   });
-  const runs = payrollRunsQuery.data?.runs || [];
+  const runs = useMemo(() => payrollRunsQuery.data?.runs || [], [payrollRunsQuery.data?.runs]);
   const activeRunId =
     (selectedRunId && runs.some((run) => run.id === selectedRunId) ? selectedRunId : '') ||
     runs[0]?.id ||
     '';
+  const lineOwnerFilter = parseOwnerKey(lineFilters.ownerKey);
 
   const payrollRunDetailQuery = useGetPayrollRunDetailQuery(
     {
@@ -210,7 +278,8 @@ export default function PayrollSection() {
       params: {
         page: lineFilters.page,
         limit: lineFilters.limit,
-        ...(lineFilters.teacherId ? { teacherId: lineFilters.teacherId } : {}),
+        ...(lineOwnerFilter.teacherId ? { teacherId: lineOwnerFilter.teacherId } : {}),
+        ...(lineOwnerFilter.employeeId ? { employeeId: lineOwnerFilter.employeeId } : {}),
         ...(lineFilters.type ? { type: lineFilters.type } : {}),
       },
     },
@@ -247,6 +316,7 @@ export default function PayrollSection() {
   const [deletePayrollSubjectRate, deleteSubjectRateState] = useDeletePayrollSubjectRateMutation();
   const [createPayrollRealLesson, createRealLessonState] = useCreatePayrollRealLessonMutation();
   const [updatePayrollRealLessonStatus, updateRealLessonStatusState] = useUpdatePayrollRealLessonStatusMutation();
+  const [bulkUpdatePayrollRealLessonStatus, bulkUpdateRealLessonStatusState] = useBulkUpdatePayrollRealLessonStatusMutation();
   const [addPayrollAdjustment, addAdjustmentState] = useAddPayrollAdjustmentMutation();
   const [deletePayrollAdjustment, deleteAdjustmentState] = useDeletePayrollAdjustmentMutation();
   const [approvePayrollRun, approvePayrollRunState] = useApprovePayrollRunMutation();
@@ -267,6 +337,7 @@ export default function PayrollSection() {
     deleteSubjectRateState.isLoading ||
     createRealLessonState.isLoading ||
     updateRealLessonStatusState.isLoading ||
+    bulkUpdateRealLessonStatusState.isLoading ||
     addAdjustmentState.isLoading ||
     deleteAdjustmentState.isLoading ||
     approvePayrollRunState.isLoading ||
@@ -274,12 +345,99 @@ export default function PayrollSection() {
     reversePayrollRunState.isLoading ||
     exportPayrollRunCsvState.isLoading;
 
-  const teacherOptionLabel = (teacher) =>
-    `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() || teacher.user?.username || teacher.id;
+  const teacherOptionLabel = useCallback(
+    (teacher) => `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() || teacher.user?.username || teacher.id,
+    [],
+  );
 
   const teacherMap = useMemo(() => new Map(teachers.map((tRow) => [tRow.id, tRow])), [teachers]);
   const subjectMap = useMemo(() => new Map(subjects.map((sRow) => [sRow.id, sRow])), [subjects]);
   const classroomMap = useMemo(() => new Map(classrooms.map((cRow) => [cRow.id, cRow])), [classrooms]);
+  const teacherComboboxOptions = useMemo(
+    () =>
+      teachers.map((teacher) => ({
+        value: teacher.id,
+        label: teacherOptionLabel(teacher),
+        searchText: `${teacher.firstName || ''} ${teacher.lastName || ''} ${teacher.user?.username || ''}`,
+      })),
+    [teacherOptionLabel, teachers],
+  );
+  const teacherOwnerOptions = useMemo(
+    () =>
+      teacherComboboxOptions.map((row) => ({
+        value: buildOwnerKey({ teacherId: row.value }),
+        label: `${row.label} (Teacher)`,
+        searchText: `${row.searchText || ''} Teacher`,
+      })),
+    [teacherComboboxOptions],
+  );
+  const selectedRunOwnerOptions = useMemo(() => {
+    const rowsByKey = new Map();
+    for (const item of selectedRun?.items || []) {
+      const ownerKey = buildOwnerKey({ teacherId: item.teacherId, employeeId: item.employeeId });
+      if (!ownerKey || rowsByKey.has(ownerKey)) continue;
+      const snapshotName = `${item.teacherFirstNameSnapshot || ''} ${item.teacherLastNameSnapshot || ''}`.trim();
+      const ownerId = item.teacherId || item.employeeId || '';
+      const label = formatOwnerName({
+        teacher: item.teacher,
+        employee: item.employee,
+        fallbackName: snapshotName,
+        fallbackId: ownerId,
+      });
+      const ownerType = item.teacherId ? 'Teacher' : 'Employee';
+      rowsByKey.set(ownerKey, {
+        value: ownerKey,
+        label: `${label} (${ownerType})`,
+        searchText: `${label} ${ownerType} ${ownerId} ${item.teacherUsernameSnapshot || ''}`,
+      });
+    }
+    for (const option of teacherOwnerOptions) {
+      if (!rowsByKey.has(option.value)) {
+        rowsByKey.set(option.value, option);
+      }
+    }
+    return [...rowsByKey.values()];
+  }, [selectedRun, teacherOwnerOptions]);
+  const runsDashboard = useMemo(() => {
+    const totals = {
+      gross: 0,
+      payable: 0,
+      paid: 0,
+      unpaid: 0,
+      runCount: runs.length,
+      draftCount: 0,
+      approvedCount: 0,
+      paidCount: 0,
+      reversedCount: 0,
+      teacherCount: 0,
+    };
+    for (const run of runs) {
+      const gross = Number(run.grossAmount || 0);
+      const payable = Number(run.payableAmount || 0);
+      totals.gross += Number.isFinite(gross) ? gross : 0;
+      totals.payable += Number.isFinite(payable) ? payable : 0;
+      if (run.status === 'PAID') totals.paid += payable;
+      if (run.status === 'DRAFT' || run.status === 'APPROVED') totals.unpaid += payable;
+      if (run.status === 'DRAFT') totals.draftCount += 1;
+      if (run.status === 'APPROVED') totals.approvedCount += 1;
+      if (run.status === 'PAID') totals.paidCount += 1;
+      if (run.status === 'REVERSED') totals.reversedCount += 1;
+      totals.teacherCount = Math.max(totals.teacherCount, Number(run.teacherCount || 0));
+    }
+    return totals;
+  }, [runs]);
+  const realLessonPageIds = useMemo(
+    () => ((payrollRealLessonsQuery.data?.realLessons || []).map((row) => row.id).filter(Boolean)),
+    [payrollRealLessonsQuery.data?.realLessons],
+  );
+  const selectedRealLessonIdsOnPage = useMemo(
+    () => selectedRealLessonIds.filter((id) => realLessonPageIds.includes(id)),
+    [realLessonPageIds, selectedRealLessonIds],
+  );
+  const allRealLessonsPageSelected =
+    realLessonPageIds.length > 0 && realLessonPageIds.every((id) => selectedRealLessonIdsOnPage.includes(id));
+  const someRealLessonsPageSelected =
+    selectedRealLessonIdsOnPage.length > 0 && !allRealLessonsPageSelected;
 
   async function handleGenerateRun() {
     if (!periodMonth) {
@@ -320,12 +478,13 @@ export default function PayrollSection() {
       }).unwrap();
       toast.success(t("Teacher rate saqlandi"));
       setTeacherRateForm((prev) => ({ ...prev, ratePerHour: '', note: '' }));
+      setRateCreateDrawer((prev) => ({ ...prev, open: false }));
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
   }
 
-  async function handleDeleteTeacherRate(rateId) {
+  const handleDeleteTeacherRate = useCallback(async (rateId) => {
     const ok = window.confirm(t("Teacher rate ni o'chirmoqchimisiz?"));
     if (!ok) return;
     try {
@@ -334,7 +493,7 @@ export default function PayrollSection() {
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
-  }
+  }, [deletePayrollTeacherRate, t]);
 
   async function handleCreateSubjectRate() {
     try {
@@ -347,12 +506,13 @@ export default function PayrollSection() {
       }).unwrap();
       toast.success(t('Subject default rate saqlandi'));
       setSubjectRateForm((prev) => ({ ...prev, ratePerHour: '', note: '' }));
+      setRateCreateDrawer((prev) => ({ ...prev, open: false }));
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
   }
 
-  async function handleDeleteSubjectRate(rateId) {
+  const handleDeleteSubjectRate = useCallback(async (rateId) => {
     const ok = window.confirm(t("Subject default rate ni o'chirmoqchimisiz?"));
     if (!ok) return;
     try {
@@ -361,9 +521,17 @@ export default function PayrollSection() {
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
+  }, [deletePayrollSubjectRate, t]);
+
+  function openRateCreateDrawer(kind) {
+    setRateCreateDrawer({ open: true, kind });
   }
 
-  function openTeacherRateEditModal(row) {
+  function closeRateCreateDrawer() {
+    setRateCreateDrawer((prev) => ({ ...prev, open: false }));
+  }
+
+  const openTeacherRateEditModal = useCallback((row) => {
     setRateEditModal({
       open: true,
       kind: 'teacher',
@@ -375,9 +543,9 @@ export default function PayrollSection() {
       effectiveTo: toDateInput(row.effectiveTo),
       note: row.note || '',
     });
-  }
+  }, []);
 
-  function openSubjectRateEditModal(row) {
+  const openSubjectRateEditModal = useCallback((row) => {
     setRateEditModal({
       open: true,
       kind: 'subject',
@@ -389,7 +557,7 @@ export default function PayrollSection() {
       effectiveTo: toDateInput(row.effectiveTo),
       note: row.note || '',
     });
-  }
+  }, []);
 
   function closeRateEditModal() {
     setRateEditModal((prev) => ({ ...prev, open: false }));
@@ -456,7 +624,7 @@ export default function PayrollSection() {
     }
   }
 
-  function openLessonStatusModal(row) {
+  const openLessonStatusModal = useCallback((row) => {
     const teacherName = row.teacher
       ? `${row.teacher.firstName || ''} ${row.teacher.lastName || ''}`.trim()
       : teacherOptionLabel(teacherMap.get(row.teacherId) || row);
@@ -469,7 +637,7 @@ export default function PayrollSection() {
       note: row.note || '',
       lessonLabel: `${teacherName} • ${formatDateTime(row.startAt)}`,
     });
-  }
+  }, [teacherMap, teacherOptionLabel]);
 
   function closeLessonStatusModal() {
     setLessonStatusModal((prev) => ({ ...prev, open: false }));
@@ -499,16 +667,79 @@ export default function PayrollSection() {
     }
   }
 
+  const toggleRealLessonSelection = useCallback((lessonId, checked) => {
+    setSelectedRealLessonIds((prev) => {
+      if (checked) {
+        if (prev.includes(lessonId)) return prev;
+        return [...prev, lessonId];
+      }
+      return prev.filter((id) => id !== lessonId);
+    });
+  }, []);
+
+  const toggleSelectAllRealLessonsOnPage = useCallback((checked) => {
+    setSelectedRealLessonIds((prev) => {
+      const pageIds = realLessonPageIds;
+      if (!pageIds.length) return [];
+      if (checked) {
+        const next = new Set(prev);
+        pageIds.forEach((id) => next.add(id));
+        return [...next];
+      }
+      return prev.filter((id) => !pageIds.includes(id));
+    });
+  }, [realLessonPageIds]);
+
+  async function handleBulkLessonStatusUpdate() {
+    if (!selectedRealLessonIdsOnPage.length) {
+      toast.error(t('Kamida bitta darsni tanlang'));
+      return;
+    }
+    if (bulkLessonStatusForm.status === 'REPLACED' && !bulkLessonStatusForm.replacedByTeacherId) {
+      toast.error(t('Replacement teacher tanlang'));
+      return;
+    }
+
+    try {
+      const result = await bulkUpdatePayrollRealLessonStatus({
+        lessonIds: selectedRealLessonIdsOnPage,
+        status: bulkLessonStatusForm.status,
+        ...(bulkLessonStatusForm.status === 'REPLACED'
+          ? { replacedByTeacherId: bulkLessonStatusForm.replacedByTeacherId }
+          : { replacedByTeacherId: null }),
+        ...(bulkLessonStatusForm.note.trim() ? { note: bulkLessonStatusForm.note } : {}),
+      }).unwrap();
+
+      const updatedCount = Number(result?.summary?.updatedCount || 0);
+      const skippedCount = Number(result?.summary?.skippedCount || 0);
+      if (updatedCount && skippedCount) {
+        toast.success(t('Bulk update: {{updated}} ta yangilandi, {{skipped}} ta skip qilindi', { updated: updatedCount, skipped: skippedCount }));
+      } else if (updatedCount) {
+        toast.success(t('Bulk update: {{updated}} ta dars yangilandi', { updated: updatedCount }));
+      } else {
+        toast.error(t("Tanlangan darslar yangilanmadi (hammasi skip bo'ldi)"));
+      }
+      setSelectedRealLessonIds([]);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
+  }
+
   async function handleAddAdjustment() {
     if (!activeRunId) {
       toast.error(t('Payroll run tanlang'));
+      return;
+    }
+    const ownerFilter = parseOwnerKey(adjustmentForm.ownerKey);
+    if (!ownerFilter.teacherId && !ownerFilter.employeeId) {
+      toast.error(t("Xodim yoki o'qituvchi tanlang"));
       return;
     }
     try {
       await addPayrollAdjustment({
         runId: activeRunId,
         payload: {
-          teacherId: adjustmentForm.teacherId,
+          ...ownerFilter,
           type: adjustmentForm.type,
           amount: Number(adjustmentForm.amount),
           description: adjustmentForm.description,
@@ -516,12 +747,13 @@ export default function PayrollSection() {
       }).unwrap();
       toast.success(t('Adjustment qo‘shildi'));
       setAdjustmentForm((prev) => ({ ...prev, amount: '', description: '' }));
+      setAdjustmentDrawerOpen(false);
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
   }
 
-  async function handleDeleteAdjustment(lineId) {
+  const handleDeleteAdjustment = useCallback(async (lineId) => {
     if (!activeRunId) return;
     const ok = window.confirm(t("Adjustment ni o'chirmoqchimisiz?"));
     if (!ok) return;
@@ -531,7 +763,7 @@ export default function PayrollSection() {
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
-  }
+  }, [activeRunId, deletePayrollAdjustment, t]);
 
   async function handleApproveRun() {
     if (!activeRunId) return;
@@ -586,7 +818,8 @@ export default function PayrollSection() {
       const result = await exportPayrollRunCsv({
         runId: activeRunId,
         params: {
-          ...(lineFilters.teacherId ? { teacherId: lineFilters.teacherId } : {}),
+          ...(lineOwnerFilter.teacherId ? { teacherId: lineOwnerFilter.teacherId } : {}),
+          ...(lineOwnerFilter.employeeId ? { employeeId: lineOwnerFilter.employeeId } : {}),
           ...(lineFilters.type ? { type: lineFilters.type } : {}),
         },
       }).unwrap();
@@ -646,12 +879,17 @@ export default function PayrollSection() {
   const runItemsColumns = useMemo(
     () => [
       {
-        key: 'teacher',
-        header: t('O‘qituvchi'),
-        render: (row) =>
-          row.teacher
-            ? `${row.teacher.firstName} ${row.teacher.lastName}`
-            : `${row.teacherFirstNameSnapshot || ''} ${row.teacherLastNameSnapshot || ''}`.trim() || '-',
+        key: 'owner',
+        header: t('Xodim'),
+        render: (row) => {
+          const snapshotName = `${row.teacherFirstNameSnapshot || ''} ${row.teacherLastNameSnapshot || ''}`.trim();
+          return formatOwnerName({
+            teacher: row.teacher,
+            employee: row.employee,
+            fallbackName: snapshotName,
+            fallbackId: row.teacherId || row.employeeId || '',
+          });
+        },
       },
       { key: 'minutes', header: t('Daqiqa'), render: (row) => row.totalMinutes || 0 },
       { key: 'hours', header: t('Soat'), render: (row) => row.totalHours || 0 },
@@ -666,9 +904,14 @@ export default function PayrollSection() {
     () => [
       { key: 'type', header: t('Turi'), render: (row) => <StatusPill value={row.type} /> },
       {
-        key: 'teacher',
-        header: t('O‘qituvchi'),
-        render: (row) => (row.teacher ? `${row.teacher.firstName} ${row.teacher.lastName}` : '-'),
+        key: 'owner',
+        header: t('Xodim'),
+        render: (row) =>
+          formatOwnerName({
+            teacher: row.teacher,
+            employee: row.employee,
+            fallbackId: row.teacherId || row.employeeId || '',
+          }),
       },
       {
         key: 'lessonStartAt',
@@ -768,6 +1011,29 @@ export default function PayrollSection() {
 
   const realLessonsColumns = useMemo(
     () => [
+      ...(isAdminView
+        ? [{
+            key: 'select',
+            header: (
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-indigo-600"
+                checked={allRealLessonsPageSelected}
+                aria-label={t('Barchasini tanlash')}
+                onChange={(e) => toggleSelectAllRealLessonsOnPage(e.target.checked)}
+              />
+            ),
+            render: (row) => (
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-indigo-600"
+                checked={selectedRealLessonIds.includes(row.id)}
+                aria-label={t('Darsni tanlash')}
+                onChange={(e) => toggleRealLessonSelection(row.id, e.target.checked)}
+              />
+            ),
+          }]
+        : []),
       { key: 'startAt', header: t('Boshlanish'), render: (row) => formatDateTime(row.startAt) },
       {
         key: 'teacher',
@@ -800,7 +1066,19 @@ export default function PayrollSection() {
           ),
       },
     ],
-    [classroomMap, isAdminView, openLessonStatusModal, subjectMap, t, teacherMap, teacherOptionLabel],
+    [
+      allRealLessonsPageSelected,
+      classroomMap,
+      isAdminView,
+      openLessonStatusModal,
+      selectedRealLessonIds,
+      subjectMap,
+      t,
+      teacherMap,
+      teacherOptionLabel,
+      toggleRealLessonSelection,
+      toggleSelectAllRealLessonsOnPage,
+    ],
   );
 
   const runsState = {
@@ -865,6 +1143,39 @@ export default function PayrollSection() {
 
         {tab === 'runs' && (
           <>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <StatWidget
+                label={t('Brutto (joriy filter)')}
+                value={formatMoney(runsDashboard.gross)}
+                tone="indigo"
+                subtitle={t('{{count}} ta run', { count: runsDashboard.runCount })}
+              />
+              <StatWidget
+                label={t("To'lanadi (jami)")}
+                value={formatMoney(runsDashboard.payable)}
+                tone="slate"
+                subtitle={runFilters.periodMonth || periodMonth}
+              />
+              <StatWidget
+                label={t("To'langan")}
+                value={formatMoney(runsDashboard.paid)}
+                tone="emerald"
+                subtitle={t('PAID runlar: {{count}}', { count: runsDashboard.paidCount })}
+              />
+              <StatWidget
+                label={t("Qoldiq / To'lanmagan")}
+                value={formatMoney(runsDashboard.unpaid)}
+                tone={runsDashboard.unpaid > 0 ? 'amber' : 'slate'}
+                subtitle={t('DRAFT: {{d}} | APPROVED: {{a}}', { d: runsDashboard.draftCount, a: runsDashboard.approvedCount })}
+              />
+              <StatWidget
+                label={t("O'qituvchilar soni")}
+                value={String(selectedRun?.teacherCount || runsDashboard.teacherCount || 0)}
+                tone="rose"
+                subtitle={selectedRun ? `${selectedRun.periodMonth} | ${selectedRun.status}` : t('Tanlangan run yo‘q')}
+              />
+            </div>
+
             <Card
               title={t('Payroll Runlar')}
               subtitle={t("Generate qilingan oylik runlar ro'yxati")}
@@ -1041,21 +1352,30 @@ export default function PayrollSection() {
 
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
                     {!isManagerView && (
-                    <Card title={t('Manual Adjustment')} className="xl:col-span-1">
-                      <div className="space-y-3">
+                    <Card
+                      title={t('Manual Adjustment')}
+                      className="xl:col-span-1"
+                      actions={(
+                        <Button
+                          size="sm"
+                          variant="indigo"
+                          disabled={!canEditSelectedRun || busy || !activeRunId}
+                          onClick={() => setAdjustmentDrawerOpen(true)}
+                        >
+                          {t("Adjustment qo'shish")}
+                        </Button>
+                      )}
+                    >
+                      <div className="hidden space-y-3">
                         <Field label={t('O‘qituvchi')}>
-                          <Select
-                            value={adjustmentForm.teacherId}
-                            onChange={(e) => setAdjustmentForm((prev) => ({ ...prev, teacherId: e.target.value }))}
+                          <Combobox
+                            value={adjustmentForm.ownerKey}
+                            onChange={(e) => setAdjustmentForm((prev) => ({ ...prev, ownerKey: e.target.value }))}
                             disabled={!canEditSelectedRun || busy}
-                          >
-                            <option value="">{t('Tanlang')}</option>
-                            {(selectedRun.items || []).map((item) => (
-                              <option key={item.teacherId} value={item.teacherId}>
-                                {item.teacher ? `${item.teacher.firstName} ${item.teacher.lastName}` : item.teacherId}
-                              </option>
-                            ))}
-                          </Select>
+                            placeholder={t('Tanlang')}
+                            noOptionsText={t('Xodim topilmadi')}
+                            options={selectedRunOwnerOptions}
+                          />
                         </Field>
                         <Field label={t('Turi')}>
                           <Select
@@ -1069,10 +1389,9 @@ export default function PayrollSection() {
                           </Select>
                         </Field>
                         <Field label={t('Summa')}>
-                          <Input
-                            type="number"
+                          <MoneyInputUz
                             value={adjustmentForm.amount}
-                            onChange={(e) => setAdjustmentForm((prev) => ({ ...prev, amount: e.target.value }))}
+                            onValueChange={(raw) => setAdjustmentForm((prev) => ({ ...prev, amount: raw }))}
                             disabled={!canEditSelectedRun || busy}
                           />
                         </Field>
@@ -1087,10 +1406,39 @@ export default function PayrollSection() {
                         <Button
                           className="w-full"
                           variant="indigo"
-                          disabled={!canEditSelectedRun || !adjustmentForm.teacherId || !adjustmentForm.amount || !adjustmentForm.description.trim() || busy}
+                          disabled={!canEditSelectedRun || !adjustmentForm.ownerKey || !adjustmentForm.amount || !adjustmentForm.description.trim() || busy}
                           onClick={handleAddAdjustment}
                         >
                           {t("Adjustment qo'shish")}
+                        </Button>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                          <div className="font-medium text-slate-900">{t("Qo'lda bonus/jarima qo'shish")}</div>
+                          <div className="mt-1">{t("Forma endi drawer ichida ochiladi va line jadvali uchun joy ko'proq qoladi.")}</div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                            <div className="text-slate-500">{t('Run')}</div>
+                            <div className="font-medium text-slate-900">{selectedRun?.periodLabel || '-'}</div>
+                          </div>
+                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                            <div className="text-slate-500">{t('Status')}</div>
+                            <div className="font-medium text-slate-900">{selectedRun?.status || '-'}</div>
+                          </div>
+                        </div>
+                        {!canEditSelectedRun && (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                            {t("Adjustment faqat DRAFT run uchun qo'shiladi.")}
+                          </div>
+                        )}
+                        <Button
+                          className="w-full"
+                          variant="secondary"
+                          disabled={!canEditSelectedRun || busy || !activeRunId}
+                          onClick={() => setAdjustmentDrawerOpen(true)}
+                        >
+                          {t('Drawerni ochish')}
                         </Button>
                       </div>
                     </Card>
@@ -1098,17 +1446,13 @@ export default function PayrollSection() {
 
                     <Card title={t('Line lar')} className={isManagerView ? 'xl:col-span-3' : 'xl:col-span-2'}>
                       <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-4">
-                        <Select
-                          value={lineFilters.teacherId}
-                          onChange={(e) => setLineFilters((prev) => ({ ...prev, teacherId: e.target.value, page: 1 }))}
-                        >
-                          <option value="">{t('Barcha teacher')}</option>
-                          {(selectedRun.items || []).map((item) => (
-                            <option key={item.teacherId} value={item.teacherId}>
-                              {item.teacher ? `${item.teacher.firstName} ${item.teacher.lastName}` : item.teacherId}
-                            </option>
-                          ))}
-                        </Select>
+                        <Combobox
+                          value={lineFilters.ownerKey}
+                          onChange={(e) => setLineFilters((prev) => ({ ...prev, ownerKey: e.target.value, page: 1 }))}
+                          placeholder={t('Barcha xodim')}
+                          noOptionsText={t('Xodim topilmadi')}
+                          options={selectedRunOwnerOptions}
+                        />
                         <Select
                           value={lineFilters.type}
                           onChange={(e) => setLineFilters((prev) => ({ ...prev, type: e.target.value, page: 1 }))}
@@ -1161,15 +1505,24 @@ export default function PayrollSection() {
 
         {!isManagerView && tab === 'rates' && (
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <Card title={t('Teacher Override Rate')}>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <Card
+              title={t('Teacher Override Rate')}
+              subtitle={t("Teacherga fan kesimida alohida narx berish uchun drawer orqali yangi rate qo'shing.")}
+              actions={(
+                <Button size="sm" variant="indigo" onClick={() => openRateCreateDrawer('teacher')} disabled={busy}>
+                  {t("Yangi teacher rate")}
+                </Button>
+              )}
+            >
+              <div className="hidden grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Field label={t('O‘qituvchi')}>
-                  <Select value={teacherRateForm.teacherId} onChange={(e) => setTeacherRateForm((prev) => ({ ...prev, teacherId: e.target.value }))}>
-                    <option value="">{t('Tanlang')}</option>
-                    {teachers.map((teacher) => (
-                      <option key={teacher.id} value={teacher.id}>{teacherOptionLabel(teacher)}</option>
-                    ))}
-                  </Select>
+                  <Combobox
+                    value={teacherRateForm.teacherId}
+                    onChange={(e) => setTeacherRateForm((prev) => ({ ...prev, teacherId: e.target.value }))}
+                    placeholder={t('Tanlang')}
+                    noOptionsText={t("O'qituvchi topilmadi")}
+                    options={teacherComboboxOptions}
+                  />
                 </Field>
                 <Field label={t('Fan')}>
                   <Select value={teacherRateForm.subjectId} onChange={(e) => setTeacherRateForm((prev) => ({ ...prev, subjectId: e.target.value }))}>
@@ -1180,7 +1533,7 @@ export default function PayrollSection() {
                   </Select>
                 </Field>
                 <Field label={t('Soat narxi')}>
-                  <Input type="number" value={teacherRateForm.ratePerHour} onChange={(e) => setTeacherRateForm((prev) => ({ ...prev, ratePerHour: e.target.value }))} />
+                  <MoneyInputUz value={teacherRateForm.ratePerHour} onValueChange={(raw) => setTeacherRateForm((prev) => ({ ...prev, ratePerHour: raw }))} />
                 </Field>
                 <Field label={t('effectiveFrom')}>
                   <Input type="date" value={teacherRateForm.effectiveFrom} onChange={(e) => setTeacherRateForm((prev) => ({ ...prev, effectiveFrom: e.target.value }))} />
@@ -1192,7 +1545,7 @@ export default function PayrollSection() {
                   <Input value={teacherRateForm.note} onChange={(e) => setTeacherRateForm((prev) => ({ ...prev, note: e.target.value }))} />
                 </Field>
               </div>
-              <div className="mt-3 flex justify-end">
+              <div className="mt-3 hidden justify-end">
                 <Button
                   variant="indigo"
                   disabled={!teacherRateForm.teacherId || !teacherRateForm.subjectId || !teacherRateForm.ratePerHour || !teacherRateForm.effectiveFrom || busy}
@@ -1200,6 +1553,9 @@ export default function PayrollSection() {
                 >
                   {t("Teacher rate qo'shish")}
                 </Button>
+              </div>
+              <div className="mt-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                {t("Override rate subject default rate'dan ustun keladi.")}
               </div>
               <div className="mt-4">
                 {payrollTeacherRatesQuery.isLoading ? (
@@ -1212,8 +1568,16 @@ export default function PayrollSection() {
               </div>
             </Card>
 
-            <Card title={t('Subject Default Rate')}>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <Card
+              title={t('Subject Default Rate')}
+              subtitle={t("Fan bo'yicha umumiy soat narxlarini drawer ichida boshqaring.")}
+              actions={(
+                <Button size="sm" variant="indigo" onClick={() => openRateCreateDrawer('subject')} disabled={busy}>
+                  {t("Yangi subject rate")}
+                </Button>
+              )}
+            >
+              <div className="hidden grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Field label={t('Fan')}>
                   <Select value={subjectRateForm.subjectId} onChange={(e) => setSubjectRateForm((prev) => ({ ...prev, subjectId: e.target.value }))}>
                     <option value="">{t('Tanlang')}</option>
@@ -1223,7 +1587,7 @@ export default function PayrollSection() {
                   </Select>
                 </Field>
                 <Field label={t('Soat narxi')}>
-                  <Input type="number" value={subjectRateForm.ratePerHour} onChange={(e) => setSubjectRateForm((prev) => ({ ...prev, ratePerHour: e.target.value }))} />
+                  <MoneyInputUz value={subjectRateForm.ratePerHour} onValueChange={(raw) => setSubjectRateForm((prev) => ({ ...prev, ratePerHour: raw }))} />
                 </Field>
                 <Field label={t('effectiveFrom')}>
                   <Input type="date" value={subjectRateForm.effectiveFrom} onChange={(e) => setSubjectRateForm((prev) => ({ ...prev, effectiveFrom: e.target.value }))} />
@@ -1235,7 +1599,7 @@ export default function PayrollSection() {
                   <Input value={subjectRateForm.note} onChange={(e) => setSubjectRateForm((prev) => ({ ...prev, note: e.target.value }))} />
                 </Field>
               </div>
-              <div className="mt-3 flex justify-end">
+              <div className="mt-3 hidden justify-end">
                 <Button
                   variant="indigo"
                   disabled={!subjectRateForm.subjectId || !subjectRateForm.ratePerHour || !subjectRateForm.effectiveFrom || busy}
@@ -1243,6 +1607,9 @@ export default function PayrollSection() {
                 >
                   {t("Subject rate qo'shish")}
                 </Button>
+              </div>
+              <div className="mt-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                {t("Teacher override bo'lmasa payroll shu default rate'dan foydalanadi.")}
               </div>
               <div className="mt-4">
                 {payrollSubjectRatesQuery.isLoading ? (
@@ -1262,12 +1629,13 @@ export default function PayrollSection() {
             <Card title={t('Real Lesson qo‘shish')}>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <Field label={t('O‘qituvchi')}>
-                  <Select value={realLessonForm.teacherId} onChange={(e) => setRealLessonForm((prev) => ({ ...prev, teacherId: e.target.value }))}>
-                    <option value="">{t('Tanlang')}</option>
-                    {teachers.map((teacher) => (
-                      <option key={teacher.id} value={teacher.id}>{teacherOptionLabel(teacher)}</option>
-                    ))}
-                  </Select>
+                  <Combobox
+                    value={realLessonForm.teacherId}
+                    onChange={(e) => setRealLessonForm((prev) => ({ ...prev, teacherId: e.target.value }))}
+                    placeholder={t('Tanlang')}
+                    noOptionsText={t("O'qituvchi topilmadi")}
+                    options={teacherComboboxOptions}
+                  />
                 </Field>
                 <Field label={t('Fan')}>
                   <Select value={realLessonForm.subjectId} onChange={(e) => setRealLessonForm((prev) => ({ ...prev, subjectId: e.target.value }))}>
@@ -1302,16 +1670,14 @@ export default function PayrollSection() {
                   <Input type="number" value={realLessonForm.durationMinutes} onChange={(e) => setRealLessonForm((prev) => ({ ...prev, durationMinutes: e.target.value }))} />
                 </Field>
                 <Field label={t('Replacement teacher')}>
-                  <Select
+                  <Combobox
                     value={realLessonForm.replacedByTeacherId}
                     onChange={(e) => setRealLessonForm((prev) => ({ ...prev, replacedByTeacherId: e.target.value }))}
                     disabled={realLessonForm.status !== 'REPLACED'}
-                  >
-                    <option value="">{t('Tanlang')}</option>
-                    {teachers.map((teacher) => (
-                      <option key={teacher.id} value={teacher.id}>{teacherOptionLabel(teacher)}</option>
-                    ))}
-                  </Select>
+                    placeholder={t('Tanlang')}
+                    noOptionsText={t("O'qituvchi topilmadi")}
+                    options={teacherComboboxOptions}
+                  />
                 </Field>
               </div>
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
@@ -1342,10 +1708,13 @@ export default function PayrollSection() {
                     <option value="CANCELED">CANCELED</option>
                     <option value="REPLACED">REPLACED</option>
                   </Select>
-                  <Select value={lessonFilters.teacherId} onChange={(e) => setLessonFilters((prev) => ({ ...prev, teacherId: e.target.value, page: 1 }))}>
-                    <option value="">{t('Barcha teacher')}</option>
-                    {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacherOptionLabel(teacher)}</option>)}
-                  </Select>
+                  <Combobox
+                    value={lessonFilters.teacherId}
+                    onChange={(e) => setLessonFilters((prev) => ({ ...prev, teacherId: e.target.value, page: 1 }))}
+                    placeholder={t('Barcha teacher')}
+                    noOptionsText={t("O'qituvchi topilmadi")}
+                    options={teacherComboboxOptions}
+                  />
                   <Select value={lessonFilters.subjectId} onChange={(e) => setLessonFilters((prev) => ({ ...prev, subjectId: e.target.value, page: 1 }))}>
                     <option value="">{t('Barcha fan')}</option>
                     {subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
@@ -1360,6 +1729,70 @@ export default function PayrollSection() {
                 </div>
               )}
             >
+              {isAdminView && (
+                <div className="mb-3 rounded-xl border border-indigo-200 bg-indigo-50/40 p-3">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-sm text-slate-700">
+                      {t('Tanlangan darslar')}: <span className="font-semibold text-slate-900">{selectedRealLessonIdsOnPage.length}</span>
+                      {someRealLessonsPageSelected ? (
+                        <span className="ml-2 text-xs text-slate-500">{t("(joriy sahifadan qisman)")}</span>
+                      ) : null}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={!selectedRealLessonIdsOnPage.length || busy}
+                        onClick={() => setSelectedRealLessonIds([])}
+                      >
+                        {t('Tanlovni tozalash')}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+                    <Select
+                      value={bulkLessonStatusForm.status}
+                      onChange={(e) =>
+                        setBulkLessonStatusForm((prev) => ({
+                          ...prev,
+                          status: e.target.value,
+                          replacedByTeacherId: e.target.value === 'REPLACED' ? prev.replacedByTeacherId : '',
+                        }))
+                      }
+                      disabled={busy}
+                    >
+                      <option value="DONE">DONE</option>
+                      <option value="CANCELED">CANCELED</option>
+                      <option value="REPLACED">REPLACED</option>
+                    </Select>
+                    <Combobox
+                      value={bulkLessonStatusForm.replacedByTeacherId}
+                      onChange={(e) => setBulkLessonStatusForm((prev) => ({ ...prev, replacedByTeacherId: e.target.value }))}
+                      disabled={busy || bulkLessonStatusForm.status !== 'REPLACED'}
+                      placeholder={t('Replacement teacher')}
+                      noOptionsText={t("O'qituvchi topilmadi")}
+                      options={teacherComboboxOptions}
+                    />
+                    <Input
+                      value={bulkLessonStatusForm.note}
+                      onChange={(e) => setBulkLessonStatusForm((prev) => ({ ...prev, note: e.target.value }))}
+                      placeholder={t('Izoh (ixtiyoriy)')}
+                      disabled={busy}
+                    />
+                    <Button
+                      variant="indigo"
+                      disabled={
+                        busy ||
+                        !selectedRealLessonIdsOnPage.length ||
+                        (bulkLessonStatusForm.status === 'REPLACED' && !bulkLessonStatusForm.replacedByTeacherId)
+                      }
+                      onClick={handleBulkLessonStatusUpdate}
+                    >
+                      {t('Bulk status qo‘llash')}
+                    </Button>
+                  </div>
+                </div>
+              )}
               {payrollRealLessonsQuery.isLoading || payrollRealLessonsQuery.isFetching ? (
                 <StateView type="skeleton" />
               ) : payrollRealLessonsQuery.error ? (
@@ -1394,6 +1827,217 @@ export default function PayrollSection() {
           </>
         )}
 
+        <Drawer
+          open={rateCreateDrawer.open}
+          onClose={closeRateCreateDrawer}
+          title={rateCreateDrawer.kind === 'teacher' ? t('Yangi Teacher Override Rate') : t('Yangi Subject Default Rate')}
+          subtitle={rateCreateDrawer.kind === 'teacher'
+            ? t("Teacher + fan bo'yicha override rate yarating")
+            : t("Fan bo'yicha umumiy default rate yarating")}
+          widthClassName="max-w-2xl"
+        >
+          <div className="space-y-4">
+            {rateCreateDrawer.kind === 'teacher' ? (
+              <>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <Field label={t("O'qituvchi")}>
+                    <Combobox
+                      value={teacherRateForm.teacherId}
+                      onChange={(e) => setTeacherRateForm((prev) => ({ ...prev, teacherId: e.target.value }))}
+                      placeholder={t('Tanlang')}
+                      noOptionsText={t("O'qituvchi topilmadi")}
+                      options={teacherComboboxOptions}
+                      disabled={busy}
+                    />
+                  </Field>
+                  <Field label={t('Fan')}>
+                    <Select
+                      value={teacherRateForm.subjectId}
+                      onChange={(e) => setTeacherRateForm((prev) => ({ ...prev, subjectId: e.target.value }))}
+                      disabled={busy}
+                    >
+                      <option value="">{t('Tanlang')}</option>
+                      {subjects.map((subject) => (
+                        <option key={subject.id} value={subject.id}>{subject.name}</option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label={t('Soat narxi')}>
+                    <MoneyInputUz
+                      value={teacherRateForm.ratePerHour}
+                      onValueChange={(raw) => setTeacherRateForm((prev) => ({ ...prev, ratePerHour: raw }))}
+                      disabled={busy}
+                    />
+                  </Field>
+                  <Field label={t('effectiveFrom')}>
+                    <Input
+                      type="date"
+                      value={teacherRateForm.effectiveFrom}
+                      onChange={(e) => setTeacherRateForm((prev) => ({ ...prev, effectiveFrom: e.target.value }))}
+                      disabled={busy}
+                    />
+                  </Field>
+                  <Field label={t('effectiveTo')}>
+                    <Input
+                      type="date"
+                      value={teacherRateForm.effectiveTo}
+                      onChange={(e) => setTeacherRateForm((prev) => ({ ...prev, effectiveTo: e.target.value }))}
+                      disabled={busy}
+                    />
+                  </Field>
+                  <Field label={t('Izoh')}>
+                    <Input
+                      value={teacherRateForm.note}
+                      onChange={(e) => setTeacherRateForm((prev) => ({ ...prev, note: e.target.value }))}
+                      disabled={busy}
+                    />
+                  </Field>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="secondary" onClick={closeRateCreateDrawer} disabled={busy}>
+                    {t('Bekor qilish')}
+                  </Button>
+                  <Button
+                    variant="indigo"
+                    disabled={!teacherRateForm.teacherId || !teacherRateForm.subjectId || !teacherRateForm.ratePerHour || !teacherRateForm.effectiveFrom || busy}
+                    onClick={handleCreateTeacherRate}
+                  >
+                    {t("Teacher rate qo'shish")}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <Field label={t('Fan')}>
+                    <Select
+                      value={subjectRateForm.subjectId}
+                      onChange={(e) => setSubjectRateForm((prev) => ({ ...prev, subjectId: e.target.value }))}
+                      disabled={busy}
+                    >
+                      <option value="">{t('Tanlang')}</option>
+                      {subjects.map((subject) => (
+                        <option key={subject.id} value={subject.id}>{subject.name}</option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label={t('Soat narxi')}>
+                    <MoneyInputUz
+                      value={subjectRateForm.ratePerHour}
+                      onValueChange={(raw) => setSubjectRateForm((prev) => ({ ...prev, ratePerHour: raw }))}
+                      disabled={busy}
+                    />
+                  </Field>
+                  <Field label={t('effectiveFrom')}>
+                    <Input
+                      type="date"
+                      value={subjectRateForm.effectiveFrom}
+                      onChange={(e) => setSubjectRateForm((prev) => ({ ...prev, effectiveFrom: e.target.value }))}
+                      disabled={busy}
+                    />
+                  </Field>
+                  <Field label={t('effectiveTo')}>
+                    <Input
+                      type="date"
+                      value={subjectRateForm.effectiveTo}
+                      onChange={(e) => setSubjectRateForm((prev) => ({ ...prev, effectiveTo: e.target.value }))}
+                      disabled={busy}
+                    />
+                  </Field>
+                  <div className="md:col-span-2">
+                    <Field label={t('Izoh')}>
+                      <Input
+                        value={subjectRateForm.note}
+                        onChange={(e) => setSubjectRateForm((prev) => ({ ...prev, note: e.target.value }))}
+                        disabled={busy}
+                      />
+                    </Field>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="secondary" onClick={closeRateCreateDrawer} disabled={busy}>
+                    {t('Bekor qilish')}
+                  </Button>
+                  <Button
+                    variant="indigo"
+                    disabled={!subjectRateForm.subjectId || !subjectRateForm.ratePerHour || !subjectRateForm.effectiveFrom || busy}
+                    onClick={handleCreateSubjectRate}
+                  >
+                    {t("Subject rate qo'shish")}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </Drawer>
+
+        <Drawer
+          open={adjustmentDrawerOpen}
+          onClose={() => setAdjustmentDrawerOpen(false)}
+          title={t('Manual Adjustment')}
+          subtitle={selectedRun?.periodLabel ? t('Tanlangan run: {{period}}', { period: selectedRun.periodLabel }) : t('Payroll run tanlang')}
+          widthClassName="max-w-xl"
+        >
+          <div className="space-y-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+              <span className="font-medium text-slate-900">{t('Run status')}:</span> {selectedRun?.status || '-'}
+            </div>
+            <Field label={t("O'qituvchi")}>
+              <Combobox
+                value={adjustmentForm.ownerKey}
+                onChange={(e) => setAdjustmentForm((prev) => ({ ...prev, ownerKey: e.target.value }))}
+                disabled={!canEditSelectedRun || busy}
+                placeholder={t('Tanlang')}
+                noOptionsText={t('Xodim topilmadi')}
+                options={selectedRunOwnerOptions}
+              />
+            </Field>
+            <Field label={t('Turi')}>
+              <Select
+                value={adjustmentForm.type}
+                onChange={(e) => setAdjustmentForm((prev) => ({ ...prev, type: e.target.value }))}
+                disabled={!canEditSelectedRun || busy}
+              >
+                <option value="BONUS">BONUS</option>
+                <option value="PENALTY">PENALTY</option>
+                <option value="MANUAL">MANUAL</option>
+              </Select>
+            </Field>
+            <Field label={t('Summa')}>
+              <MoneyInputUz
+                value={adjustmentForm.amount}
+                onValueChange={(raw) => setAdjustmentForm((prev) => ({ ...prev, amount: raw }))}
+                disabled={!canEditSelectedRun || busy}
+              />
+            </Field>
+            <Field label={t('Izoh')}>
+              <Textarea
+                rows={4}
+                value={adjustmentForm.description}
+                onChange={(e) => setAdjustmentForm((prev) => ({ ...prev, description: e.target.value }))}
+                disabled={!canEditSelectedRun || busy}
+              />
+            </Field>
+            {!canEditSelectedRun && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {t("Adjustment faqat DRAFT run uchun qo'shiladi.")}
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setAdjustmentDrawerOpen(false)} disabled={busy}>
+                {t('Bekor qilish')}
+              </Button>
+              <Button
+                variant="indigo"
+                disabled={!canEditSelectedRun || !adjustmentForm.ownerKey || !adjustmentForm.amount || !adjustmentForm.description.trim() || busy}
+                onClick={handleAddAdjustment}
+              >
+                {t("Adjustment qo'shish")}
+              </Button>
+            </div>
+          </div>
+        </Drawer>
+
         <Modal
           open={rateEditModal.open}
           onClose={closeRateEditModal}
@@ -1405,16 +2049,14 @@ export default function PayrollSection() {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {rateEditModal.kind === 'teacher' && (
                 <Field label={t("O'qituvchi")}>
-                  <Select
+                  <Combobox
                     value={rateEditModal.teacherId}
                     onChange={(e) => setRateEditModal((prev) => ({ ...prev, teacherId: e.target.value }))}
                     disabled={busy}
-                  >
-                    <option value="">{t('Tanlang')}</option>
-                    {teachers.map((teacher) => (
-                      <option key={teacher.id} value={teacher.id}>{teacherOptionLabel(teacher)}</option>
-                    ))}
-                  </Select>
+                    placeholder={t('Tanlang')}
+                    noOptionsText={t("O'qituvchi topilmadi")}
+                    options={teacherComboboxOptions}
+                  />
                 </Field>
               )}
               <Field label={t('Fan')}>
@@ -1430,10 +2072,9 @@ export default function PayrollSection() {
                 </Select>
               </Field>
               <Field label={t('Soat narxi')}>
-                <Input
-                  type="number"
+                <MoneyInputUz
                   value={rateEditModal.ratePerHour}
-                  onChange={(e) => setRateEditModal((prev) => ({ ...prev, ratePerHour: e.target.value }))}
+                  onValueChange={(raw) => setRateEditModal((prev) => ({ ...prev, ratePerHour: raw }))}
                   disabled={busy}
                 />
               </Field>
@@ -1512,16 +2153,14 @@ export default function PayrollSection() {
                 </Select>
               </Field>
               <Field label={t('Replacement teacher')}>
-                <Select
+                <Combobox
                   value={lessonStatusModal.replacedByTeacherId}
                   onChange={(e) => setLessonStatusModal((prev) => ({ ...prev, replacedByTeacherId: e.target.value }))}
                   disabled={busy || lessonStatusModal.status !== 'REPLACED'}
-                >
-                  <option value="">{t('Tanlang')}</option>
-                  {teachers.map((teacher) => (
-                    <option key={teacher.id} value={teacher.id}>{teacherOptionLabel(teacher)}</option>
-                  ))}
-                </Select>
+                  placeholder={t('Tanlang')}
+                  noOptionsText={t("O'qituvchi topilmadi")}
+                  options={teacherComboboxOptions}
+                />
               </Field>
             </div>
             <Field label={t('Izoh')}>

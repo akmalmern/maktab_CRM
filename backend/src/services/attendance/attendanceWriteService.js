@@ -4,6 +4,10 @@ const { parseSanaOrToday, localTodayIsoDate } = require("../../utils/attendanceP
 const { combineLocalDateAndTimeToUtc } = require("../../utils/tashkentTime");
 const { getTeacherAttendanceScopeByUserId } = require("./attendanceService");
 const { ensureDateMatchesLessonDay } = require("./attendanceTeacherShared");
+const payrollService = require("../payroll/payrollService");
+
+const MAIN_ORG_KEY = "MAIN";
+const MAIN_ORG_NAME = "Asosiy tashkilot";
 
 function parseTimeToHoursMinutes(value) {
   const [hoursRaw, minutesRaw] = String(value || "").split(":");
@@ -22,6 +26,24 @@ function createDarsDateTimeUTC(sana, boshlanishVaqti) {
     sanaIso,
     `${String(parsed.hours).padStart(2, "0")}:${String(parsed.minutes).padStart(2, "0")}`,
   );
+}
+
+function buildRealLessonTiming({ sana, boshlanishVaqti, tugashVaqti }) {
+  const startAt = createDarsDateTimeUTC(sana, boshlanishVaqti);
+  const endAt = createDarsDateTimeUTC(sana, tugashVaqti);
+  if (!startAt || !endAt) return null;
+  const durationMinutes = Math.round((endAt.getTime() - startAt.getTime()) / 60000);
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return null;
+  return { startAt, endAt, durationMinutes };
+}
+
+async function ensureMainOrganization(tx) {
+  return tx.organization.upsert({
+    where: { key: MAIN_ORG_KEY },
+    update: {},
+    create: { key: MAIN_ORG_KEY, name: MAIN_ORG_NAME },
+    select: { id: true },
+  });
 }
 
 async function saveTeacherDarsDavomatiByUserId({ userId, darsId, body }) {
@@ -43,8 +65,10 @@ async function saveTeacherDarsDavomatiByUserId({ userId, darsId, body }) {
     select: {
       id: true,
       sinfId: true,
+      fanId: true,
+      oqituvchiId: true,
       haftaKuni: true,
-      vaqtOraliq: { select: { boshlanishVaqti: true } },
+      vaqtOraliq: { select: { boshlanishVaqti: true, tugashVaqti: true } },
     },
   });
 
@@ -94,7 +118,7 @@ async function saveTeacherDarsDavomatiByUserId({ userId, darsId, body }) {
 
   const studentIds = [...new Set(davomatlar.map((item) => item.studentId))];
 
-  await prisma.$transaction(async (tx) => {
+  const txResult = await prisma.$transaction(async (tx) => {
     const [existingDavomatlar, existingBaholar] = await Promise.all([
       tx.davomat.findMany({
         where: {
@@ -200,11 +224,96 @@ async function saveTeacherDarsDavomatiByUserId({ userId, darsId, body }) {
     }
     if (davomatUpdateOps.length) await Promise.all(davomatUpdateOps);
     if (bahoUpdateOps.length) await Promise.all(bahoUpdateOps);
+
+    // Attendance saqlanganda payroll uchun manba bo'ladigan RealLesson ham sinxron yaratiladi/yangilanadi.
+    const lessonTiming = buildRealLessonTiming({
+      sana,
+      boshlanishVaqti: dars.vaqtOraliq?.boshlanishVaqti,
+      tugashVaqti: dars.vaqtOraliq?.tugashVaqti,
+    });
+    if (!lessonTiming) {
+      throw new ApiError(
+        409,
+        "REAL_LESSON_TIME_INVALID",
+        "Dars vaqt oralig'i noto'g'ri: payroll uchun RealLesson yaratib bo'lmadi",
+      );
+    }
+
+    const org = await ensureMainOrganization(tx);
+    const existingLesson = await tx.realLesson.findFirst({
+      where: {
+        organizationId: org.id,
+        darsJadvaliId: dars.id,
+        startAt: lessonTiming.startAt,
+      },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        payrollLines: { select: { id: true }, take: 1 },
+      },
+    });
+
+    if (!existingLesson) {
+      const createdLesson = await tx.realLesson.create({
+        data: {
+          organizationId: org.id,
+          teacherId: dars.oqituvchiId,
+          subjectId: dars.fanId,
+          classroomId: dars.sinfId,
+          darsJadvaliId: dars.id,
+          startAt: lessonTiming.startAt,
+          endAt: lessonTiming.endAt,
+          durationMinutes: lessonTiming.durationMinutes,
+          status: "DONE",
+        },
+      });
+      return { realLessonId: createdLesson.id };
+    }
+
+    // Agar dars payrollga tushib bo'lsa real lesson qatnashuvida rewrite qilinmaydi.
+    if (existingLesson.payrollLines.length) {
+      return { realLessonId: existingLesson.id };
+    }
+
+    const updatedLesson = await tx.realLesson.update({
+      where: { id: existingLesson.id },
+      data: {
+        teacherId: dars.oqituvchiId,
+        subjectId: dars.fanId,
+        classroomId: dars.sinfId,
+        endAt: lessonTiming.endAt,
+        durationMinutes: lessonTiming.durationMinutes,
+        status: "DONE",
+        replacedByTeacherId: null,
+      },
+      select: { id: true },
+    });
+    return { realLessonId: updatedLesson.id };
   });
+
+  let payrollAutoRun = { refreshed: false, skipped: false, reason: null };
+  try {
+    await payrollService.refreshDraftPayrollForLesson({
+      lessonId: txResult.realLessonId,
+      actorUserId: userId,
+      req: null,
+    });
+    payrollAutoRun = { refreshed: true, skipped: false, reason: null };
+  } catch (error) {
+    if (
+      error instanceof ApiError &&
+      (error.code === "PAYROLL_RUN_LOCKED" || error.code === "PAYROLL_RATE_NOT_FOUND")
+    ) {
+      payrollAutoRun = { refreshed: false, skipped: true, reason: error.code };
+    } else {
+      throw error;
+    }
+  }
 
   return {
     sana: sana.toISOString().slice(0, 10),
     count: davomatlar.length,
+    payrollAutoRun,
   };
 }
 

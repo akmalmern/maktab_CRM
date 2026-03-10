@@ -3,6 +3,11 @@ const prisma = require("../../prisma");
 const { ApiError } = require("../../utils/apiError");
 const { formatMonthKey } = require("../../services/financeDebtService");
 const { syncStudentOyMajburiyatlar } = require("../../services/financeMajburiyatService");
+const {
+  resolveManagerScopedClassroomFilter,
+  ensureManagerCanAccessStudent,
+  listVisibleClassroomsForManager,
+} = require("../../services/managerScopeService");
 
 const DEFAULT_OYLIK_SUMMA = 300000;
 const SCHOOL_MONTH_ORDER = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
@@ -10,6 +15,16 @@ const SCHOOL_MONTH_ORDER = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
 function parseIntSafe(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function normalizeClassroomIds(ids) {
+  return Array.from(
+    new Set(
+      (Array.isArray(ids) ? ids : [])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
 }
 
 function isSchemaMismatchError(error) {
@@ -139,12 +154,20 @@ async function getDebtorsFallback({
   limit,
   search,
   classroomId,
+  classroomIds,
   currentYear,
   currentMonth,
 }) {
   const text = String(search || "").trim().toLowerCase();
+  const normalizedClassroomIds = normalizeClassroomIds(classroomIds);
+  if (!classroomId && Array.isArray(classroomIds) && !normalizedClassroomIds.length) {
+    return { total: 0, totalDebtAmount: 0, items: [] };
+  }
+
   const enrollmentWhere = classroomId
     ? { isActive: true, classroomId }
+    : normalizedClassroomIds.length
+      ? { isActive: true, classroomId: { in: normalizedClassroomIds } }
     : { isActive: true };
 
   const students = await prisma.student.findMany({
@@ -259,9 +282,10 @@ async function getDebtorsFallback({
   return { total, totalDebtAmount, items };
 }
 
-function buildDebtorsWhereSql({ search, classroomId }) {
+function buildDebtorsWhereSql({ search, classroomId, classroomIds }) {
   const clauses = [Prisma.sql`d."debtMonths" > 0`];
   const text = String(search || "").trim();
+  const normalizedClassroomIds = normalizeClassroomIds(classroomIds);
 
   if (text) {
     const term = `%${text}%`;
@@ -277,16 +301,20 @@ function buildDebtorsWhereSql({ search, classroomId }) {
 
   if (classroomId) {
     clauses.push(Prisma.sql`ae."classroomId" = ${classroomId}`);
+  } else if (normalizedClassroomIds.length) {
+    clauses.push(
+      Prisma.sql`ae."classroomId" IN (${Prisma.join(normalizedClassroomIds)})`,
+    );
+  } else if (Array.isArray(classroomIds)) {
+    clauses.push(Prisma.sql`1 = 0`);
   }
 
   return Prisma.sql`WHERE ${Prisma.join(clauses, Prisma.sql` AND `)}`;
 }
 
 async function getManagerClassrooms(_req, res) {
-  const classrooms = await prisma.classroom.findMany({
-    where: { isArchived: false },
-    select: { id: true, name: true, academicYear: true },
-    orderBy: [{ name: "asc" }, { academicYear: "desc" }],
+  const classrooms = await listVisibleClassroomsForManager({
+    managerUserId: _req.user.sub,
   });
 
   res.json({
@@ -300,12 +328,52 @@ async function getDebtors(req, res) {
   const limit = Math.min(parseIntSafe(req.query.limit, 500), 500);
   const offset = (page - 1) * limit;
   const search = String(req.query.search || "").trim();
-  const classroomId = req.query.classroomId || null;
+  const requestedClassroomId = req.query.classroomId || null;
+
+  const scopedFilter = await resolveManagerScopedClassroomFilter({
+    managerUserId: req.user.sub,
+    requestedClassroomId,
+  });
+  const classroomId = scopedFilter.classroomId;
+  const classroomIds = scopedFilter.classroomIds;
+
+  if (!classroomId && Array.isArray(classroomIds) && !classroomIds.length) {
+    return res.json({
+      ok: true,
+      page,
+      limit,
+      total: 0,
+      pages: 0,
+      summary: {
+        totalDebtors: 0,
+        totalDebtAmount: 0,
+      },
+      students: [],
+    });
+  }
 
   const settings = await getSettings();
   const now = new Date();
   const currentYear = now.getUTCFullYear();
   const currentMonth = now.getUTCMonth() + 1;
+  const scopeSql = classroomId
+    ? Prisma.sql`AND EXISTS (
+        SELECT 1
+        FROM "Enrollment" e2
+        WHERE e2."studentId" = s.id
+          AND e2."isActive" = true
+          AND e2."classroomId" = ${classroomId}
+      )`
+    : Array.isArray(classroomIds)
+      ? Prisma.sql`AND EXISTS (
+          SELECT 1
+          FROM "Enrollment" e2
+          WHERE e2."studentId" = s.id
+            AND e2."isActive" = true
+            AND e2."classroomId" IN (${Prisma.join(classroomIds)})
+        )`
+      : Prisma.empty;
+
   const missingCurrentRows = await prisma.$queryRaw`
     SELECT s.id
     FROM "Student" s
@@ -316,6 +384,7 @@ async function getDebtors(req, res) {
         AND m.yil = ${currentYear}
         AND m.oy = ${currentMonth}
     )
+    ${scopeSql}
     LIMIT 500
   `;
   if (missingCurrentRows.length) {
@@ -333,7 +402,7 @@ async function getDebtors(req, res) {
     }
   }
 
-  const whereSql = buildDebtorsWhereSql({ search, classroomId });
+  const whereSql = buildDebtorsWhereSql({ search, classroomId, classroomIds });
 
   let rows;
   try {
@@ -392,6 +461,7 @@ async function getDebtors(req, res) {
       limit,
       search,
       classroomId,
+      classroomIds,
       currentYear,
       currentMonth,
     });
@@ -486,6 +556,11 @@ async function getDebtorNotes(req, res) {
   const limit = Math.min(parseIntSafe(req.query.limit, 10), 100);
   const skip = (page - 1) * limit;
 
+  await ensureManagerCanAccessStudent({
+    managerUserId: req.user.sub,
+    studentId,
+  });
+
   const student = await prisma.student.findUnique({
     where: { id: studentId },
     select: { id: true, firstName: true, lastName: true },
@@ -530,6 +605,11 @@ async function getDebtorNotes(req, res) {
 
 async function createDebtorNote(req, res) {
   const { studentId } = req.params;
+  await ensureManagerCanAccessStudent({
+    managerUserId: req.user.sub,
+    studentId,
+  });
+
   const settings = await getSettings();
   const student = await prisma.student.findUnique({
     where: { id: studentId },

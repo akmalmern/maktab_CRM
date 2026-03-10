@@ -2,7 +2,8 @@ const prisma = require("../../prisma");
 const { Prisma } = require("@prisma/client");
 const bcrypt = require("bcrypt");
 const { ApiError } = require("../../utils/apiError");
-const { genUsernameBase, genPassword } = require("../../utils/credentials");
+const { env } = require("../../config/env");
+const { genUsernameBase, genSecurePassword } = require("../../utils/credentials");
 const {
   pickFreeUsername,
   cleanOptional,
@@ -15,6 +16,9 @@ const {
   buildImtiyozMonthMap,
   buildDebtInfo,
 } = require("../../services/financeDebtService");
+
+const MAIN_ORG_KEY = "MAIN";
+const MAIN_ORG_NAME = "Asosiy tashkilot";
 
 function buildArchivedUserIdentity(kind, userId) {
   const ts = Date.now();
@@ -50,6 +54,15 @@ function isPrismaKnownError(err, code) {
 function hasUniqueTarget(err, fieldName) {
   const target = normalizePrismaTarget(err).join(",").toLowerCase();
   return target.includes(String(fieldName || "").toLowerCase());
+}
+
+async function ensureMainOrganization(tx) {
+  return tx.organization.upsert({
+    where: { key: MAIN_ORG_KEY },
+    update: {},
+    create: { key: MAIN_ORG_KEY, name: MAIN_ORG_NAME },
+    select: { id: true },
+  });
 }
 
 async function createUserWithRetry(tx, { role, base, hash, phone }) {
@@ -230,7 +243,7 @@ async function createTeacher(req, res) {
   const birth = toDateOrThrow(birthDate);
   const phoneClean = cleanOptional(phone);
   const base = genUsernameBase(firstName);
-  const plainPassword = genPassword(firstName, birth);
+  const plainPassword = genSecurePassword();
 
   const result = await prisma.$transaction(async (tx) => {
     if (phoneClean) {
@@ -275,13 +288,51 @@ async function createTeacher(req, res) {
       },
     });
 
+    const org = await ensureMainOrganization(tx);
+    const employee = await tx.employee.upsert({
+      where: { userId: user.id },
+      update: {
+        organizationId: org.id,
+        kind: "TEACHER",
+        payrollMode: "LESSON_BASED",
+        employmentStatus: "ACTIVE",
+        isPayrollEligible: true,
+        firstName: firstName || null,
+        lastName: lastName || null,
+      },
+      create: {
+        organizationId: org.id,
+        userId: user.id,
+        kind: "TEACHER",
+        payrollMode: "LESSON_BASED",
+        employmentStatus: "ACTIVE",
+        isPayrollEligible: true,
+        firstName: firstName || null,
+        lastName: lastName || null,
+        note: "Auto-created from Teacher profile",
+      },
+      select: { id: true },
+    });
+
+    if (teacher.employeeId !== employee.id) {
+      await tx.teacher.update({
+        where: { id: teacher.id },
+        data: { employeeId: employee.id },
+      });
+    }
+
     return { teacher, username: finalUsername, plainPassword };
   });
 
   res.status(201).json({
     ok: true,
     teacherId: result.teacher.id,
-    credentials: { username: result.username, password: result.plainPassword },
+    credentials: {
+      username: result.username,
+      ...(env.ALLOW_LEGACY_PLAIN_CREDENTIAL_RESPONSE
+        ? { password: result.plainPassword }
+        : { passwordProvisioned: true }),
+    },
   });
 }
 
@@ -300,7 +351,7 @@ async function createStudent(req, res) {
   const phoneClean = cleanOptional(phone);
   const parentPhoneClean = cleanOptional(parentPhone);
   const base = genUsernameBase(firstName);
-  const plainPassword = genPassword(firstName, birth);
+  const plainPassword = genSecurePassword();
 
   const result = await prisma.$transaction(async (tx) => {
     if (phoneClean) {
@@ -359,7 +410,12 @@ async function createStudent(req, res) {
   res.status(201).json({
     ok: true,
     studentId: result.student.id,
-    credentials: { username: result.username, password: result.plainPassword },
+    credentials: {
+      username: result.username,
+      ...(env.ALLOW_LEGACY_PLAIN_CREDENTIAL_RESPONSE
+        ? { password: result.plainPassword }
+        : { passwordProvisioned: true }),
+    },
   });
 }
 

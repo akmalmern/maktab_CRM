@@ -32,6 +32,17 @@ export const payrollApi = baseApi.injectEndpoints({
         { type: 'PayrollRun', id: 'LIST' },
       ],
     }),
+    bulkUpdatePayrollRealLessonStatus: builder.mutation({
+      query: (payload) => ({
+        path: '/api/admin/moliya/oylik/real-lessons/bulk-status',
+        method: 'PATCH',
+        body: payload,
+      }),
+      invalidatesTags: [
+        { type: 'PayrollRealLesson', id: 'LIST' },
+        { type: 'PayrollRun', id: 'LIST' },
+      ],
+    }),
 
     getPayrollTeacherRates: builder.query({
       query: (params = {}) => ({
@@ -248,6 +259,7 @@ export const {
   useGetPayrollRealLessonsQuery,
   useCreatePayrollRealLessonMutation,
   useUpdatePayrollRealLessonStatusMutation,
+  useBulkUpdatePayrollRealLessonStatusMutation,
   useGetPayrollTeacherRatesQuery,
   useCreatePayrollTeacherRateMutation,
   useUpdatePayrollTeacherRateMutation,

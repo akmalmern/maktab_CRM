@@ -68,8 +68,15 @@ function mapStudentRowFromRaw(row, debtInfo, { safeFormatMonthKey }) {
   };
 }
 
-function buildWhereSql({ search, classroomId }) {
+function buildWhereSql({ search, classroomId, classroomIds }) {
   const whereClauses = [];
+  const normalizedClassroomIds = Array.from(
+    new Set(
+      (Array.isArray(classroomIds) ? classroomIds : [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    ),
+  );
 
   if (search) {
     const term = `%${search}%`;
@@ -84,17 +91,38 @@ function buildWhereSql({ search, classroomId }) {
 
   if (classroomId) {
     whereClauses.push(Prisma.sql`ae."classroomId" = ${classroomId}`);
+  } else if (normalizedClassroomIds.length) {
+    whereClauses.push(
+      Prisma.sql`ae."classroomId" IN (${Prisma.join(normalizedClassroomIds)})`,
+    );
+  } else if (Array.isArray(classroomIds)) {
+    whereClauses.push(Prisma.sql`1 = 0`);
   }
 
   if (!whereClauses.length) return Prisma.empty;
   return Prisma.sql`WHERE ${Prisma.join(whereClauses, Prisma.sql` AND `)}`;
 }
 
-function buildStatusSql() {
+function buildStatusSql(status = "ALL") {
+  if (status === "QARZDOR") {
+    return Prisma.sql`WHERE "debtMonths" > 0`;
+  }
+  if (status === "TOLAGAN") {
+    return Prisma.sql`WHERE "debtMonths" <= 0`;
+  }
   return Prisma.empty;
 }
 
-function buildDebtMonthSql() {
+function buildDebtMonthSql(debtMonth = "ALL", debtTargetMonth = null) {
+  if (debtTargetMonth?.key) {
+    return Prisma.sql`WHERE "selectedMonthUnpaid" = true`;
+  }
+  if (debtMonth === "CURRENT") {
+    return Prisma.sql`WHERE "thisMonthUnpaid" = true`;
+  }
+  if (debtMonth === "PREVIOUS") {
+    return Prisma.sql`WHERE "previousMonthUnpaid" = true`;
+  }
   return Prisma.empty;
 }
 

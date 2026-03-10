@@ -3,11 +3,17 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const { ApiError } = require("../utils/apiError");
+const { detectFileSignatureFromPath } = require("../utils/fileSignatures");
 
 const AVATAR_DIR = path.join(process.cwd(), "uploads", "avatars");
 fs.mkdirSync(AVATAR_DIR, { recursive: true });
 
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp"]);
+const ALLOWED_SIGNATURES_BY_MIME = {
+  "image/jpeg": new Set(["jpeg"]),
+  "image/png": new Set(["png"]),
+  "image/webp": new Set(["webp"]),
+};
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, AVATAR_DIR),
@@ -39,6 +45,52 @@ const uploadAvatar = multer({
   limits: { fileSize: 3 * 1024 * 1024 }, // 3MB
 });
 
+async function removeFileIfExists(filePath) {
+  if (!filePath) return;
+  try {
+    await fs.promises.unlink(filePath);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      // best-effort cleanup
+    }
+  }
+}
+
+async function verifyUploadedAvatarSignature(req, _res, next) {
+  if (!req.file?.path) return next();
+
+  try {
+    const allowedSignatures = ALLOWED_SIGNATURES_BY_MIME[req.file.mimetype];
+    if (!allowedSignatures) {
+      await removeFileIfExists(req.file.path);
+      return next(
+        new ApiError(
+          400,
+          "AVATAR_TYPE_NOT_ALLOWED",
+          "Faqat jpg/png/webp rasm ruxsat",
+        ),
+      );
+    }
+
+    const detected = await detectFileSignatureFromPath(req.file.path);
+    if (!detected || !allowedSignatures.has(detected)) {
+      await removeFileIfExists(req.file.path);
+      return next(
+        new ApiError(
+          400,
+          "AVATAR_SIGNATURE_INVALID",
+          "Rasm tarkibi deklaratsiya qilingan turga mos emas",
+        ),
+      );
+    }
+
+    return next();
+  } catch (error) {
+    await removeFileIfExists(req.file.path);
+    return next(error);
+  }
+}
+
 function handleMulterErrors(err, _req, _res, next) {
   if (!err) return next();
   if (err.code === "LIMIT_FILE_SIZE") {
@@ -49,4 +101,8 @@ function handleMulterErrors(err, _req, _res, next) {
   next(err);
 }
 
-module.exports = { uploadAvatar, handleMulterErrors };
+module.exports = {
+  uploadAvatar,
+  verifyUploadedAvatarSignature,
+  handleMulterErrors,
+};

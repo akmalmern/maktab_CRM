@@ -24,6 +24,15 @@ async function updateRealLessonStatus(req, res) {
   res.json({ ok: true, ...result });
 }
 
+async function bulkUpdateRealLessonStatus(req, res) {
+  const result = await payrollService.bulkUpdateRealLessonStatus({
+    body: req.body,
+    actorUserId: req.user.sub,
+    req,
+  });
+  res.json({ ok: true, ...result });
+}
+
 async function listTeacherRates(req, res) {
   const result = await payrollService.listTeacherRates({ query: req.query });
   res.json({ ok: true, ...result });
@@ -175,6 +184,7 @@ module.exports = {
   listRealLessons,
   createRealLesson,
   updateRealLessonStatus,
+  bulkUpdateRealLessonStatus,
   listTeacherRates,
   createTeacherRate,
   updateTeacherRate,

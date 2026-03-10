@@ -42,6 +42,8 @@ async function saveDarsDavomati(req, res) {
     message: req.t("messages.ATTENDANCE_SAVED"),
     sana: result.sana,
     count: result.count,
+    payrollAutoRefreshed: Boolean(result.payrollAutoRun?.refreshed),
+    payrollAutoSkippedReason: result.payrollAutoRun?.reason || null,
   });
 }
 

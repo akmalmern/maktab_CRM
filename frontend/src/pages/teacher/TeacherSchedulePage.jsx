@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { Button, Card, Select, StateView } from '../../components/ui';
+import { Button, Card, Input, Select, StateView } from '../../components/ui';
 import { getLocalDateInputValue } from '../../lib/dateUtils';
 import { useLazyGetTeacherScheduleQuery } from '../../services/api/teacherApi';
 
@@ -15,6 +15,55 @@ const KUN_LABEL_KEYS = {
   JUMA: 'Juma',
   SHANBA: 'Shanba',
 };
+const HAFTA_KUNI_TO_JS_DAY = {
+  DUSHANBA: 1,
+  SESHANBA: 2,
+  CHORSHANBA: 3,
+  PAYSHANBA: 4,
+  JUMA: 5,
+  SHANBA: 6,
+};
+
+function currentMonthKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function parseTimeToMinutes(value) {
+  const [hoursRaw, minutesRaw] = String(value || '').split(':');
+  const hours = Number.parseInt(hoursRaw, 10);
+  const minutes = Number.parseInt(minutesRaw, 10);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return (hours * 60) + minutes;
+}
+
+function getSlotDurationMinutes(vaqtOraliq) {
+  const start = parseTimeToMinutes(vaqtOraliq?.boshlanishVaqti);
+  const end = parseTimeToMinutes(vaqtOraliq?.tugashVaqti);
+  if (start == null || end == null || end <= start) return null;
+  return end - start;
+}
+
+function countWeekdayInMonth(monthKey, jsWeekday) {
+  const match = String(monthKey || '').match(/^(\d{4})-(0[1-9]|1[0-2])$/);
+  if (!match || !Number.isInteger(jsWeekday)) return 0;
+  const year = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10);
+  const lastDay = new Date(year, month, 0).getDate();
+  let count = 0;
+  for (let day = 1; day <= lastDay; day += 1) {
+    const d = new Date(year, month - 1, day);
+    if (d.getDay() === jsWeekday) count += 1;
+  }
+  return count;
+}
+
+function formatHours(value) {
+  const rounded = Math.round(Number(value || 0) * 100) / 100;
+  if (!Number.isFinite(rounded)) return '0';
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+}
 
 function fanRangi(fanNomi) {
   const palitra = [
@@ -48,6 +97,7 @@ export default function TeacherSchedulePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [oquvYili, setOquvYili] = useState('');
+  const [monthKey, setMonthKey] = useState(currentMonthKey());
   const [oquvYillar, setOquvYillar] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -94,6 +144,29 @@ export default function TeacherSchedulePage() {
     }
     return map;
   }, [darslar]);
+  const loadSummary = useMemo(() => {
+    let weeklyMinutes = 0;
+    let monthlyMinutes = 0;
+    let monthlyLessonCount = 0;
+
+    for (const dars of darslar) {
+      const duration = getSlotDurationMinutes(dars.vaqtOraliq);
+      if (!duration) continue;
+      weeklyMinutes += duration;
+
+      const jsWeekday = HAFTA_KUNI_TO_JS_DAY[dars.haftaKuni];
+      const lessonCount = countWeekdayInMonth(monthKey, jsWeekday);
+      monthlyLessonCount += lessonCount;
+      monthlyMinutes += lessonCount * duration;
+    }
+
+    return {
+      weeklyLessonCount: darslar.length,
+      weeklyHours: weeklyMinutes / 60,
+      monthlyLessonCount,
+      monthlyHours: monthlyMinutes / 60,
+    };
+  }, [darslar, monthKey]);
 
   function handleGoAttendance(dars) {
     const sana = sanaFromHaftaKuni(dars.haftaKuni);
@@ -108,7 +181,7 @@ export default function TeacherSchedulePage() {
             event.preventDefault();
             loadSchedule(oquvYili);
           }}
-          className="grid grid-cols-1 gap-2 md:grid-cols-[260px_auto]"
+          className="grid grid-cols-1 gap-2 md:grid-cols-[240px_200px_auto]"
         >
           <Select
             value={oquvYili}
@@ -124,10 +197,29 @@ export default function TeacherSchedulePage() {
               <option value={oquvYili || ''}>{oquvYili || t("O'quv yili topilmadi")}</option>
             )}
           </Select>
+          <Input
+            type="month"
+            value={monthKey}
+            onChange={(event) => setMonthKey(event.target.value)}
+          />
           <Button type="submit" variant="indigo">
             {t('Jadvalni yangilash')}
           </Button>
         </form>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+            {t('Haftalik darslar')}: {loadSummary.weeklyLessonCount}
+          </span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+            {t('Haftalik soat')}: {formatHours(loadSummary.weeklyHours)}
+          </span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+            {t("Oy bo'yicha darslar")}: {loadSummary.monthlyLessonCount}
+          </span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 font-semibold text-slate-800">
+            {t("Oy bo'yicha soat")}: {formatHours(loadSummary.monthlyHours)}
+          </span>
+        </div>
       </Card>
 
       {loading && <StateView type="loading" />}

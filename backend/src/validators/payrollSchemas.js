@@ -170,6 +170,30 @@ const updateRealLessonStatusSchema = z
     }
   });
 
+const bulkUpdateRealLessonStatusSchema = z
+  .object({
+    lessonIds: z.array(z.string().cuid("lessonId noto'g'ri")).min(1).max(500),
+    status: z.enum(["DONE", "CANCELED", "REPLACED"]),
+    replacedByTeacherId: z.string().cuid("replacedByTeacherId noto'g'ri").optional().nullable(),
+    note: z.string().trim().max(500).optional().nullable(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.status === "REPLACED" && !value.replacedByTeacherId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["replacedByTeacherId"],
+        message: "REPLACED status uchun replacedByTeacherId majburiy",
+      });
+    }
+    if (value.status !== "REPLACED" && value.replacedByTeacherId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["replacedByTeacherId"],
+        message: "replacedByTeacherId faqat REPLACED statusda yuboriladi",
+      });
+    }
+  });
+
 const listRealLessonsQuerySchema = z.object({
   periodMonth: z.string().trim().regex(monthKeyRegex, "periodMonth formati YYYY-MM bo'lishi kerak").optional(),
   teacherId: z.string().cuid().optional(),
@@ -244,6 +268,7 @@ module.exports = {
   listSubjectDefaultRatesQuerySchema,
   createRealLessonSchema,
   updateRealLessonStatusSchema,
+  bulkUpdateRealLessonStatusSchema,
   listRealLessonsQuerySchema,
   generatePayrollRunSchema,
   listPayrollRunsQuerySchema,

@@ -2,8 +2,16 @@ const prisma = require("../../prisma");
 const { ApiError } = require("../../utils/apiError");
 
 function normalizeAcademicYear(value) {
-  const normalized = String(value || "").trim();
-  return normalized || "";
+  const normalized = String(value || "").trim().replace(/\s+/g, "");
+  if (!normalized) return "";
+  const match = normalized.match(/^(\d{4})-(\d{4})$/);
+  if (!match) return "";
+  const start = Number.parseInt(match[1], 10);
+  const end = Number.parseInt(match[2], 10);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end !== start + 1) {
+    return "";
+  }
+  return normalized;
 }
 
 async function getDistinctAcademicYears(where = {}) {
@@ -88,4 +96,3 @@ module.exports = {
   getTeacherScheduleScopeByUserId,
   getStudentScheduleScopeByUserId,
 };
-

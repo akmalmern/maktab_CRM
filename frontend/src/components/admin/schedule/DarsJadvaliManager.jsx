@@ -18,6 +18,63 @@ const HAFTA_KUNI_LABEL = {
   JUMA: 'Juma',
   SHANBA: 'Shanba',
 };
+const HAFTA_KUNI_TO_JS_DAY = {
+  DUSHANBA: 1,
+  SESHANBA: 2,
+  CHORSHANBA: 3,
+  PAYSHANBA: 4,
+  JUMA: 5,
+  SHANBA: 6,
+};
+
+function currentMonthKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function currentAcademicYearLabel() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const startYear = month >= 9 ? year : year - 1;
+  return `${startYear}-${startYear + 1}`;
+}
+
+function parseTimeToMinutes(value) {
+  const [hoursRaw, minutesRaw] = String(value || '').split(':');
+  const hours = Number.parseInt(hoursRaw, 10);
+  const minutes = Number.parseInt(minutesRaw, 10);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return (hours * 60) + minutes;
+}
+
+function getSlotDurationMinutes(vaqtOraliq) {
+  const start = parseTimeToMinutes(vaqtOraliq?.boshlanishVaqti);
+  const end = parseTimeToMinutes(vaqtOraliq?.tugashVaqti);
+  if (start == null || end == null || end <= start) return null;
+  return end - start;
+}
+
+function countWeekdayInMonth(monthKey, jsWeekday) {
+  const match = String(monthKey || '').match(/^(\d{4})-(0[1-9]|1[0-2])$/);
+  if (!match || !Number.isInteger(jsWeekday)) return 0;
+  const year = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10);
+  const lastDay = new Date(year, month, 0).getDate();
+  let count = 0;
+  for (let day = 1; day <= lastDay; day += 1) {
+    const d = new Date(year, month - 1, day);
+    if (d.getDay() === jsWeekday) count += 1;
+  }
+  return count;
+}
+
+function formatHours(value) {
+  const rounded = Math.round(Number(value || 0) * 100) / 100;
+  if (!Number.isFinite(rounded)) return '0';
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+}
 
 function FieldLabel({ children }) {
   return (
@@ -49,13 +106,17 @@ export default function DarsJadvaliManager({
   vaqtOraliqlari,
   darslar,
   darslarLoading,
+  workloadPlans = [],
   onCreateVaqtOraliq,
   onDeleteVaqtOraliq,
   onCreateDars,
   onDeleteDars,
   onMoveDars,
+  onSaveTeacherWorkloadPlan,
+  onDeleteTeacherWorkloadPlan,
 }) {
   const { t } = useTranslation();
+  const defaultAcademicYear = currentAcademicYearLabel();
   const [vaqtForm, setVaqtForm] = useState({
     nomi: '',
     boshlanishVaqti: '08:30',
@@ -68,10 +129,11 @@ export default function DarsJadvaliManager({
     fanId: subjects[0]?.id || '',
     haftaKuni: HAFTA_KUNLARI[0],
     vaqtOraliqId: vaqtOraliqlari[0]?.id || '',
-    oquvYili: '2025-2026',
+    oquvYili: defaultAcademicYear,
   });
   const [gridSinfId, setGridSinfId] = useState('');
-  const [gridOquvYili, setGridOquvYili] = useState('2025-2026');
+  const [gridOquvYili, setGridOquvYili] = useState(defaultAcademicYear);
+  const [gridMonthKey, setGridMonthKey] = useState(currentMonthKey());
   const [dragDarsId, setDragDarsId] = useState(null);
   const [tezQoshish, setTezQoshish] = useState(null);
   const [tezQoshishJoylashuv, setTezQoshishJoylashuv] = useState(null);
@@ -79,6 +141,7 @@ export default function DarsJadvaliManager({
   const [tezQoshishFanId, setTezQoshishFanId] = useState('');
   const [jadvalXatolik, setJadvalXatolik] = useState(null);
   const [jadvalMenu, setJadvalMenu] = useState('HAFTALIK');
+  const [workloadHoursInput, setWorkloadHoursInput] = useState(null);
   const tezQoshishRef = useRef(null);
 
   const tanlanganSinfId = darsForm.sinfId || classrooms[0]?.id || '';
@@ -95,6 +158,30 @@ export default function DarsJadvaliManager({
     ? darsForm.oqituvchiId
     : fanBoyichaOqituvchilar[0]?.id || '';
 
+  const selectedTeacherWorkloadPlan = useMemo(
+    () => workloadPlans.find(
+      (plan) => plan.teacherId === tanlanganOqituvchiId && plan.oquvYili === darsForm.oquvYili,
+    ) || null,
+    [workloadPlans, tanlanganOqituvchiId, darsForm.oquvYili],
+  );
+
+  const selectedTeacherWeeklyHours = useMemo(() => {
+    if (!tanlanganOqituvchiId) return 0;
+    let totalMinutes = 0;
+    for (const dars of darslar) {
+      if (dars.oqituvchiId !== tanlanganOqituvchiId) continue;
+      if (dars.oquvYili !== darsForm.oquvYili) continue;
+      const duration = getSlotDurationMinutes(dars.vaqtOraliq);
+      if (!duration) continue;
+      totalMinutes += duration;
+    }
+    return totalMinutes / 60;
+  }, [darslar, tanlanganOqituvchiId, darsForm.oquvYili]);
+  const workloadHoursInputValue =
+    workloadHoursInput == null
+      ? (selectedTeacherWorkloadPlan ? String(selectedTeacherWorkloadPlan.weeklyHoursLimit) : '')
+      : workloadHoursInput;
+
   const tezTanlanganFanId = tezQoshishFanId || tanlanganFanId || subjects[0]?.id || '';
   const tezFanBoyichaOqituvchilar = useMemo(
     () => teachers.filter((teacher) => teacher.subject?.id === tezTanlanganFanId),
@@ -107,10 +194,42 @@ export default function DarsJadvaliManager({
     ? tezQoshishOqituvchiId
     : tezFanBoyichaOqituvchilar[0]?.id || '';
 
+  const tezSelectedTeacherWorkloadPlan = useMemo(
+    () => workloadPlans.find(
+      (plan) => plan.teacherId === tanlanganTezOqituvchiId && plan.oquvYili === gridOquvYili,
+    ) || null,
+    [workloadPlans, tanlanganTezOqituvchiId, gridOquvYili],
+  );
+
   const saralanganVaqtlar = [...vaqtOraliqlari].sort((a, b) => a.tartib - b.tartib);
   const gridDarslar = darslar.filter(
     (dars) => dars.sinfId === tanlanganGridSinfId && dars.oquvYili === gridOquvYili,
   );
+  const gridLoadSummary = useMemo(() => {
+    let weeklyMinutes = 0;
+    let monthlyMinutes = 0;
+    let monthlyLessonCount = 0;
+
+    for (const dars of gridDarslar) {
+      const duration = getSlotDurationMinutes(dars.vaqtOraliq);
+      if (!duration) continue;
+      weeklyMinutes += duration;
+
+      const jsWeekday = HAFTA_KUNI_TO_JS_DAY[dars.haftaKuni];
+      const lessonCount = countWeekdayInMonth(gridMonthKey, jsWeekday);
+      monthlyLessonCount += lessonCount;
+      monthlyMinutes += lessonCount * duration;
+    }
+
+    return {
+      weeklyLessonCount: gridDarslar.length,
+      weeklyMinutes,
+      weeklyHours: weeklyMinutes / 60,
+      monthlyLessonCount,
+      monthlyMinutes,
+      monthlyHours: monthlyMinutes / 60,
+    };
+  }, [gridDarslar, gridMonthKey]);
   const gridMap = new Map();
   for (const dars of gridDarslar) {
     gridMap.set(`${dars.haftaKuni}__${dars.vaqtOraliqId}`, dars);
@@ -216,6 +335,39 @@ export default function DarsJadvaliManager({
             defaultValue: "Darsni bu slotga ko'chirib bo'lmaydi: shu vaqtda boshqa dars mavjud.",
           }),
       });
+    }
+  }
+
+  async function handleSaveWorkloadPlan(event) {
+    if (event?.preventDefault) event.preventDefault();
+    if (!tanlanganOqituvchiId || !onSaveTeacherWorkloadPlan) return;
+
+    const weeklyHoursLimit = Number(workloadHoursInputValue);
+    if (!Number.isFinite(weeklyHoursLimit) || weeklyHoursLimit <= 0) {
+      setJadvalXatolik({
+        title: t("Yuklama limiti noto'g'ri", { defaultValue: "Yuklama limiti noto'g'ri" }),
+        message: t("Haftalik soat limiti 0 dan katta bo'lishi kerak", {
+          defaultValue: "Haftalik soat limiti 0 dan katta bo'lishi kerak",
+        }),
+      });
+      return;
+    }
+
+    const result = await onSaveTeacherWorkloadPlan({
+      oqituvchiId: tanlanganOqituvchiId,
+      oquvYili: darsForm.oquvYili,
+      weeklyHoursLimit,
+    });
+    if (result?.ok) {
+      setWorkloadHoursInput(String(weeklyHoursLimit));
+    }
+  }
+
+  async function handleDeleteWorkloadPlan() {
+    if (!selectedTeacherWorkloadPlan?.id || !onDeleteTeacherWorkloadPlan) return;
+    const result = await onDeleteTeacherWorkloadPlan(selectedTeacherWorkloadPlan.id);
+    if (result?.ok) {
+      setWorkloadHoursInput(null);
     }
   }
 
@@ -404,7 +556,10 @@ export default function DarsJadvaliManager({
               <FieldLabel>{t("O'qituvchi", { defaultValue: "O'qituvchi" })}</FieldLabel>
               <Select
                 value={tanlanganOqituvchiId}
-                onChange={(event) => setDarsForm((prev) => ({ ...prev, oqituvchiId: event.target.value }))}
+                onChange={(event) => {
+                  setDarsForm((prev) => ({ ...prev, oqituvchiId: event.target.value }));
+                  setWorkloadHoursInput(null);
+                }}
                 required
               >
                 {fanBoyichaOqituvchilar.map((teacher) => (
@@ -418,7 +573,10 @@ export default function DarsJadvaliManager({
               <FieldLabel>{t('Fan', { defaultValue: 'Fan' })}</FieldLabel>
               <Select
                 value={tanlanganFanId}
-                onChange={(event) => setDarsForm((prev) => ({ ...prev, fanId: event.target.value }))}
+                onChange={(event) => {
+                  setDarsForm((prev) => ({ ...prev, fanId: event.target.value }));
+                  setWorkloadHoursInput(null);
+                }}
                 required
               >
                 {subjects.map((subject) => (
@@ -461,11 +619,61 @@ export default function DarsJadvaliManager({
               <Input
                 type="text"
                 value={darsForm.oquvYili}
-                onChange={(event) => setDarsForm((prev) => ({ ...prev, oquvYili: event.target.value }))}
+                onChange={(event) => {
+                  setDarsForm((prev) => ({ ...prev, oquvYili: event.target.value }));
+                  setWorkloadHoursInput(null);
+                }}
                 placeholder={t('Masalan: 2025-2026', { defaultValue: 'Masalan: 2025-2026' })}
                 required
               />
             </label>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              {t("O'qituvchi yuklama rejasi", { defaultValue: "O'qituvchi yuklama rejasi" })}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-700">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1">
+                {t('Joriy haftalik soat', { defaultValue: 'Joriy haftalik soat' })}: {formatHours(selectedTeacherWeeklyHours)}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1">
+                {t('Limit', { defaultValue: 'Limit' })}: {selectedTeacherWorkloadPlan ? formatHours(selectedTeacherWorkloadPlan.weeklyHoursLimit) : t('Belgilanmagan', { defaultValue: 'Belgilanmagan' })}
+              </span>
+            </div>
+            <div className="mt-3 flex flex-wrap items-end gap-2">
+              <label className="block min-w-36 flex-1 space-y-1.5">
+                <FieldLabel>{t('Haftalik limit (soat)', { defaultValue: 'Haftalik limit (soat)' })}</FieldLabel>
+                <Input
+                  type="number"
+                  step="0.25"
+                  min="0.25"
+                  max="72"
+                  value={workloadHoursInputValue}
+                  onChange={(event) => setWorkloadHoursInput(event.target.value)}
+                  placeholder={t('Masalan: 12', { defaultValue: 'Masalan: 12' })}
+                />
+              </label>
+              <Button type="button" variant="secondary" disabled={actionLoading || !tanlanganOqituvchiId} onClick={handleSaveWorkloadPlan}>
+                {t("Yuklama limitini saqlash", { defaultValue: "Yuklama limitini saqlash" })}
+              </Button>
+              {selectedTeacherWorkloadPlan && (
+                <Button
+                  type="button"
+                  variant="danger"
+                  disabled={actionLoading}
+                  onClick={handleDeleteWorkloadPlan}
+                >
+                  {t("Limitni o'chirish", { defaultValue: "Limitni o'chirish" })}
+                </Button>
+              )}
+            </div>
+            {!selectedTeacherWorkloadPlan && (
+              <p className="mt-2 text-xs text-amber-700">
+                {t("Bu o'qituvchi uchun avval haftalik soat limitini belgilang, keyin dars qo'shing.", {
+                  defaultValue: "Bu o'qituvchi uchun avval haftalik soat limitini belgilang, keyin dars qo'shing.",
+                })}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/70 pt-2">
             <span className="text-xs text-slate-500">
@@ -478,7 +686,8 @@ export default function DarsJadvaliManager({
                 !classrooms.length ||
                 !fanBoyichaOqituvchilar.length ||
                 !subjects.length ||
-                !vaqtOraliqlari.length
+                !vaqtOraliqlari.length ||
+                !selectedTeacherWorkloadPlan
               }
               variant="indigo"
             >
@@ -560,12 +769,34 @@ export default function DarsJadvaliManager({
                   placeholder={t('Masalan: 2025-2026', { defaultValue: 'Masalan: 2025-2026' })}
                 />
               </label>
+              <label className="block space-y-1.5">
+                <FieldLabel>{t("Oy bo'yicha yuklama", { defaultValue: "Oy bo'yicha yuklama" })}</FieldLabel>
+                <Input
+                  type="month"
+                  value={gridMonthKey}
+                  onChange={(event) => setGridMonthKey(event.target.value)}
+                />
+              </label>
               <div className="sm:self-end">
               <Button onClick={handleExportPdf} size="sm" className="w-full">
                 {t('PDF export', { defaultValue: 'PDF export' })}
               </Button>
               </div>
             </div>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-600">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1">
+                {t('Haftalik darslar', { defaultValue: 'Haftalik darslar' })}: {gridLoadSummary.weeklyLessonCount}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1">
+                {t('Haftalik soat', { defaultValue: 'Haftalik soat' })}: {formatHours(gridLoadSummary.weeklyHours)}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1">
+                {t("Oy bo'yicha darslar", { defaultValue: "Oy bo'yicha darslar" })}: {gridLoadSummary.monthlyLessonCount}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-800">
+                {t("Oy bo'yicha soat", { defaultValue: "Oy bo'yicha soat" })}: {formatHours(gridLoadSummary.monthlyHours)}
+              </span>
             </div>
           </div>
 
@@ -717,8 +948,19 @@ export default function DarsJadvaliManager({
                   })}
                 </p>
               )}
+              {tezFanBoyichaOqituvchilar.length && !tezSelectedTeacherWorkloadPlan && (
+                <p className="text-xs text-amber-700">
+                  {t("Bu o'qituvchi uchun tanlangan o'quv yilida haftalik yuklama limiti belgilanmagan.", {
+                    defaultValue: "Bu o'qituvchi uchun tanlangan o'quv yilida haftalik yuklama limiti belgilanmagan.",
+                  })}
+                </p>
+              )}
               <div className="flex flex-col gap-2 border-t border-slate-200/70 pt-2 sm:flex-row sm:justify-end">
-                <Button type="submit" variant="indigo" disabled={!tezFanBoyichaOqituvchilar.length}>
+                <Button
+                  type="submit"
+                  variant="indigo"
+                  disabled={!tezFanBoyichaOqituvchilar.length || !tezSelectedTeacherWorkloadPlan}
+                >
                   {t('Saqlash', { defaultValue: 'Saqlash' })}
                 </Button>
                 <Button

@@ -4,6 +4,9 @@ import i18n from '../i18n';
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 const REFRESH_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 15000;
+const CSRF_COOKIE_NAME = 'csrfToken';
+const CSRF_HEADER_NAME = 'X-CSRF-Token';
+const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE']);
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -26,6 +29,34 @@ let refreshQueue = [];
 
 let requestInterceptorId = null;
 let responseInterceptorId = null;
+
+function readCookie(cookieName) {
+  if (typeof document === 'undefined') return null;
+  const cookies = String(document.cookie || '').split(';');
+  for (const rawCookie of cookies) {
+    const [namePart, ...valueParts] = rawCookie.trim().split('=');
+    if (namePart !== cookieName) continue;
+    const encodedValue = valueParts.join('=');
+    try {
+      return decodeURIComponent(encodedValue);
+    } catch {
+      return encodedValue;
+    }
+  }
+  return null;
+}
+
+function shouldAttachCsrfHeader(method) {
+  const normalizedMethod = String(method || 'GET').toUpperCase();
+  return !SAFE_HTTP_METHODS.has(normalizedMethod);
+}
+
+function attachCsrfHeader(headers, method) {
+  if (!shouldAttachCsrfHeader(method)) return;
+  const token = readCookie(CSRF_COOKIE_NAME);
+  if (!token) return;
+  headers[CSRF_HEADER_NAME] = token;
+}
 
 function normalizeAxiosError(error) {
   if (error?.isNormalizedApiError) return error;
@@ -85,6 +116,7 @@ function attachInterceptors() {
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    attachCsrfHeader(config.headers, config.method);
     config.headers['X-Lang'] = lang;
     config.headers['Accept-Language'] = lang;
     return config;
@@ -119,7 +151,16 @@ function attachInterceptors() {
       isRefreshing = true;
 
       try {
-        const refreshResponse = await refreshClient.post('/api/auth/refresh');
+        const refreshHeaders = {
+          'X-Lang': resolveLangHeaderValue(),
+          'Accept-Language': resolveLangHeaderValue(),
+        };
+        attachCsrfHeader(refreshHeaders, 'POST');
+        const refreshResponse = await refreshClient.post(
+          '/api/auth/refresh',
+          undefined,
+          { headers: refreshHeaders },
+        );
         const newToken = refreshResponse.data?.accessToken;
 
         if (!newToken) {
@@ -191,6 +232,7 @@ export async function apiRequest({
       'Accept-Language': resolveLangHeaderValue(),
       ...(headers || {}),
     };
+    attachCsrfHeader(finalHeaders, method);
 
     const response = await api.request({
       url: path,

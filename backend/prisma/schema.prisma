@@ -159,9 +159,33 @@ model User {
   reversedPayrollRuns PayrollRun[] @relation("PayrollRunReversedBy")
   createdPayrollLines PayrollLine[] @relation("PayrollLineCreatedBy")
   payrollAuditLogs AuditLog[] @relation("AuditActorUser")
+  refreshSessions RefreshSession[]
+  managerClassroomAccesses ManagerClassroomAccess[] @relation("ManagerClassroomAccessUser")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model RefreshSession {
+  id String @id @default(cuid())
+
+  userId String
+  jti String @unique
+  tokenHash String @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  replacedByJti String?
+  ip String?
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, expiresAt])
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
 }
 
 model Admin {
@@ -214,12 +238,30 @@ model Teacher {
   teacherRates TeacherRate[]
   payrollItems PayrollItem[]
   payrollLines PayrollLine[]
+  workloadPlans TeacherWorkloadPlan[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([firstName, lastName, birthDate])
   @@index([subjectId])
+}
+
+model TeacherWorkloadPlan {
+  id String @id @default(cuid())
+
+  teacherId String
+  oquvYili String
+  weeklyMinutesLimit Int
+  note String?
+
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teacherId, oquvYili])
+  @@index([oquvYili])
 }
 
 model Student {
@@ -305,12 +347,30 @@ model Classroom {
   darsJadvallari DarsJadvali[]
   realLessons RealLesson[]
   payrollLines PayrollLine[]
+  managerClassroomAccesses ManagerClassroomAccess[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([name, academicYear])
   @@index([isArchived])
+}
+
+model ManagerClassroomAccess {
+  id String @id @default(cuid())
+
+  managerUserId String
+  classroomId String
+
+  managerUser User @relation("ManagerClassroomAccessUser", fields: [managerUserId], references: [id], onDelete: Cascade)
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([managerUserId, classroomId])
+  @@index([managerUserId])
+  @@index([classroomId])
 }
 
 model Enrollment {
@@ -526,6 +586,7 @@ model RealLesson {
   @@index([classroomId, startAt])
   @@index([replacedByTeacherId, startAt])
   @@index([darsJadvaliId])
+  @@unique([organizationId, darsJadvaliId, startAt])
 }
 
 model TeacherRate {

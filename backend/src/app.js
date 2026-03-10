@@ -4,6 +4,7 @@ const compression = require("compression");
 const cors = require("cors");
 const helmet = require("helmet");
 const path = require("path");
+const { env } = require("./config/env");
 
 const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
@@ -21,10 +22,11 @@ const { errorHandler } = require("./middlewares/errorhandler");
 
 const app = express();
 
+app.set("trust proxy", env.TRUST_PROXY);
 app.use(helmet());
 app.use(compression());
 app.use(cors(buildCorsOptions()));
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 app.use(locale);
 

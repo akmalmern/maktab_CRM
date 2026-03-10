@@ -1,3 +1,5 @@
+const { env } = require("./env");
+
 function parseOrigins(raw) {
   if (!raw) return [];
   return raw
@@ -7,7 +9,7 @@ function parseOrigins(raw) {
 }
 
 function getAllowedOrigins() {
-  const fromEnv = parseOrigins(process.env.CORS_ORIGINS);
+  const fromEnv = parseOrigins(env.CORS_ORIGINS);
   if (fromEnv.length > 0) return fromEnv;
   return ["http://localhost:5173", "http://127.0.0.1:5173"];
 }

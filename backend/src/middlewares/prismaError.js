@@ -154,6 +154,19 @@ function mapPrismaError(err) {
       }
 
       if (
+        targetStr.includes("organizationId") &&
+        targetStr.includes("darsJadvaliId") &&
+        targetStr.includes("startAt")
+      ) {
+        return new ApiError(
+          409,
+          "REAL_LESSON_DUPLICATE",
+          "Bu jadval uchun shu vaqtga RealLesson allaqachon mavjud",
+          { target },
+        );
+      }
+
+      if (
         (targetStr.includes("organizationId") && targetStr.includes("periodMonth")) ||
         targetLower.includes("ux_payroll_run_active_period")
       ) {

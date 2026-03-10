@@ -1,7 +1,11 @@
 const router = require("express").Router();
 const { asyncHandler } = require("../middlewares/asyncHandler");
 const { requireAuth, requireRole } = require("../middlewares/auth");
-const { uploadDoc, handleMulterErrors } = require("../middlewares/uploads");
+const {
+  uploadDoc,
+  verifyUploadedDocSignature,
+  handleMulterErrors,
+} = require("../middlewares/uploads");
 const { validate } = require("../middlewares/validate");
 
 const c = require("../controllers/admin/documentController");
@@ -17,6 +21,7 @@ router.post(
   requireAuth,
   requireRole("ADMIN"),
   uploadDoc.single("file"),
+  verifyUploadedDocSignature,
   handleMulterErrors,
   validate({ body: UploadDocumentBodySchema }),
   asyncHandler(c.adminUploadDocument),

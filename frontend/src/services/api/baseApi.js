@@ -40,6 +40,7 @@ export const baseApi = createApi({
     'ClassroomStudentList',
     'Schedule',
     'TimeSlot',
+    'ScheduleWorkload',
     'AttendanceReport',
     'FinanceSettings',
     'FinanceStudents',
