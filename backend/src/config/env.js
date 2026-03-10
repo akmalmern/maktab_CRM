@@ -27,6 +27,11 @@ const envSchema = z.object({
     return Number(v);
   }, z.coerce.number().int().min(0).max(10)).default(0),
   ENABLE_AUTO_CLASS_PROMOTION: z.preprocess((v) => toBool(v, false), z.boolean()).default(false),
+  ENABLE_AUTO_PAYROLL: z.preprocess((v) => toBool(v, false), z.boolean()).default(false),
+  AUTO_PAYROLL_INTERVAL_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
+  AUTO_PAYROLL_AUTO_APPROVE: z.preprocess((v) => toBool(v, true), z.boolean()).default(true),
+  AUTO_PAYROLL_AUTO_PAY: z.preprocess((v) => toBool(v, false), z.boolean()).default(false),
+  AUTO_PAYROLL_PAYMENT_METHOD: z.enum(["CASH", "BANK", "CLICK", "PAYME"]).default("BANK"),
   MANAGER_SCOPE_ENFORCED: z.preprocess((v) => toBool(v, true), z.boolean()).default(true),
   ALLOW_LEGACY_PLAIN_CREDENTIAL_RESPONSE: z.preprocess((v) => toBool(v, false), z.boolean()).default(false),
 });

@@ -99,12 +99,69 @@ async function deleteSubjectDefaultRate(req, res) {
   res.json({ ok: true, ...result });
 }
 
+async function listAdvancePayments(req, res) {
+  const result = await payrollService.listAdvancePayments({ query: req.query });
+  res.json({ ok: true, ...result });
+}
+
+async function listPayrollEmployees(req, res) {
+  const result = await payrollService.listPayrollEmployees({ query: req.query });
+  res.json({ ok: true, ...result });
+}
+
+async function updatePayrollEmployeeConfig(req, res) {
+  const result = await payrollService.updatePayrollEmployeeConfig({
+    employeeId: req.params.employeeId,
+    body: req.body,
+    actorUserId: req.user.sub,
+    req,
+  });
+  res.json({ ok: true, ...result });
+}
+
+async function createAdvancePayment(req, res) {
+  const result = await payrollService.createAdvancePayment({
+    body: req.body,
+    actorUserId: req.user.sub,
+    req,
+  });
+  res.status(201).json({ ok: true, ...result });
+}
+
+async function deleteAdvancePayment(req, res) {
+  const result = await payrollService.deleteAdvancePayment({
+    advanceId: req.params.advanceId,
+    actorUserId: req.user.sub,
+    req,
+  });
+  res.json({ ok: true, ...result });
+}
+
 async function generatePayrollRun(req, res) {
   const result = await payrollService.generatePayrollRun({
     body: req.body,
     actorUserId: req.user.sub,
     req,
   });
+  res.json({ ok: true, ...result });
+}
+
+async function getPayrollAutomationHealth(req, res) {
+  const result = await payrollService.getPayrollAutomationHealth({ query: req.query });
+  res.json({ ok: true, ...result });
+}
+
+async function runPayrollAutomation(req, res) {
+  const result = await payrollService.runPayrollAutomation({
+    body: req.body,
+    actorUserId: req.user.sub,
+    req,
+  });
+  res.json({ ok: true, ...result });
+}
+
+async function getPayrollMonthlyReport(req, res) {
+  const result = await payrollService.getPayrollMonthlyReport({ query: req.query });
   res.json({ ok: true, ...result });
 }
 
@@ -170,6 +227,17 @@ async function payPayrollRun(req, res) {
   res.json({ ok: true, ...result });
 }
 
+async function payPayrollItem(req, res) {
+  const result = await payrollService.payPayrollItem({
+    runId: req.params.runId,
+    itemId: req.params.itemId,
+    body: req.body,
+    actorUserId: req.user.sub,
+    req,
+  });
+  res.json({ ok: true, ...result });
+}
+
 async function reversePayrollRun(req, res) {
   const result = await payrollService.reversePayrollRun({
     runId: req.params.runId,
@@ -193,7 +261,15 @@ module.exports = {
   createSubjectDefaultRate,
   updateSubjectDefaultRate,
   deleteSubjectDefaultRate,
+  listAdvancePayments,
+  listPayrollEmployees,
+  updatePayrollEmployeeConfig,
+  createAdvancePayment,
+  deleteAdvancePayment,
   generatePayrollRun,
+  getPayrollAutomationHealth,
+  runPayrollAutomation,
+  getPayrollMonthlyReport,
   listPayrollRuns,
   getPayrollRunDetail,
   exportPayrollRunCsv,
@@ -201,5 +277,6 @@ module.exports = {
   deletePayrollAdjustment,
   approvePayrollRun,
   payPayrollRun,
+  payPayrollItem,
   reversePayrollRun,
 };

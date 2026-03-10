@@ -89,6 +89,8 @@ enum PayrollRunStatus {
 
 enum PayrollLineType {
   LESSON
+  FIXED_SALARY
+  ADVANCE_DEDUCTION
   BONUS
   PENALTY
   MANUAL
@@ -99,6 +101,12 @@ enum PayrollPaymentMethod {
   BANK
   CLICK
   PAYME
+}
+
+enum PayrollItemPaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
 }
 
 enum PayrollRateSource {
@@ -158,6 +166,9 @@ model User {
   paidPayrollRuns PayrollRun[] @relation("PayrollRunPaidBy")
   reversedPayrollRuns PayrollRun[] @relation("PayrollRunReversedBy")
   createdPayrollLines PayrollLine[] @relation("PayrollLineCreatedBy")
+  createdAdvancePayments AdvancePayment[] @relation("AdvancePaymentCreatedBy")
+  createdPayrollItemPayments PayrollItemPayment[] @relation("PayrollItemPaymentCreatedBy")
+  createdPayrollCashEntries PayrollCashEntry[] @relation("PayrollCashEntryCreatedBy")
   payrollAuditLogs AuditLog[] @relation("AuditActorUser")
   refreshSessions RefreshSession[]
   managerClassroomAccesses ManagerClassroomAccess[] @relation("ManagerClassroomAccessUser")
@@ -238,6 +249,8 @@ model Teacher {
   teacherRates TeacherRate[]
   payrollItems PayrollItem[]
   payrollLines PayrollLine[]
+  advancePayments AdvancePayment[]
+  payrollItemPayments PayrollItemPayment[]
   workloadPlans TeacherWorkloadPlan[]
 
   createdAt DateTime @default(now())
@@ -506,6 +519,9 @@ model Organization {
   payrollRuns         PayrollRun[]
   payrollItems        PayrollItem[]
   payrollLines        PayrollLine[]
+  advancePayments     AdvancePayment[]
+  payrollItemPayments PayrollItemPayment[]
+  payrollCashEntries  PayrollCashEntry[]
   auditLogs           AuditLog[]
 
   createdAt DateTime @default(now())
@@ -522,6 +538,7 @@ model Employee {
   payrollMode EmployeePayrollMode @default(MANUAL_ONLY)
   employmentStatus EmploymentStatus @default(ACTIVE)
   isPayrollEligible Boolean @default(true)
+  fixedSalaryAmount Decimal? @db.Decimal(14, 2)
 
   firstName String?
   lastName String?
@@ -542,6 +559,8 @@ model Employee {
 
   payrollItems PayrollItem[]
   payrollLines PayrollLine[]
+  advancePayments AdvancePayment[]
+  payrollItemPayments PayrollItemPayment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -689,6 +708,8 @@ model PayrollRun {
 
   items PayrollItem[]
   lines PayrollLine[]
+  itemPayments PayrollItemPayment[]
+  cashEntries PayrollCashEntry[]
   auditLogs AuditLog[] @relation("AuditLogPayrollRun")
 
   createdAt DateTime @default(now())
@@ -714,8 +735,12 @@ model PayrollItem {
   bonusAmount Decimal @default(0) @db.Decimal(14, 2)
   penaltyAmount Decimal @default(0) @db.Decimal(14, 2)
   manualAmount Decimal @default(0) @db.Decimal(14, 2)
+  fixedSalaryAmount Decimal @default(0) @db.Decimal(14, 2)
+  advanceDeductionAmount Decimal @default(0) @db.Decimal(14, 2)
   adjustmentAmount Decimal @default(0) @db.Decimal(14, 2)
   payableAmount Decimal @default(0) @db.Decimal(14, 2)
+  paidAmount Decimal @default(0) @db.Decimal(14, 2)
+  paymentStatus PayrollItemPaymentStatus @default(UNPAID)
 
   lessonLineCount Int @default(0)
   lineCount Int @default(0)
@@ -731,6 +756,8 @@ model PayrollItem {
   teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
 
   lines PayrollLine[]
+  payments PayrollItemPayment[]
+  cashEntries PayrollCashEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -765,6 +792,7 @@ model PayrollLine {
   rateSource PayrollRateSource?
   teacherRateId String?
   subjectDefaultRateId String?
+  advancePaymentId String?
 
   description String?
   meta Json?
@@ -781,6 +809,7 @@ model PayrollLine {
   realLesson RealLesson? @relation("PayrollLineRealLesson", fields: [realLessonId], references: [id], onDelete: SetNull)
   teacherRate TeacherRate? @relation("PayrollLineTeacherRate", fields: [teacherRateId], references: [id], onDelete: SetNull)
   subjectDefaultRate SubjectDefaultRate? @relation("PayrollLineSubjectDefaultRate", fields: [subjectDefaultRateId], references: [id], onDelete: SetNull)
+  advancePayment AdvancePayment? @relation("PayrollLineAdvancePayment", fields: [advancePaymentId], references: [id], onDelete: SetNull)
   createdByUser User? @relation("PayrollLineCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
@@ -791,7 +820,101 @@ model PayrollLine {
   @@index([organizationId, payrollRunId, teacherId])
   @@index([payrollItemId, type])
   @@index([realLessonId])
+  @@index([advancePaymentId])
   @@index([type, createdAt])
+}
+
+model AdvancePayment {
+  id String @id @default(cuid())
+
+  organizationId String
+  employeeId String
+  teacherId String?
+
+  periodMonth String
+  amount Decimal @db.Decimal(14, 2)
+  paidAt DateTime @default(now())
+  note String?
+  createdByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  createdByUser User? @relation("AdvancePaymentCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  payrollLines PayrollLine[] @relation("PayrollLineAdvancePayment")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, periodMonth, paidAt])
+  @@index([organizationId, employeeId, createdAt])
+  @@index([organizationId, teacherId, createdAt])
+}
+
+model PayrollItemPayment {
+  id String @id @default(cuid())
+
+  organizationId String
+  payrollRunId String
+  payrollItemId String
+  employeeId String?
+  teacherId String?
+
+  amount Decimal @db.Decimal(14, 2)
+  paymentMethod PayrollPaymentMethod
+  paidAt DateTime @default(now())
+  externalRef String?
+  note String?
+  createdByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  payrollItem PayrollItem @relation(fields: [payrollItemId], references: [id], onDelete: Cascade)
+  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  createdByUser User? @relation("PayrollItemPaymentCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  cashEntries PayrollCashEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, payrollRunId, paidAt])
+  @@index([organizationId, payrollItemId, paidAt])
+  @@index([employeeId, paidAt])
+  @@index([teacherId, paidAt])
+}
+
+model PayrollCashEntry {
+  id String @id @default(cuid())
+
+  organizationId String
+  payrollRunId String?
+  payrollItemId String?
+  payrollItemPaymentId String?
+
+  amount Decimal @db.Decimal(14, 2)
+  paymentMethod PayrollPaymentMethod
+  entryType String @default("PAYROLL_PAYOUT")
+  occurredAt DateTime @default(now())
+  externalRef String?
+  note String?
+  meta Json?
+  createdByUserId String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  payrollRun PayrollRun? @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
+  payrollItem PayrollItem? @relation(fields: [payrollItemId], references: [id], onDelete: SetNull)
+  payrollItemPayment PayrollItemPayment? @relation(fields: [payrollItemPaymentId], references: [id], onDelete: SetNull)
+  createdByUser User? @relation("PayrollCashEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, occurredAt])
+  @@index([organizationId, entryType, occurredAt])
+  @@index([payrollRunId])
+  @@index([payrollItemId])
+  @@index([payrollItemPaymentId])
 }
 
 model AuditLog {

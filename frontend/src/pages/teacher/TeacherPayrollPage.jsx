@@ -12,6 +12,7 @@ import {
   useGetTeacherPayslipDetailQuery,
   useGetTeacherPayslipsQuery,
 } from '../../services/api/payrollApi';
+import PrintPayslip from '../../features/payroll/PrintPayslip';
 
 function formatDateTime(value) {
   if (!value) return '-';
@@ -38,9 +39,13 @@ function StatusPill({ value }) {
     PAID: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     REVERSED: 'bg-rose-50 text-rose-700 border-rose-200',
     LESSON: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    FIXED_SALARY: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+    ADVANCE_DEDUCTION: 'bg-amber-50 text-amber-700 border-amber-200',
     BONUS: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     PENALTY: 'bg-rose-50 text-rose-700 border-rose-200',
     MANUAL: 'bg-slate-100 text-slate-700 border-slate-200',
+    UNPAID: 'bg-slate-100 text-slate-700 border-slate-200',
+    PARTIAL: 'bg-amber-50 text-amber-700 border-amber-200',
   };
   return <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${map[value] || map.DRAFT}`}>{value}</span>;
 }
@@ -78,6 +83,8 @@ export default function TeacherPayrollPage() {
       { key: 'grossAmount', header: t('Brutto'), render: (row) => formatMoney(row.grossAmount) },
       { key: 'adjustmentAmount', header: t('Adj'), render: (row) => formatMoney(row.adjustmentAmount) },
       { key: 'payableAmount', header: t("To'lanadi"), render: (row) => formatMoney(row.payableAmount) },
+      { key: 'paidAmount', header: t("To'langan"), render: (row) => formatMoney(row.paidAmount) },
+      { key: 'paymentStatus', header: t("To'lov holati"), render: (row) => <StatusPill value={row.paymentStatus || 'UNPAID'} /> },
       { key: 'paidAt', header: t("To'langan"), render: (row) => formatDateTime(row.payrollRun?.paidAt) },
       {
         key: 'actions',
@@ -180,19 +187,33 @@ export default function TeacherPayrollPage() {
         )}
       </Card>
 
-      <Card title={t('Payslip Tafsiloti')} subtitle={payslipDetail?.payrollRun?.periodMonth || t('Run tanlanmagan')}>
+      <Card
+        title={t('Payslip Tafsiloti')}
+        subtitle={payslipDetail?.payrollRun?.periodMonth || t('Run tanlanmagan')}
+        actions={payslipDetail ? (
+          <PrintPayslip
+            teacher={payslipDetailQuery.data?.teacher}
+            payslip={payslipDetail}
+            lines={lines}
+          />
+        ) : null}
+      >
         {!selectedRun && <StateView type="empty" description={t('Payslip tanlang')} />}
         {selectedRun && (payslipDetailQuery.isLoading || payslipDetailQuery.isFetching) && <StateView type="skeleton" />}
         {selectedRun && payslipDetailQuery.error && <StateView type="error" description={payslipDetailQuery.error?.message} />}
         {payslipDetail && !payslipDetailQuery.isLoading && !payslipDetailQuery.error && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs text-slate-500">{t('Status')}</div><div className="mt-1"><StatusPill value={payslipDetail.payrollRun?.status} /></div></div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs text-slate-500">{t("To'lov holati")}</div><div className="mt-1"><StatusPill value={payslipDetail.paymentStatus || 'UNPAID'} /></div></div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs text-slate-500">{t('Daqiqa')}</div><div className="mt-1 font-semibold">{payslipDetail.totalMinutes || 0}</div></div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs text-slate-500">{t('Soat')}</div><div className="mt-1 font-semibold">{payslipDetail.totalHours || 0}</div></div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs text-slate-500">{t('Brutto')}</div><div className="mt-1 font-semibold">{formatMoney(payslipDetail.grossAmount)}</div></div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs text-slate-500">{t('Oklad')}</div><div className="mt-1 font-semibold">{formatMoney(payslipDetail.fixedSalaryAmount)}</div></div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs text-slate-500">{t('Avans ushlanma')}</div><div className="mt-1 font-semibold">{formatMoney(payslipDetail.advanceDeductionAmount)}</div></div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs text-slate-500">{t('Adjustment')}</div><div className="mt-1 font-semibold">{formatMoney(payslipDetail.adjustmentAmount)}</div></div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs text-slate-500">{t("To'lanadi")}</div><div className="mt-1 font-semibold">{formatMoney(payslipDetail.payableAmount)}</div></div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs text-slate-500">{t("To'langan")}</div><div className="mt-1 font-semibold">{formatMoney(payslipDetail.paidAmount)}</div></div>
             </div>
             <DataTable columns={lineColumns} rows={lines} density="compact" maxHeightClassName="max-h-[480px]" />
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">

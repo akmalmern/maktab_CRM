@@ -25,22 +25,30 @@ import { useGetClassroomsQuery } from '../../../../services/api/classroomsApi';
 import {
   useAddPayrollAdjustmentMutation,
   useApprovePayrollRunMutation,
+  useCreatePayrollAdvanceMutation,
   useCreatePayrollRealLessonMutation,
   useCreatePayrollSubjectRateMutation,
   useCreatePayrollTeacherRateMutation,
   useBulkUpdatePayrollRealLessonStatusMutation,
-  useDeletePayrollAdjustmentMutation,
+  useDeletePayrollAdvanceMutation,
   useDeletePayrollSubjectRateMutation,
   useDeletePayrollTeacherRateMutation,
   useExportPayrollRunCsvMutation,
+  useGetPayrollAdvancesQuery,
+  useGetPayrollAutomationHealthQuery,
+  useGetPayrollEmployeesQuery,
+  useGetPayrollMonthlyReportQuery,
   useGeneratePayrollRunMutation,
   useGetPayrollRealLessonsQuery,
   useGetPayrollRunDetailQuery,
   useGetPayrollRunsQuery,
   useGetPayrollSubjectRatesQuery,
   useGetPayrollTeacherRatesQuery,
+  usePayPayrollItemMutation,
   usePayPayrollRunMutation,
   useReversePayrollRunMutation,
+  useRunPayrollAutomationMutation,
+  useUpdatePayrollEmployeeConfigMutation,
   useUpdatePayrollRealLessonStatusMutation,
   useUpdatePayrollSubjectRateMutation,
   useUpdatePayrollTeacherRateMutation,
@@ -76,6 +84,15 @@ function formatDateTime(value) {
 function formatMoney(value) {
   const n = Number(value || 0);
   return new Intl.NumberFormat('uz-UZ').format(Number.isFinite(n) ? n : 0);
+}
+
+function formatHours(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return '0';
+  return new Intl.NumberFormat('uz-UZ', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  }).format(n);
 }
 
 function formatPersonLabel(person, fallback = '') {
@@ -115,6 +132,14 @@ function formatOwnerName({ teacher, employee, fallbackName = '', fallbackId = ''
   );
 }
 
+function formatEmployeeConfigName(row) {
+  const teacherName = `${row?.teacher?.firstName || ''} ${row?.teacher?.lastName || ''}`.trim();
+  const employeeName = `${row?.firstName || ''} ${row?.lastName || ''}`.trim();
+  const username = row?.user?.username ? `@${row.user.username}` : '';
+  const base = teacherName || employeeName || row?.id || '-';
+  return username ? `${base} (${username})` : base;
+}
+
 function StatusPill({ value }) {
   const colorMap = {
     DRAFT: 'bg-slate-100 text-slate-700 border-slate-200',
@@ -125,9 +150,20 @@ function StatusPill({ value }) {
     CANCELED: 'bg-slate-100 text-slate-700 border-slate-200',
     REPLACED: 'bg-violet-50 text-violet-700 border-violet-200',
     LESSON: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    FIXED_SALARY: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+    ADVANCE_DEDUCTION: 'bg-amber-50 text-amber-700 border-amber-200',
     BONUS: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     PENALTY: 'bg-rose-50 text-rose-700 border-rose-200',
     MANUAL: 'bg-slate-100 text-slate-700 border-slate-200',
+    LESSON_BASED: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    FIXED: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+    MIXED: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    MANUAL_ONLY: 'bg-slate-100 text-slate-700 border-slate-200',
+    ACTIVE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    INACTIVE: 'bg-amber-50 text-amber-700 border-amber-200',
+    ARCHIVED: 'bg-rose-50 text-rose-700 border-rose-200',
+    UNPAID: 'bg-slate-100 text-slate-700 border-slate-200',
+    PARTIAL: 'bg-amber-50 text-amber-700 border-amber-200',
   };
   return (
     <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${colorMap[value] || 'bg-slate-50 text-slate-700 border-slate-200'}`}>
@@ -166,6 +202,16 @@ function StatWidget({ label, value, tone = 'slate', subtitle }) {
 const DEFAULT_RUN_FILTERS = { page: 1, limit: 20, status: '', periodMonth: '' };
 const DEFAULT_LINE_FILTERS = { page: 1, limit: 50, ownerKey: '', type: '' };
 const DEFAULT_LESSON_FILTERS = { page: 1, limit: 20, periodMonth: '', status: 'DONE', teacherId: '', subjectId: '', classroomId: '' };
+const DEFAULT_ADVANCE_FILTERS = { page: 1, limit: 20, periodMonth: '' };
+const DEFAULT_EMPLOYEE_CONFIG_FILTERS = {
+  page: 1,
+  limit: 20,
+  kind: 'TEACHER',
+  payrollMode: '',
+  employmentStatus: '',
+  isPayrollEligible: '',
+  search: '',
+};
 
 export default function PayrollSection() {
   const { t } = useTranslation();
@@ -174,10 +220,11 @@ export default function PayrollSection() {
   const isAdminView = role === 'ADMIN';
 
   const [tab, setTab] = useState('runs');
+  const [settingsTab, setSettingsTab] = useState('config');
   const [periodMonth, setPeriodMonth] = useState(getCurrentMonthKey());
   const [selectedRunId, setSelectedRunId] = useState('');
   const [runFilters, setRunFilters] = useState({ ...DEFAULT_RUN_FILTERS, periodMonth: getCurrentMonthKey() });
-  const [lineFilters, setLineFilters] = useState(DEFAULT_LINE_FILTERS);
+  const lineFilters = DEFAULT_LINE_FILTERS;
   const [lessonFilters, setLessonFilters] = useState({ ...DEFAULT_LESSON_FILTERS, periodMonth: getCurrentMonthKey() });
 
   const [teacherRateForm, setTeacherRateForm] = useState({
@@ -216,6 +263,44 @@ export default function PayrollSection() {
     paymentMethod: 'BANK',
     paidAt: '',
     externalRef: '',
+    note: '',
+  });
+  const [automationForm, setAutomationForm] = useState({
+    mode: 'GENERATE_APPROVE',
+    paymentMethod: 'BANK',
+    force: false,
+  });
+  const [payItemModal, setPayItemModal] = useState({
+    open: false,
+    itemId: '',
+    ownerLabel: '',
+    payableAmount: 0,
+    paidAmount: 0,
+  });
+  const [payItemForm, setPayItemForm] = useState({
+    amount: '',
+    paymentMethod: 'BANK',
+    paidAt: '',
+    externalRef: '',
+    note: '',
+  });
+  const [advanceFilters, setAdvanceFilters] = useState({ ...DEFAULT_ADVANCE_FILTERS, periodMonth: getCurrentMonthKey() });
+  const [advanceForm, setAdvanceForm] = useState({
+    periodMonth: getCurrentMonthKey(),
+    teacherId: '',
+    amount: '',
+    paidAt: '',
+    note: '',
+  });
+  const [employeeConfigFilters, setEmployeeConfigFilters] = useState(DEFAULT_EMPLOYEE_CONFIG_FILTERS);
+  const [employeeConfigModal, setEmployeeConfigModal] = useState({
+    open: false,
+    employeeId: '',
+    displayName: '',
+    payrollMode: 'LESSON_BASED',
+    fixedSalaryAmount: '',
+    isPayrollEligible: true,
+    employmentStatus: 'ACTIVE',
     note: '',
   });
   const [reverseReason, setReverseReason] = useState('');
@@ -265,6 +350,20 @@ export default function PayrollSection() {
     ...(runFilters.status ? { status: runFilters.status } : {}),
     ...(runFilters.periodMonth ? { periodMonth: runFilters.periodMonth } : {}),
   });
+  const payrollAutomationHealthQuery = useGetPayrollAutomationHealthQuery(
+    {
+      periodMonth,
+      includeDetails: true,
+    },
+    { skip: tab !== 'runs' || !periodMonth },
+  );
+  const payrollMonthlyReportQuery = useGetPayrollMonthlyReportQuery(
+    {
+      periodMonth,
+      includeDetails: false,
+    },
+    { skip: tab !== 'runs' || !periodMonth },
+  );
   const runs = useMemo(() => payrollRunsQuery.data?.runs || [], [payrollRunsQuery.data?.runs]);
   const activeRunId =
     (selectedRunId && runs.some((run) => run.id === selectedRunId) ? selectedRunId : '') ||
@@ -288,11 +387,11 @@ export default function PayrollSection() {
 
   const payrollTeacherRatesQuery = useGetPayrollTeacherRatesQuery(
     { page: 1, limit: 100 },
-    { skip: isManagerView || tab !== 'rates' },
+    { skip: isManagerView || tab !== 'settings' || settingsTab !== 'rates' },
   );
   const payrollSubjectRatesQuery = useGetPayrollSubjectRatesQuery(
     { page: 1, limit: 100 },
-    { skip: isManagerView || tab !== 'rates' },
+    { skip: isManagerView || tab !== 'settings' || settingsTab !== 'rates' },
   );
   const payrollRealLessonsQuery = useGetPayrollRealLessonsQuery(
     {
@@ -304,10 +403,36 @@ export default function PayrollSection() {
       ...(lessonFilters.subjectId ? { subjectId: lessonFilters.subjectId } : {}),
       ...(lessonFilters.classroomId ? { classroomId: lessonFilters.classroomId } : {}),
     },
-    { skip: isManagerView || tab !== 'lessons' },
+    { skip: isManagerView || tab !== 'settings' || settingsTab !== 'lessons' },
+  );
+  const payrollAdvancesQuery = useGetPayrollAdvancesQuery(
+    {
+      page: advanceFilters.page,
+      limit: advanceFilters.limit,
+      ...(advanceFilters.periodMonth ? { periodMonth: advanceFilters.periodMonth } : {}),
+    },
+    { skip: isManagerView || tab !== 'settings' || settingsTab !== 'advances' },
+  );
+  const payrollEmployeesQuery = useGetPayrollEmployeesQuery(
+    {
+      page: employeeConfigFilters.page,
+      limit: employeeConfigFilters.limit,
+      ...(employeeConfigFilters.kind ? { kind: employeeConfigFilters.kind } : {}),
+      ...(employeeConfigFilters.payrollMode ? { payrollMode: employeeConfigFilters.payrollMode } : {}),
+      ...(employeeConfigFilters.employmentStatus
+        ? { employmentStatus: employeeConfigFilters.employmentStatus }
+        : {}),
+      ...(employeeConfigFilters.isPayrollEligible === ''
+        ? {}
+        : { isPayrollEligible: employeeConfigFilters.isPayrollEligible === 'true' }),
+      ...(employeeConfigFilters.search ? { search: employeeConfigFilters.search } : {}),
+    },
+    { skip: isManagerView || tab !== 'settings' || settingsTab !== 'config' },
   );
 
   const [generatePayrollRun, generatePayrollRunState] = useGeneratePayrollRunMutation();
+  const [runPayrollAutomation, runPayrollAutomationState] = useRunPayrollAutomationMutation();
+  const [createPayrollAdvance, createAdvanceState] = useCreatePayrollAdvanceMutation();
   const [createPayrollTeacherRate, createTeacherRateState] = useCreatePayrollTeacherRateMutation();
   const [updatePayrollTeacherRate, updateTeacherRateState] = useUpdatePayrollTeacherRateMutation();
   const [deletePayrollTeacherRate, deleteTeacherRateState] = useDeletePayrollTeacherRateMutation();
@@ -318,17 +443,31 @@ export default function PayrollSection() {
   const [updatePayrollRealLessonStatus, updateRealLessonStatusState] = useUpdatePayrollRealLessonStatusMutation();
   const [bulkUpdatePayrollRealLessonStatus, bulkUpdateRealLessonStatusState] = useBulkUpdatePayrollRealLessonStatusMutation();
   const [addPayrollAdjustment, addAdjustmentState] = useAddPayrollAdjustmentMutation();
-  const [deletePayrollAdjustment, deleteAdjustmentState] = useDeletePayrollAdjustmentMutation();
+  const [deletePayrollAdvance, deleteAdvanceState] = useDeletePayrollAdvanceMutation();
+  const [updatePayrollEmployeeConfig, updatePayrollEmployeeConfigState] = useUpdatePayrollEmployeeConfigMutation();
   const [approvePayrollRun, approvePayrollRunState] = useApprovePayrollRunMutation();
   const [payPayrollRun, payPayrollRunState] = usePayPayrollRunMutation();
+  const [payPayrollItem, payPayrollItemState] = usePayPayrollItemMutation();
   const [reversePayrollRun, reversePayrollRunState] = useReversePayrollRunMutation();
   const [exportPayrollRunCsv, exportPayrollRunCsvState] = useExportPayrollRunCsvMutation();
 
   const selectedRun = payrollRunDetailQuery.data?.run || null;
-  const selectedRunLines = payrollRunDetailQuery.data?.lines?.items || [];
+  const selectedRunPaidAmount = useMemo(
+    () => (selectedRun?.items || []).reduce((sum, item) => sum + Number(item.paidAmount || 0), 0),
+    [selectedRun?.items],
+  );
+  const selectedRunPayableAmount = Number(selectedRun?.payableAmount || 0);
+  const selectedRunRemainingAmount = Math.max(0, selectedRunPayableAmount - selectedRunPaidAmount);
+  const canEditSelectedRun = isAdminView && selectedRun?.status === 'DRAFT';
+  const canApproveSelectedRun = (isAdminView || isManagerView) && selectedRun?.status === 'DRAFT';
+  const canPaySelectedRun = isAdminView && selectedRun?.status === 'APPROVED';
+  const canReverseSelectedRun = isAdminView && (selectedRun?.status === 'APPROVED' || selectedRun?.status === 'PAID');
+
 
   const busy =
     generatePayrollRunState.isLoading ||
+    runPayrollAutomationState.isLoading ||
+    createAdvanceState.isLoading ||
     createTeacherRateState.isLoading ||
     updateTeacherRateState.isLoading ||
     deleteTeacherRateState.isLoading ||
@@ -339,9 +478,11 @@ export default function PayrollSection() {
     updateRealLessonStatusState.isLoading ||
     bulkUpdateRealLessonStatusState.isLoading ||
     addAdjustmentState.isLoading ||
-    deleteAdjustmentState.isLoading ||
+    deleteAdvanceState.isLoading ||
+    updatePayrollEmployeeConfigState.isLoading ||
     approvePayrollRunState.isLoading ||
     payPayrollRunState.isLoading ||
+    payPayrollItemState.isLoading ||
     reversePayrollRunState.isLoading ||
     exportPayrollRunCsvState.isLoading;
 
@@ -398,34 +539,6 @@ export default function PayrollSection() {
     }
     return [...rowsByKey.values()];
   }, [selectedRun, teacherOwnerOptions]);
-  const runsDashboard = useMemo(() => {
-    const totals = {
-      gross: 0,
-      payable: 0,
-      paid: 0,
-      unpaid: 0,
-      runCount: runs.length,
-      draftCount: 0,
-      approvedCount: 0,
-      paidCount: 0,
-      reversedCount: 0,
-      teacherCount: 0,
-    };
-    for (const run of runs) {
-      const gross = Number(run.grossAmount || 0);
-      const payable = Number(run.payableAmount || 0);
-      totals.gross += Number.isFinite(gross) ? gross : 0;
-      totals.payable += Number.isFinite(payable) ? payable : 0;
-      if (run.status === 'PAID') totals.paid += payable;
-      if (run.status === 'DRAFT' || run.status === 'APPROVED') totals.unpaid += payable;
-      if (run.status === 'DRAFT') totals.draftCount += 1;
-      if (run.status === 'APPROVED') totals.approvedCount += 1;
-      if (run.status === 'PAID') totals.paidCount += 1;
-      if (run.status === 'REVERSED') totals.reversedCount += 1;
-      totals.teacherCount = Math.max(totals.teacherCount, Number(run.teacherCount || 0));
-    }
-    return totals;
-  }, [runs]);
   const realLessonPageIds = useMemo(
     () => ((payrollRealLessonsQuery.data?.realLessons || []).map((row) => row.id).filter(Boolean)),
     [payrollRealLessonsQuery.data?.realLessons],
@@ -617,7 +730,7 @@ export default function PayrollSection() {
           : {}),
         ...(realLessonForm.note ? { note: realLessonForm.note } : {}),
       }).unwrap();
-      toast.success(t('Real lesson qo‘shildi'));
+      toast.success(t('Real lesson qoР В Р вЂ Р В РІР‚С™Р вЂ™Р’Вshildi'));
       setRealLessonForm((prev) => ({ ...prev, durationMinutes: '', note: '' }));
     } catch (error) {
       toast.error(getErrorMessage(error));
@@ -635,7 +748,7 @@ export default function PayrollSection() {
       status: row.status || 'DONE',
       replacedByTeacherId: row.replacedByTeacherId || '',
       note: row.note || '',
-      lessonLabel: `${teacherName} • ${formatDateTime(row.startAt)}`,
+      lessonLabel: `${teacherName} - ${formatDateTime(row.startAt)}`,
     });
   }, [teacherMap, teacherOptionLabel]);
 
@@ -745,7 +858,7 @@ export default function PayrollSection() {
           description: adjustmentForm.description,
         },
       }).unwrap();
-      toast.success(t('Adjustment qo‘shildi'));
+      toast.success(t('Adjustment qoР В Р вЂ Р В РІР‚С™Р вЂ™Р’Вshildi'));
       setAdjustmentForm((prev) => ({ ...prev, amount: '', description: '' }));
       setAdjustmentDrawerOpen(false);
     } catch (error) {
@@ -753,19 +866,7 @@ export default function PayrollSection() {
     }
   }
 
-  const handleDeleteAdjustment = useCallback(async (lineId) => {
-    if (!activeRunId) return;
-    const ok = window.confirm(t("Adjustment ni o'chirmoqchimisiz?"));
-    if (!ok) return;
-    try {
-      await deletePayrollAdjustment({ runId: activeRunId, lineId }).unwrap();
-      toast.success(t("Adjustment o'chirildi"));
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    }
-  }, [activeRunId, deletePayrollAdjustment, t]);
-
-  async function handleApproveRun() {
+  const handleApproveRun = useCallback(async () => {
     if (!activeRunId) return;
     const ok = window.confirm(t('Payroll run ni tasdiqlaysizmi?'));
     if (!ok) return;
@@ -775,9 +876,9 @@ export default function PayrollSection() {
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
-  }
+  }, [activeRunId, approvePayrollRun, t]);
 
-  async function handlePayRun() {
+  const handlePayRun = useCallback(async () => {
     if (!activeRunId) return;
     try {
       await payPayrollRun({
@@ -790,6 +891,162 @@ export default function PayrollSection() {
         },
       }).unwrap();
       toast.success(t("Payroll to'landi (PAID)"));
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
+  }, [activeRunId, payPayrollRun, payForm, t]);
+
+  const openPayItemModal = useCallback((row) => {
+    const snapshotName = `${row.teacherFirstNameSnapshot || ''} ${row.teacherLastNameSnapshot || ''}`.trim();
+    const ownerLabel = formatOwnerName({
+      teacher: row.teacher,
+      employee: row.employee,
+      fallbackName: snapshotName,
+      fallbackId: row.teacherId || row.employeeId || '',
+    });
+    const payableAmount = Number(row.payableAmount || 0);
+    const paidAmount = Number(row.paidAmount || 0);
+    const remaining = Math.max(0, payableAmount - paidAmount);
+    setPayItemModal({
+      open: true,
+      itemId: row.id,
+      ownerLabel,
+      payableAmount,
+      paidAmount,
+    });
+    setPayItemForm((prev) => ({
+      ...prev,
+      amount: remaining > 0 ? String(remaining) : '',
+    }));
+  }, []);
+
+  const closePayItemModal = useCallback(() => {
+    setPayItemModal({
+      open: false,
+      itemId: '',
+      ownerLabel: '',
+      payableAmount: 0,
+      paidAmount: 0,
+    });
+    setPayItemForm({
+      amount: '',
+      paymentMethod: 'BANK',
+      paidAt: '',
+      externalRef: '',
+      note: '',
+    });
+  }, []);
+
+  async function handlePayItem() {
+    if (!activeRunId || !payItemModal.itemId) return;
+    if (!payItemForm.amount) {
+      toast.error(t("To'lov summasini kiriting"));
+      return;
+    }
+    try {
+      await payPayrollItem({
+        runId: activeRunId,
+        itemId: payItemModal.itemId,
+        payload: {
+          amount: Number(payItemForm.amount),
+          paymentMethod: payItemForm.paymentMethod,
+          ...(payItemForm.paidAt ? { paidAt: payItemForm.paidAt } : {}),
+          ...(payItemForm.externalRef ? { externalRef: payItemForm.externalRef } : {}),
+          ...(payItemForm.note ? { note: payItemForm.note } : {}),
+        },
+      }).unwrap();
+      toast.success(t("Xodim bo'yicha to'lov qayd etildi"));
+      closePayItemModal();
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
+  }
+
+  async function handleCreateAdvance() {
+    if (!advanceForm.teacherId || !advanceForm.amount) {
+      toast.error(t("O'qituvchi va summa majburiy"));
+      return;
+    }
+    try {
+      await createPayrollAdvance({
+        periodMonth: advanceForm.periodMonth,
+        teacherId: advanceForm.teacherId,
+        amount: Number(advanceForm.amount),
+        ...(advanceForm.paidAt ? { paidAt: advanceForm.paidAt } : {}),
+        ...(advanceForm.note ? { note: advanceForm.note } : {}),
+      }).unwrap();
+      toast.success(t("Avans qo'shildi"));
+      setAdvanceForm((prev) => ({ ...prev, amount: '', note: '' }));
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
+  }
+
+  const handleDeleteAdvance = useCallback(async (advanceId) => {
+    const ok = window.confirm(t("Avans yozuvini o'chirmoqchimisiz?"));
+    if (!ok) return;
+    try {
+      await deletePayrollAdvance(advanceId).unwrap();
+      toast.success(t("Avans o'chirildi"));
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
+  }, [deletePayrollAdvance, t]);
+
+  const openEmployeeConfigModal = useCallback((row) => {
+    const fixedSalary = row?.fixedSalaryAmount == null ? '' : String(Number(row.fixedSalaryAmount || 0));
+    setEmployeeConfigModal({
+      open: true,
+      employeeId: row.id,
+      displayName: formatEmployeeConfigName(row),
+      payrollMode: row.payrollMode || 'LESSON_BASED',
+      fixedSalaryAmount: fixedSalary,
+      isPayrollEligible: Boolean(row.isPayrollEligible),
+      employmentStatus: row.employmentStatus || 'ACTIVE',
+      note: row.note || '',
+    });
+  }, []);
+
+  const closeEmployeeConfigModal = useCallback(() => {
+    setEmployeeConfigModal({
+      open: false,
+      employeeId: '',
+      displayName: '',
+      payrollMode: 'LESSON_BASED',
+      fixedSalaryAmount: '',
+      isPayrollEligible: true,
+      employmentStatus: 'ACTIVE',
+      note: '',
+    });
+  }, []);
+
+  async function handleSaveEmployeeConfig() {
+    if (!employeeConfigModal.employeeId) return;
+
+    const hasFixedSalaryValue = String(employeeConfigModal.fixedSalaryAmount || '').trim() !== '';
+    const fixedSalaryAmount = hasFixedSalaryValue ? Number(employeeConfigModal.fixedSalaryAmount) : null;
+    if (hasFixedSalaryValue && (!Number.isFinite(fixedSalaryAmount) || fixedSalaryAmount < 0)) {
+      toast.error(t("Oklad summasi noto'g'ri"));
+      return;
+    }
+    if (employeeConfigModal.payrollMode === 'FIXED' && (!Number.isFinite(fixedSalaryAmount) || fixedSalaryAmount <= 0)) {
+      toast.error(t('FIXED rejimda oklad summasi musbat bo\'lishi shart'));
+      return;
+    }
+
+    try {
+      await updatePayrollEmployeeConfig({
+        employeeId: employeeConfigModal.employeeId,
+        payload: {
+          payrollMode: employeeConfigModal.payrollMode,
+          fixedSalaryAmount,
+          isPayrollEligible: Boolean(employeeConfigModal.isPayrollEligible),
+          employmentStatus: employeeConfigModal.employmentStatus,
+          note: employeeConfigModal.note || '',
+        },
+      }).unwrap();
+      toast.success(t("Payroll konfiguratsiya saqlandi"));
+      closeEmployeeConfigModal();
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
@@ -831,50 +1088,103 @@ export default function PayrollSection() {
     }
   }
 
-  const runsColumns = useMemo(
-    () => [
-      { key: 'periodMonth', header: t('Oy'), render: (row) => row.periodMonth },
-      {
-        key: 'status',
-        header: t('Holat'),
-        render: (row) => <StatusPill value={row.status} />,
-      },
-      {
-        key: 'totals',
-        header: t('Jami'),
-        render: (row) => (
-          <div className="text-xs text-slate-700">
-            <div>{t('Teacher')}: {row.teacherCount || 0}</div>
-            <div>{t('Darslar')}: {row.sourceLessonsCount || 0}</div>
-          </div>
-        ),
-      },
-      {
-        key: 'amounts',
-        header: t('Summalar'),
-        render: (row) => (
-          <div className="text-xs text-slate-700">
-            <div>{t('Brutto')}: {formatMoney(row.grossAmount)}</div>
-            <div>{t('Adjustment')}: {formatMoney(row.adjustmentAmount)}</div>
-            <div className="font-semibold">{t('To‘lanadi')}: {formatMoney(row.payableAmount)}</div>
-          </div>
-        ),
-      },
-      { key: 'generatedAt', header: t('Generate'), render: (row) => formatDateTime(row.generatedAt) },
-      {
-        key: 'actions',
-        header: t('Amallar'),
-        render: (row) => (
-          <div className="flex flex-wrap gap-1">
-            <Button size="sm" variant={activeRunId === row.id ? 'indigo' : 'secondary'} onClick={() => setSelectedRunId(row.id)}>
-              {t('Ko‘rish')}
-            </Button>
-          </div>
-        ),
-      },
-    ],
-    [activeRunId, t],
-  );
+  function buildAutomationPayload({ dryRun = false } = {}) {
+    const payload = {
+      periodMonth,
+      generate: true,
+      autoApprove: true,
+      autoPay: false,
+      force: Boolean(automationForm.force),
+      dryRun,
+    };
+
+    if (automationForm.mode === 'GENERATE_ONLY') {
+      payload.autoApprove = false;
+      payload.autoPay = false;
+      return payload;
+    }
+    if (automationForm.mode === 'FULL_PAY') {
+      payload.autoApprove = true;
+      payload.autoPay = true;
+      payload.paymentMethod = automationForm.paymentMethod || 'BANK';
+      return payload;
+    }
+
+    return payload;
+  }
+
+  async function handleRunAutomation({ dryRun = false } = {}) {
+    if (!periodMonth) {
+      toast.error(t('Oy tanlang'));
+      return;
+    }
+
+    try {
+      const result = await runPayrollAutomation(buildAutomationPayload({ dryRun })).unwrap();
+      const doneSteps = (result?.steps || [])
+        .filter((step) => step.status === 'DONE')
+        .map((step) => step.step)
+        .join(' -> ');
+      if (dryRun) {
+        toast.success(
+          doneSteps
+            ? t('Dry-run yakunlandi: {{steps}}', { steps: doneSteps })
+            : t('Dry-run yakunlandi'),
+        );
+      } else {
+        toast.success(
+          doneSteps
+            ? t('Auto process yakunlandi: {{steps}}', { steps: doneSteps })
+            : t('Auto process yakunlandi'),
+        );
+      }
+      setRunFilters((prev) => ({ ...prev, periodMonth, page: 1 }));
+      if (result?.run?.id) {
+        setSelectedRunId(result.run.id);
+      }
+      payrollRunsQuery.refetch();
+      payrollAutomationHealthQuery.refetch();
+      payrollMonthlyReportQuery.refetch();
+    } catch (error) {
+      const blockerCount = Number(error?.data?.error?.meta?.health?.summary?.blockerCount || 0);
+      if (error?.data?.error?.code === 'PAYROLL_AUTOMATION_BLOCKED' && blockerCount > 0) {
+        toast.error(
+          t("Auto process to'xtadi. Blockerlar soni: {{count}}", { count: blockerCount }),
+        );
+      } else {
+        toast.error(getErrorMessage(error));
+      }
+    }
+  }
+
+  const handleRefreshRunsDashboard = useCallback(() => {
+    payrollRunsQuery.refetch();
+    payrollAutomationHealthQuery.refetch();
+    payrollMonthlyReportQuery.refetch();
+    if (activeRunId) {
+      payrollRunDetailQuery.refetch();
+    }
+  }, [
+    activeRunId,
+    payrollAutomationHealthQuery,
+    payrollMonthlyReportQuery,
+    payrollRunDetailQuery,
+    payrollRunsQuery,
+  ]);
+  const handleOpenMismatchLessons = useCallback((teacherId) => {
+    if (isManagerView || !teacherId) return;
+    setTab('settings');
+    setSettingsTab('lessons');
+    setLessonFilters((prev) => ({
+      ...prev,
+      page: 1,
+      periodMonth,
+      status: '',
+      teacherId,
+      subjectId: '',
+      classroomId: '',
+    }));
+  }, [isManagerView, periodMonth]);
 
   const runItemsColumns = useMemo(
     () => [
@@ -891,68 +1201,76 @@ export default function PayrollSection() {
           });
         },
       },
+      { key: 'paymentStatus', header: t("To'lov holati"), render: (row) => <StatusPill value={row.paymentStatus || 'UNPAID'} /> },
       { key: 'minutes', header: t('Daqiqa'), render: (row) => row.totalMinutes || 0 },
       { key: 'hours', header: t('Soat'), render: (row) => row.totalHours || 0 },
       { key: 'grossAmount', header: t('Brutto'), render: (row) => formatMoney(row.grossAmount) },
+      { key: 'fixedSalaryAmount', header: t('Oklad'), render: (row) => formatMoney(row.fixedSalaryAmount) },
+      { key: 'advanceDeductionAmount', header: t('Avans ushlanma'), render: (row) => formatMoney(row.advanceDeductionAmount) },
       { key: 'adjustmentAmount', header: t('Adj'), render: (row) => formatMoney(row.adjustmentAmount) },
-      { key: 'payableAmount', header: t('To‘lanadi'), render: (row) => formatMoney(row.payableAmount) },
-    ],
-    [t],
-  );
-
-  const runLinesColumns = useMemo(
-    () => [
-      { key: 'type', header: t('Turi'), render: (row) => <StatusPill value={row.type} /> },
+      { key: 'payableAmount', header: t("To'lanadi"), render: (row) => formatMoney(row.payableAmount) },
+      { key: 'paidAmount', header: t("To'langan"), render: (row) => formatMoney(row.paidAmount) },
       {
-        key: 'owner',
-        header: t('Xodim'),
-        render: (row) =>
-          formatOwnerName({
-            teacher: row.teacher,
-            employee: row.employee,
-            fallbackId: row.teacherId || row.employeeId || '',
-          }),
+        key: 'remainingAmount',
+        header: t('Qoldiq'),
+        render: (row) => formatMoney(Math.max(0, Number(row.payableAmount || 0) - Number(row.paidAmount || 0))),
       },
-      {
-        key: 'lessonStartAt',
-        header: t('Dars vaqti'),
-        render: (row) => formatDateTime(row.lessonStartAt || row.realLesson?.startAt),
-      },
-      {
-        key: 'context',
-        header: t('Fan / Sinf'),
-        render: (row) => (
-          <div className="text-xs text-slate-700">
-            <div>{row.subject?.name || '-'}</div>
-            <div>{row.classroom ? `${row.classroom.name} (${row.classroom.academicYear})` : '-'}</div>
-          </div>
-        ),
-      },
-      { key: 'minutes', header: t('Daqiqa'), render: (row) => row.minutes ?? '-' },
-      { key: 'ratePerHour', header: t('Rate'), render: (row) => (row.ratePerHour ? formatMoney(row.ratePerHour) : '-') },
-      { key: 'amount', header: t('Summa'), render: (row) => formatMoney(row.amount) },
-      { key: 'description', header: t('Izoh'), render: (row) => row.description || '-' },
       {
         key: 'actions',
         header: t('Amallar'),
-        render: (row) =>
-          row.type !== 'LESSON' && selectedRun?.status === 'DRAFT' && isAdminView ? (
-            <Button size="sm" variant="danger" onClick={() => handleDeleteAdjustment(row.id)}>
-              {t("O'chirish")}
+        render: (row) => {
+          const remainingAmount = Math.max(0, Number(row.payableAmount || 0) - Number(row.paidAmount || 0));
+          const canPayItem = isAdminView && selectedRun?.status === 'APPROVED' && remainingAmount > 0;
+          if (!canPayItem) return '-';
+          return (
+            <Button size="sm" variant="success" onClick={() => openPayItemModal(row)} disabled={busy}>
+              {t("To'lash")}
             </Button>
-          ) : (
-            '-'
-          ),
+          );
+        },
       },
     ],
-    [isAdminView, selectedRun?.status, t, handleDeleteAdjustment],
+    [busy, isAdminView, openPayItemModal, selectedRun?.status, t],
   );
+
+  const runPrimaryAction = (() => {
+    if (!selectedRun) return null;
+
+    if ((isAdminView || isManagerView) && selectedRun.status === 'DRAFT') {
+      return {
+        label: t('Approve'),
+        onClick: handleApproveRun,
+        disabled: !canApproveSelectedRun || busy,
+        variant: 'indigo',
+      };
+    }
+
+    if (isAdminView && selectedRun.status === 'APPROVED') {
+      return {
+        label: t("Pay all"),
+        onClick: handlePayRun,
+        disabled: !canPaySelectedRun || busy,
+        variant: 'success',
+      };
+    }
+
+    if (selectedRun.status === 'PAID') {
+      return {
+        label: t('CSV yuklab olish'),
+        onClick: handleExportRunCsv,
+        disabled: busy,
+        variant: 'secondary',
+      };
+    }
+
+    return null;
+  })();
 
   const teacherRatesColumns = useMemo(
     () => [
       {
         key: 'teacher',
-        header: t('O‘qituvchi'),
+        header: t('OР В Р вЂ Р В РІР‚С™Р вЂ™Р’Вqituvchi'),
         render: (row) => (row.teacher ? `${row.teacher.firstName} ${row.teacher.lastName}` : row.teacherId),
       },
       { key: 'subject', header: t('Fan'), render: (row) => row.subject?.name || '-' },
@@ -1037,7 +1355,7 @@ export default function PayrollSection() {
       { key: 'startAt', header: t('Boshlanish'), render: (row) => formatDateTime(row.startAt) },
       {
         key: 'teacher',
-        header: t('O‘qituvchi'),
+        header: t('OР В Р вЂ Р В РІР‚С™Р вЂ™Р’Вqituvchi'),
         render: (row) =>
           row.teacher ? `${row.teacher.firstName} ${row.teacher.lastName}` : teacherOptionLabel(teacherMap.get(row.teacherId) || row),
       },
@@ -1081,6 +1399,91 @@ export default function PayrollSection() {
     ],
   );
 
+  const advanceColumns = useMemo(
+    () => [
+      { key: 'periodMonth', header: t('Oy'), render: (row) => row.periodMonth || '-' },
+      {
+        key: 'owner',
+        header: t('Xodim'),
+        render: (row) =>
+          formatOwnerName({
+            teacher: row.teacher,
+            employee: row.employee,
+            fallbackId: row.teacherId || row.employeeId || '',
+          }),
+      },
+      { key: 'amount', header: t('Avans summasi'), render: (row) => formatMoney(row.amount) },
+      { key: 'paidAt', header: t('Berilgan sana'), render: (row) => formatDateTime(row.paidAt) },
+      { key: 'note', header: t('Izoh'), render: (row) => row.note || '-' },
+      {
+        key: 'actions',
+        header: t('Amallar'),
+        render: (row) =>
+          isAdminView ? (
+            <Button size="sm" variant="danger" onClick={() => handleDeleteAdvance(row.id)} disabled={busy}>
+              {t("O'chirish")}
+            </Button>
+          ) : (
+            '-'
+          ),
+      },
+    ],
+    [busy, handleDeleteAdvance, isAdminView, t],
+  );
+  const payrollEmployeeColumns = useMemo(
+    () => [
+      {
+        key: 'employee',
+        header: t('Xodim'),
+        render: (row) => formatEmployeeConfigName(row),
+      },
+      {
+        key: 'kind',
+        header: t('Turi'),
+        render: (row) => row.kind || '-',
+      },
+      {
+        key: 'payrollMode',
+        header: t('Payroll mode'),
+        render: (row) => <StatusPill value={row.payrollMode} />,
+      },
+      {
+        key: 'fixedSalaryAmount',
+        header: t('Oklad'),
+        render: (row) => formatMoney(row.fixedSalaryAmount),
+      },
+      {
+        key: 'isPayrollEligible',
+        header: t('Payrollga kiradi'),
+        render: (row) => (row.isPayrollEligible ? t('Ha') : t("Yo'q")),
+      },
+      {
+        key: 'employmentStatus',
+        header: t('Bandlik'),
+        render: (row) => <StatusPill value={row.employmentStatus} />,
+      },
+      {
+        key: 'note',
+        header: t('Izoh'),
+        render: (row) => row.note || '-',
+      },
+      {
+        key: 'actions',
+        header: t('Amallar'),
+        render: (row) => (
+          isAdminView ? (
+            <Button size="sm" variant="secondary" onClick={() => openEmployeeConfigModal(row)} disabled={busy}>
+              {t('Tahrirlash')}
+            </Button>
+          ) : (
+            '-'
+          )
+        ),
+      },
+    ],
+    [busy, isAdminView, openEmployeeConfigModal, t],
+  );
+
   const runsState = {
     loading: payrollRunsQuery.isLoading || payrollRunsQuery.isFetching,
     error: payrollRunsQuery.error?.message || null,
@@ -1093,18 +1496,80 @@ export default function PayrollSection() {
   const teacherRates = payrollTeacherRatesQuery.data?.rates || [];
   const subjectRates = payrollSubjectRatesQuery.data?.rates || [];
   const realLessons = payrollRealLessonsQuery.data?.realLessons || [];
+  const advances = payrollAdvancesQuery.data?.advances || [];
+  const payrollEmployees = payrollEmployeesQuery.data?.employees || [];
+  const advancesState = {
+    loading: payrollAdvancesQuery.isLoading || payrollAdvancesQuery.isFetching,
+    error: payrollAdvancesQuery.error?.message || null,
+    page: payrollAdvancesQuery.data?.page || advanceFilters.page,
+    pages: payrollAdvancesQuery.data?.pages || 1,
+    total: payrollAdvancesQuery.data?.total || 0,
+  };
+  const payrollEmployeesState = {
+    loading: payrollEmployeesQuery.isLoading || payrollEmployeesQuery.isFetching,
+    error: payrollEmployeesQuery.error?.message || null,
+    page: payrollEmployeesQuery.data?.page || employeeConfigFilters.page,
+    pages: payrollEmployeesQuery.data?.pages || 1,
+    total: payrollEmployeesQuery.data?.total || 0,
+  };
+  const automationHealth = payrollAutomationHealthQuery.data;
+  const automationHealthState = {
+    loading: payrollAutomationHealthQuery.isLoading || payrollAutomationHealthQuery.isFetching,
+    error: payrollAutomationHealthQuery.error?.message || null,
+  };
+  const automationBlockers = automationHealth?.blockers || [];
+  const automationWarnings = automationHealth?.warnings || [];
+  const monthlyReport = payrollMonthlyReportQuery.data;
+  const monthlyReportState = {
+    loading: payrollMonthlyReportQuery.isLoading || payrollMonthlyReportQuery.isFetching,
+    error: payrollMonthlyReportQuery.error?.message || null,
+  };
+  const monthlyReportSummary = monthlyReport?.summary || null;
+  const teacherWorkloadMismatches = useMemo(() => {
+    const metrics = Array.isArray(automationHealth?.teacherMetrics) ? automationHealth.teacherMetrics : [];
+    return metrics
+      .map((row) => {
+        const expectedHours = Number(row.weeklyPlanHours || 0);
+        const plannedWeeklyHours = Number(row.plannedWeeklyHours || 0);
+        const plannedHours = Number(row.plannedMonthlyHours || 0);
+        const actualHours = Number(row.actualMonthlyHours || 0);
+        const monthlyDeltaHours = Number(row.monthlyDeltaHours || actualHours - plannedHours);
+        const weeklyOverHours = row.hasWorkloadPlan ? Math.max(0, plannedWeeklyHours - expectedHours) : 0;
+        const monthlyGapHours = Math.abs(monthlyDeltaHours);
+        const hasMismatch = !row.hasWorkloadPlan || weeklyOverHours > 0.05 || monthlyGapHours > 0.05;
+        const severity = monthlyGapHours + weeklyOverHours + (row.hasWorkloadPlan ? 0 : 1);
+        return {
+          teacherId: row.teacherId || '',
+          teacherName: row.teacherName || row.teacherId || '-',
+          expectedHours,
+          plannedHours,
+          actualHours,
+          monthlyDeltaHours,
+          hasMismatch,
+          severity,
+        };
+      })
+      .filter((row) => row.hasMismatch)
+      .sort((a, b) => {
+        const diff = b.severity - a.severity;
+        if (diff !== 0) return diff;
+        return String(a.teacherName).localeCompare(String(b.teacherName));
+      })
+      .slice(0, 12);
+  }, [automationHealth]);
 
-  const canEditSelectedRun = isAdminView && selectedRun?.status === 'DRAFT';
-  const canApproveSelectedRun = (isAdminView || isManagerView) && selectedRun?.status === 'DRAFT';
-  const canPaySelectedRun = isAdminView && selectedRun?.status === 'APPROVED';
-  const canReverseSelectedRun = isAdminView && (selectedRun?.status === 'APPROVED' || selectedRun?.status === 'PAID');
   const payrollTabs = isManagerView
     ? [{ value: 'runs', label: t('Payroll Runs') }]
     : [
-        { value: 'runs', label: t('Payroll Runs') },
-        { value: 'rates', label: t('Rate sozlamalari') },
-        { value: 'lessons', label: t('Real Lessons') },
+        { value: 'runs', label: t('Oyliklar') },
+        { value: 'settings', label: t('Sozlamalar') },
       ];
+  const settingsTabs = [
+    { value: 'config', label: t('Payroll Config') },
+    { value: 'rates', label: t('Rate sozlamalari') },
+    { value: 'lessons', label: t('Real Lessons') },
+    { value: 'advances', label: t('Avanslar') },
+  ];
 
   return (
     <AutoTranslate>
@@ -1114,25 +1579,8 @@ export default function PayrollSection() {
           subtitle={
             isManagerView
               ? t("Menejer uchun review/approve rejimi. Generate, rate, real lesson va pay/reverse amallari yopiq.")
-              : t("RealLesson asosida oylik hisoblang, adjustment kiriting, approve/pay/reverse qiling.")
+              : t("Minimal oqim: oy tanlash, run ko'rish, approve va to'lash.")
           }
-          actions={(
-            <div className="flex flex-wrap items-end gap-2">
-              <Field label={t('Oy')}>
-                <Input
-                  type="month"
-                  value={periodMonth}
-                  onChange={(e) => setPeriodMonth(e.target.value)}
-                  className="min-w-40"
-                />
-              </Field>
-              {isAdminView && (
-                <Button variant="indigo" onClick={handleGenerateRun} disabled={busy || !periodMonth}>
-                  {t('Generate')}
-                </Button>
-              )}
-            </div>
-          )}
         >
           <Tabs
             value={tab}
@@ -1143,357 +1591,372 @@ export default function PayrollSection() {
 
         {tab === 'runs' && (
           <>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-              <StatWidget
-                label={t('Brutto (joriy filter)')}
-                value={formatMoney(runsDashboard.gross)}
-                tone="indigo"
-                subtitle={t('{{count}} ta run', { count: runsDashboard.runCount })}
-              />
-              <StatWidget
-                label={t("To'lanadi (jami)")}
-                value={formatMoney(runsDashboard.payable)}
-                tone="slate"
-                subtitle={runFilters.periodMonth || periodMonth}
-              />
-              <StatWidget
-                label={t("To'langan")}
-                value={formatMoney(runsDashboard.paid)}
-                tone="emerald"
-                subtitle={t('PAID runlar: {{count}}', { count: runsDashboard.paidCount })}
-              />
-              <StatWidget
-                label={t("Qoldiq / To'lanmagan")}
-                value={formatMoney(runsDashboard.unpaid)}
-                tone={runsDashboard.unpaid > 0 ? 'amber' : 'slate'}
-                subtitle={t('DRAFT: {{d}} | APPROVED: {{a}}', { d: runsDashboard.draftCount, a: runsDashboard.approvedCount })}
-              />
-              <StatWidget
-                label={t("O'qituvchilar soni")}
-                value={String(selectedRun?.teacherCount || runsDashboard.teacherCount || 0)}
-                tone="rose"
-                subtitle={selectedRun ? `${selectedRun.periodMonth} | ${selectedRun.status}` : t('Tanlangan run yo‘q')}
-              />
-            </div>
-
             <Card
-              title={t('Payroll Runlar')}
-              subtitle={t("Generate qilingan oylik runlar ro'yxati")}
+              title={t('Joriy Oylik')}
+              subtitle={t("Faqat asosiy oqim: generate, ko'rish, approve va to'lash")}
               actions={(
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                   <Input
                     type="month"
-                    value={runFilters.periodMonth}
-                    onChange={(e) => setRunFilters((prev) => ({ ...prev, periodMonth: e.target.value, page: 1 }))}
+                    value={periodMonth}
+                    onChange={(e) => {
+                      const nextMonth = e.target.value;
+                      setPeriodMonth(nextMonth);
+                      setRunFilters((prev) => ({ ...prev, periodMonth: nextMonth, page: 1 }));
+                    }}
                   />
-                  <Select
-                    value={runFilters.status}
-                    onChange={(e) => setRunFilters((prev) => ({ ...prev, status: e.target.value, page: 1 }))}
-                  >
-                    <option value="">{t('Barcha status')}</option>
-                    <option value="DRAFT">DRAFT</option>
-                    <option value="APPROVED">APPROVED</option>
-                    <option value="PAID">PAID</option>
-                    <option value="REVERSED">REVERSED</option>
-                  </Select>
-                  <Select
-                    value={String(runFilters.limit)}
-                    onChange={(e) => setRunFilters((prev) => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-                  >
-                    {[10, 20, 50].map((size) => (
-                      <option key={size} value={size}>{t('{{count}} ta', { count: size })}</option>
-                    ))}
-                  </Select>
-                  <Button variant="secondary" onClick={() => payrollRunsQuery.refetch()} disabled={runsState.loading}>
+                  {runs.length > 1 ? (
+                    <Select value={activeRunId} onChange={(e) => setSelectedRunId(e.target.value)}>
+                      {runs.map((run) => (
+                        <option key={run.id} value={run.id}>
+                          {run.periodMonth} | {run.status}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <div className="flex items-center rounded-xl border border-slate-200 px-3 text-sm text-slate-600">
+                      {selectedRun ? selectedRun.status : t("Run yo'q")}
+                    </div>
+                  )}
+                  <Button variant="secondary" onClick={handleRefreshRunsDashboard} disabled={runsState.loading || busy}>
                     {t('Yangilash')}
                   </Button>
+                  {isAdminView && (
+                    <Button variant="indigo" onClick={handleGenerateRun} disabled={busy || !periodMonth}>
+                      {selectedRun ? t('Regenerate') : t('Generate')}
+                    </Button>
+                  )}
                 </div>
               )}
             >
-              {runsState.loading && <StateView type="skeleton" />}
-              {runsState.error && <StateView type="error" description={runsState.error} />}
-              {!runsState.loading && !runsState.error && (
-                <>
-                  <DataTable columns={runsColumns} rows={runs} density="compact" />
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
-                    <div>{t('Jami')}: {runsState.total}</div>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={runsState.page <= 1}
-                        onClick={() => setRunFilters((prev) => ({ ...prev, page: Math.max(1, runsState.page - 1) }))}
-                      >
-                        {t('Oldingi')}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={runsState.page >= runsState.pages}
-                        onClick={() => setRunFilters((prev) => ({ ...prev, page: Math.min(runsState.pages, runsState.page + 1) }))}
-                      >
-                        {t('Keyingi')}
+              {runsState.loading || runDetailLoading ? <StateView type="skeleton" /> : null}
+              {runsState.error ? <StateView type="error" description={runsState.error} /> : null}
+              {runDetailError ? <StateView type="error" description={runDetailError} /> : null}
+              {!runsState.error && !runDetailError && (
+                <div className="mb-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <StatWidget
+                      label={t('Automation holati')}
+                      value={automationHealth?.summary?.readyForGenerate ? t('Tayyor') : t('Tekshirish kerak')}
+                      tone={automationHealth?.summary?.readyForGenerate ? 'emerald' : 'amber'}
+                      subtitle={t('Blocker: {{blockers}} | Warning: {{warnings}}', {
+                        blockers: automationHealth?.summary?.blockerCount || 0,
+                        warnings: automationHealth?.summary?.warningCount || 0,
+                      })}
+                    />
+                    <StatWidget
+                      label={t("Report: To'lanadi")}
+                      value={formatMoney(monthlyReportSummary?.payableAmount || 0)}
+                      tone="indigo"
+                      subtitle={t('Oy: {{month}}', { month: periodMonth })}
+                    />
+                    <StatWidget
+                      label={t("Report: Qoldiq")}
+                      value={formatMoney(monthlyReportSummary?.remainingAmount || 0)}
+                      tone={Number(monthlyReportSummary?.remainingAmount || 0) > 0 ? 'amber' : 'slate'}
+                      subtitle={t("To'lovlar soni: {{count}}", { count: monthlyReportSummary?.paymentCount || 0 })}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+                    <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 xl:col-span-2">
+                      {(automationHealthState.loading || monthlyReportState.loading) ? (
+                        <StateView type="skeleton" />
+                      ) : null}
+                      {automationHealthState.error ? <StateView type="error" description={automationHealthState.error} /> : null}
+                      {monthlyReportState.error ? <StateView type="error" description={monthlyReportState.error} /> : null}
+                      {!automationHealthState.loading && !monthlyReportState.loading && !automationHealthState.error && !monthlyReportState.error && (
+                        <>
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                            <div>
+                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                {t('Health Issues')}
+                              </div>
+                              {!automationBlockers.length && !automationWarnings.length ? (
+                                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                                  {t("Blocker yo'q, tizim avtomat hisoblashga tayyor")}
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  {automationBlockers.slice(0, 3).map((issue) => (
+                                    <div key={`blocker-${issue.code}`} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                                      <span className="font-semibold">{issue.code}</span> ({issue.count || 0})
+                                    </div>
+                                  ))}
+                                  {automationWarnings.slice(0, 3).map((issue) => (
+                                    <div key={`warning-${issue.code}`} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                                      <span className="font-semibold">{issue.code}</span> ({issue.count || 0})
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                {t("To'lov usuli kesimi")}
+                              </div>
+                              {(monthlyReport?.paymentMethodBreakdown || []).length ? (
+                                <div className="space-y-2">
+                                  {(monthlyReport?.paymentMethodBreakdown || []).slice(0, 4).map((row) => (
+                                    <div key={`method-${row.paymentMethod}`} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                                      <span className="text-slate-600">{row.paymentMethod}</span>
+                                      <span className="font-semibold text-slate-900">{formatMoney(row.amount)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                                  {t("To'lov ma'lumoti yo'q")}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-rose-700">
+                              {t("O'qituvchi yuklama nomuvofiqligi")}
+                            </div>
+                            {teacherWorkloadMismatches.length ? (
+                              <div className="rounded-xl border border-rose-300 bg-rose-50/70 p-3">
+                                <div className="mb-2 text-sm text-rose-700">
+                                  {t("Jadval/realda farq bor o'qituvchilar: {{count}}", {
+                                    count: teacherWorkloadMismatches.length,
+                                  })}
+                                </div>
+                                <div className="overflow-x-auto">
+                                  <table className="min-w-full text-sm">
+                                    <thead>
+                                      <tr className="border-b border-rose-200 text-left text-xs uppercase tracking-wide text-rose-800">
+                                        <th className="px-2 py-2">{t("O'qituvchi")}</th>
+                                        <th className="px-2 py-2">{t('Kutilgan (hafta)')}</th>
+                                        <th className="px-2 py-2">{t('Reja (oy)')}</th>
+                                        <th className="px-2 py-2">{t('Amalda (oy)')}</th>
+                                        <th className="px-2 py-2">{t('Farq (oy)')}</th>
+                                        <th className="px-2 py-2">{t('Amal')}</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {teacherWorkloadMismatches.map((row) => (
+                                        <tr key={`mismatch-${row.teacherId || row.teacherName}`} className="border-b border-rose-100 text-rose-900">
+                                          <td className="px-2 py-2 font-medium">{row.teacherName}</td>
+                                          <td className="px-2 py-2">{formatHours(row.expectedHours)}</td>
+                                          <td className="px-2 py-2">{formatHours(row.plannedHours)}</td>
+                                          <td className="px-2 py-2">{formatHours(row.actualHours)}</td>
+                                          <td className="px-2 py-2 font-semibold">
+                                            {row.monthlyDeltaHours > 0 ? '+' : ''}
+                                            {formatHours(row.monthlyDeltaHours)}
+                                          </td>
+                                          <td className="px-2 py-2">
+                                            {isManagerView ? (
+                                              <span className="text-xs text-rose-600">{t('Faqat admin')}</span>
+                                            ) : (
+                                              <Button
+                                                size="sm"
+                                                variant="secondary"
+                                                onClick={() => handleOpenMismatchLessons(row.teacherId)}
+                                                disabled={!row.teacherId || busy}
+                                              >
+                                                {t("Darslarni ochish")}
+                                              </Button>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                                {t("Workload mismatch topilmadi")}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              {t('Line Type kesimi')}
+                            </div>
+                            {(monthlyReport?.lineTypeBreakdown || []).length ? (
+                              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                                {(monthlyReport?.lineTypeBreakdown || []).slice(0, 6).map((row) => (
+                                  <div key={`line-${row.type}`} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                                    <span className="text-slate-600">{row.type}</span>
+                                    <span className="font-semibold text-slate-900">{formatMoney(row.amount)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                                {t("Line type bo'yicha ma'lumot yo'q")}
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t('Automation')}</div>
+                      {isAdminView ? (
+                        <>
+                          <Field label={t('Rejim')}>
+                            <Select
+                              value={automationForm.mode}
+                              onChange={(e) => setAutomationForm((prev) => ({ ...prev, mode: e.target.value }))}
+                              disabled={busy}
+                            >
+                              <option value="GENERATE_ONLY">{t('Generate only')}</option>
+                              <option value="GENERATE_APPROVE">{t('Generate + Approve')}</option>
+                              <option value="FULL_PAY">{t('Generate + Approve + Pay')}</option>
+                            </Select>
+                          </Field>
+                          {automationForm.mode === 'FULL_PAY' && (
+                            <Field label={t("To'lov usuli")}>
+                              <Select
+                                value={automationForm.paymentMethod}
+                                onChange={(e) => setAutomationForm((prev) => ({ ...prev, paymentMethod: e.target.value }))}
+                                disabled={busy}
+                              >
+                                <option value="BANK">BANK</option>
+                                <option value="CASH">CASH</option>
+                                <option value="CLICK">CLICK</option>
+                                <option value="PAYME">PAYME</option>
+                              </Select>
+                            </Field>
+                          )}
+                          <Field label={t('Force')}>
+                            <Select
+                              value={automationForm.force ? 'true' : 'false'}
+                              onChange={(e) => setAutomationForm((prev) => ({ ...prev, force: e.target.value === 'true' }))}
+                              disabled={busy}
+                            >
+                              <option value="false">{t("Yo'q")}</option>
+                              <option value="true">{t('Ha')}</option>
+                            </Select>
+                          </Field>
+                          <div className="grid grid-cols-1 gap-2">
+                            <Button variant="secondary" onClick={() => handleRunAutomation({ dryRun: true })} disabled={busy}>
+                              {t('Dry Run')}
+                            </Button>
+                            <Button variant="indigo" onClick={() => handleRunAutomation({ dryRun: false })} disabled={busy}>
+                              {t('Auto Process')}
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                          {t("Menejer bu blokda faqat holatni kuzatadi")}
+                        </div>
+                      )}
+                      <Button variant="secondary" onClick={handleRefreshRunsDashboard} disabled={busy}>
+                        {t('Health/Report yangilash')}
                       </Button>
                     </div>
                   </div>
-                </>
+                </div>
               )}
-            </Card>
 
-            <Card
-              title={t('Tanlangan Run Tafsiloti')}
-              subtitle={selectedRun ? `${selectedRun.periodMonth} • ${selectedRun.id}` : t('Run tanlang')}
-            >
-              {!activeRunId && <StateView type="empty" description={t('Run tanlang')} />}
-              {activeRunId && runDetailLoading && <StateView type="skeleton" />}
-              {activeRunId && runDetailError && <StateView type="error" description={runDetailError} />}
+              {!runsState.loading && !runsState.error && !selectedRun && (
+                <StateView
+                  type="empty"
+                  description={t("Tanlangan oy uchun run topilmadi. Avval Generate bosing.")}
+                />
+              )}
+
               {selectedRun && !runDetailLoading && !runDetailError && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">{t('Holat')}</div>
-                      <div className="mt-1"><StatusPill value={selectedRun.status} /></div>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">{t('Darslar')}</div>
-                      <div className="mt-1 text-sm font-semibold text-slate-900">{selectedRun.sourceLessonsCount || 0}</div>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">{t('Brutto')}</div>
-                      <div className="mt-1 text-sm font-semibold text-slate-900">{formatMoney(selectedRun.grossAmount)}</div>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">{t('Adjustment')}</div>
-                      <div className="mt-1 text-sm font-semibold text-slate-900">{formatMoney(selectedRun.adjustmentAmount)}</div>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">{t("To'lanadi")}</div>
-                      <div className="mt-1 text-sm font-semibold text-slate-900">{formatMoney(selectedRun.payableAmount)}</div>
-                    </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <StatWidget
+                      label={t("To'lanadi")}
+                      value={formatMoney(selectedRunPayableAmount)}
+                      tone="indigo"
+                      subtitle={`${selectedRun.periodMonth} | ${selectedRun.status}`}
+                    />
+                    <StatWidget
+                      label={t("To'langan")}
+                      value={formatMoney(selectedRunPaidAmount)}
+                      tone="emerald"
+                      subtitle={t("Xodimlar bo'yicha to'lov yig'indisi")}
+                    />
+                    <StatWidget
+                      label={t('Qoldiq')}
+                      value={formatMoney(selectedRunRemainingAmount)}
+                      tone={selectedRunRemainingAmount > 0 ? 'amber' : 'slate'}
+                      subtitle={t("To'lanishi kerak qolgan summa")}
+                    />
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                    <Card title={t('Status amallari')} className="xl:col-span-1">
+                    <Card title={t('Xodimlar kesimida')} className="xl:col-span-2">
+                      <DataTable
+                        columns={runItemsColumns}
+                        rows={selectedRun.items || []}
+                        density="compact"
+                        maxHeightClassName="max-h-[360px]"
+                      />
+                    </Card>
+
+                    <Card title={t('Asosiy amal')} className="xl:col-span-1">
                       <div className="space-y-3">
-                        <Button className="w-full" variant="secondary" disabled={busy || !activeRunId} onClick={handleExportRunCsv}>
-                          {t('CSV yuklab olish')}
-                        </Button>
-                        <Button className="w-full" variant="indigo" disabled={!canApproveSelectedRun || busy} onClick={handleApproveRun}>
-                          {t('Approve')}
-                        </Button>
-                        {isManagerView ? (
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-                            {t("Menejer bu bo'limda payrollni ko'radi va DRAFT runlarni approve qiladi.")}
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                          <div className="flex items-center justify-between">
+                            <span>{t('Run holati')}</span>
+                            <StatusPill value={selectedRun.status} />
                           </div>
+                          <div className="mt-2">{t('Xodimlar')}: {selectedRun.teacherCount || 0}</div>
+                        </div>
+
+                        {isAdminView && selectedRun.status === 'APPROVED' && (
+                          <div className="space-y-2 rounded-xl border border-slate-200 p-3">
+                            <Field label={t("To'lov usuli")}>
+                              <Select
+                                value={payForm.paymentMethod}
+                                onChange={(e) => setPayForm((prev) => ({ ...prev, paymentMethod: e.target.value }))}
+                                disabled={!canPaySelectedRun || busy}
+                              >
+                                <option value="BANK">BANK</option>
+                                <option value="CASH">CASH</option>
+                                <option value="CLICK">CLICK</option>
+                                <option value="PAYME">PAYME</option>
+                              </Select>
+                            </Field>
+                          </div>
+                        )}
+
+                        {runPrimaryAction ? (
+                          <Button
+                            className="w-full"
+                            variant={runPrimaryAction.variant}
+                            onClick={runPrimaryAction.onClick}
+                            disabled={runPrimaryAction.disabled}
+                          >
+                            {runPrimaryAction.label}
+                          </Button>
                         ) : (
-                          <>
-                            <div className="space-y-2 rounded-xl border border-slate-200 p-3">
-                              <Field label={t("To'lov usuli")}>
-                                <Select
-                                  value={payForm.paymentMethod}
-                                  onChange={(e) => setPayForm((prev) => ({ ...prev, paymentMethod: e.target.value }))}
-                                  disabled={!canPaySelectedRun || busy}
-                                >
-                                  <option value="BANK">BANK</option>
-                                  <option value="CASH">CASH</option>
-                                  <option value="CLICK">CLICK</option>
-                                  <option value="PAYME">PAYME</option>
-                                </Select>
-                              </Field>
-                              <Field label={t("To'langan sana (ixtiyoriy)")}>
-                                <Input
-                                  type="datetime-local"
-                                  value={payForm.paidAt}
-                                  onChange={(e) => setPayForm((prev) => ({ ...prev, paidAt: e.target.value }))}
-                                  disabled={!canPaySelectedRun || busy}
-                                />
-                              </Field>
-                              <Field label={t('External Ref')}>
-                                <Input
-                                  value={payForm.externalRef}
-                                  onChange={(e) => setPayForm((prev) => ({ ...prev, externalRef: e.target.value }))}
-                                  disabled={!canPaySelectedRun || busy}
-                                />
-                              </Field>
-                              <Field label={t('Izoh')}>
-                                <Textarea
-                                  rows={2}
-                                  value={payForm.note}
-                                  onChange={(e) => setPayForm((prev) => ({ ...prev, note: e.target.value }))}
-                                  disabled={!canPaySelectedRun || busy}
-                                />
-                              </Field>
-                              <Button className="w-full" variant="success" disabled={!canPaySelectedRun || busy} onClick={handlePayRun}>
-                                {t('Pay (PAID)')}
-                              </Button>
-                            </div>
-                            <div className="space-y-2 rounded-xl border border-rose-200 bg-rose-50/40 p-3">
-                              <Field label={t('Reverse sababi')}>
-                                <Textarea
-                                  rows={2}
-                                  value={reverseReason}
-                                  onChange={(e) => setReverseReason(e.target.value)}
-                                  disabled={!canReverseSelectedRun || busy}
-                                />
-                              </Field>
-                              <Button className="w-full" variant="danger" disabled={!canReverseSelectedRun || !reverseReason.trim() || busy} onClick={handleReverseRun}>
-                                {t('Reverse')}
-                              </Button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </Card>
-
-                    <Card title={t('Teacherlar kesimida')} className="xl:col-span-2">
-                      <DataTable columns={runItemsColumns} rows={selectedRun.items || []} density="compact" maxHeightClassName="max-h-[280px]" />
-                    </Card>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                    {!isManagerView && (
-                    <Card
-                      title={t('Manual Adjustment')}
-                      className="xl:col-span-1"
-                      actions={(
-                        <Button
-                          size="sm"
-                          variant="indigo"
-                          disabled={!canEditSelectedRun || busy || !activeRunId}
-                          onClick={() => setAdjustmentDrawerOpen(true)}
-                        >
-                          {t("Adjustment qo'shish")}
-                        </Button>
-                      )}
-                    >
-                      <div className="hidden space-y-3">
-                        <Field label={t('O‘qituvchi')}>
-                          <Combobox
-                            value={adjustmentForm.ownerKey}
-                            onChange={(e) => setAdjustmentForm((prev) => ({ ...prev, ownerKey: e.target.value }))}
-                            disabled={!canEditSelectedRun || busy}
-                            placeholder={t('Tanlang')}
-                            noOptionsText={t('Xodim topilmadi')}
-                            options={selectedRunOwnerOptions}
-                          />
-                        </Field>
-                        <Field label={t('Turi')}>
-                          <Select
-                            value={adjustmentForm.type}
-                            onChange={(e) => setAdjustmentForm((prev) => ({ ...prev, type: e.target.value }))}
-                            disabled={!canEditSelectedRun || busy}
-                          >
-                            <option value="BONUS">BONUS</option>
-                            <option value="PENALTY">PENALTY</option>
-                            <option value="MANUAL">MANUAL</option>
-                          </Select>
-                        </Field>
-                        <Field label={t('Summa')}>
-                          <MoneyInputUz
-                            value={adjustmentForm.amount}
-                            onValueChange={(raw) => setAdjustmentForm((prev) => ({ ...prev, amount: raw }))}
-                            disabled={!canEditSelectedRun || busy}
-                          />
-                        </Field>
-                        <Field label={t('Izoh')}>
-                          <Textarea
-                            rows={3}
-                            value={adjustmentForm.description}
-                            onChange={(e) => setAdjustmentForm((prev) => ({ ...prev, description: e.target.value }))}
-                            disabled={!canEditSelectedRun || busy}
-                          />
-                        </Field>
-                        <Button
-                          className="w-full"
-                          variant="indigo"
-                          disabled={!canEditSelectedRun || !adjustmentForm.ownerKey || !adjustmentForm.amount || !adjustmentForm.description.trim() || busy}
-                          onClick={handleAddAdjustment}
-                        >
-                          {t("Adjustment qo'shish")}
-                        </Button>
-                      </div>
-                      <div className="space-y-3">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-                          <div className="font-medium text-slate-900">{t("Qo'lda bonus/jarima qo'shish")}</div>
-                          <div className="mt-1">{t("Forma endi drawer ichida ochiladi va line jadvali uchun joy ko'proq qoladi.")}</div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-sm">
-                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                            <div className="text-slate-500">{t('Run')}</div>
-                            <div className="font-medium text-slate-900">{selectedRun?.periodLabel || '-'}</div>
-                          </div>
-                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                            <div className="text-slate-500">{t('Status')}</div>
-                            <div className="font-medium text-slate-900">{selectedRun?.status || '-'}</div>
-                          </div>
-                        </div>
-                        {!canEditSelectedRun && (
-                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                            {t("Adjustment faqat DRAFT run uchun qo'shiladi.")}
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                            {t("Bu holatda asosiy amal mavjud emas")}
                           </div>
                         )}
-                        <Button
-                          className="w-full"
-                          variant="secondary"
-                          disabled={!canEditSelectedRun || busy || !activeRunId}
-                          onClick={() => setAdjustmentDrawerOpen(true)}
-                        >
-                          {t('Drawerni ochish')}
-                        </Button>
-                      </div>
-                    </Card>
-                    )}
 
-                    <Card title={t('Line lar')} className={isManagerView ? 'xl:col-span-3' : 'xl:col-span-2'}>
-                      <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-4">
-                        <Combobox
-                          value={lineFilters.ownerKey}
-                          onChange={(e) => setLineFilters((prev) => ({ ...prev, ownerKey: e.target.value, page: 1 }))}
-                          placeholder={t('Barcha xodim')}
-                          noOptionsText={t('Xodim topilmadi')}
-                          options={selectedRunOwnerOptions}
-                        />
-                        <Select
-                          value={lineFilters.type}
-                          onChange={(e) => setLineFilters((prev) => ({ ...prev, type: e.target.value, page: 1 }))}
-                        >
-                          <option value="">{t('Barcha type')}</option>
-                          <option value="LESSON">LESSON</option>
-                          <option value="BONUS">BONUS</option>
-                          <option value="PENALTY">PENALTY</option>
-                          <option value="MANUAL">MANUAL</option>
-                        </Select>
-                        <Select
-                          value={String(lineFilters.limit)}
-                          onChange={(e) => setLineFilters((prev) => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-                        >
-                          {[20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
-                        </Select>
-                        <Button variant="secondary" onClick={() => payrollRunDetailQuery.refetch()} disabled={runDetailLoading}>
-                          {t('Yangilash')}
-                        </Button>
-                      </div>
-                      <DataTable columns={runLinesColumns} rows={selectedRunLines} density="compact" maxHeightClassName="max-h-[400px]" />
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
-                        <div>{t('Jami line')}: {payrollRunDetailQuery.data?.lines?.total || 0}</div>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={(payrollRunDetailQuery.data?.lines?.page || 1) <= 1}
-                            onClick={() => setLineFilters((prev) => ({ ...prev, page: Math.max(1, (payrollRunDetailQuery.data?.lines?.page || 1) - 1) }))}
-                          >
-                            {t('Oldingi')}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={(payrollRunDetailQuery.data?.lines?.page || 1) >= (payrollRunDetailQuery.data?.lines?.pages || 1)}
-                            onClick={() => setLineFilters((prev) => ({ ...prev, page: Math.min((payrollRunDetailQuery.data?.lines?.pages || 1), (payrollRunDetailQuery.data?.lines?.page || 1) + 1) }))}
-                          >
-                            {t('Keyingi')}
-                          </Button>
-                        </div>
+                        {!isManagerView && canReverseSelectedRun && (
+                          <div className="space-y-2 rounded-xl border border-rose-200 bg-rose-50/40 p-3">
+                            <Field label={t('Reverse sababi')}>
+                              <Textarea
+                                rows={2}
+                                value={reverseReason}
+                                onChange={(e) => setReverseReason(e.target.value)}
+                                disabled={!canReverseSelectedRun || busy}
+                              />
+                            </Field>
+                            <Button
+                              className="w-full"
+                              variant="danger"
+                              disabled={!canReverseSelectedRun || !reverseReason.trim() || busy}
+                              onClick={handleReverseRun}
+                            >
+                              {t('Reverse')}
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </Card>
                   </div>
@@ -1503,7 +1966,121 @@ export default function PayrollSection() {
           </>
         )}
 
-        {!isManagerView && tab === 'rates' && (
+        {!isManagerView && tab === 'settings' && (
+          <Card
+            title={t('Sozlamalar')}
+            subtitle={t("Kam ishlatiladigan bo'limlar shu yerga yig'ilgan")}
+          >
+            <Tabs value={settingsTab} onChange={setSettingsTab} items={settingsTabs} />
+          </Card>
+        )}
+
+        {!isManagerView && tab === 'settings' && settingsTab === 'config' && (
+          <Card
+            title={t('Payroll Config')}
+            subtitle={t("Xodimlar uchun payroll mode, oklad va eligibility sozlamalarini boshqaring.")}
+            actions={(
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-7">
+                <Input
+                  value={employeeConfigFilters.search}
+                  onChange={(e) => setEmployeeConfigFilters((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
+                  placeholder={t('Qidirish')}
+                />
+                <Select
+                  value={employeeConfigFilters.kind}
+                  onChange={(e) => setEmployeeConfigFilters((prev) => ({ ...prev, kind: e.target.value, page: 1 }))}
+                >
+                  <option value="">{t('Barcha tur')}</option>
+                  <option value="TEACHER">TEACHER</option>
+                  <option value="STAFF">STAFF</option>
+                </Select>
+                <Select
+                  value={employeeConfigFilters.payrollMode}
+                  onChange={(e) => setEmployeeConfigFilters((prev) => ({ ...prev, payrollMode: e.target.value, page: 1 }))}
+                >
+                  <option value="">{t('Barcha mode')}</option>
+                  <option value="LESSON_BASED">LESSON_BASED</option>
+                  <option value="FIXED">FIXED</option>
+                  <option value="MIXED">MIXED</option>
+                  <option value="MANUAL_ONLY">MANUAL_ONLY</option>
+                </Select>
+                <Select
+                  value={employeeConfigFilters.employmentStatus}
+                  onChange={(e) => setEmployeeConfigFilters((prev) => ({ ...prev, employmentStatus: e.target.value, page: 1 }))}
+                >
+                  <option value="">{t('Barcha bandlik')}</option>
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="INACTIVE">INACTIVE</option>
+                  <option value="ARCHIVED">ARCHIVED</option>
+                </Select>
+                <Select
+                  value={employeeConfigFilters.isPayrollEligible}
+                  onChange={(e) => setEmployeeConfigFilters((prev) => ({ ...prev, isPayrollEligible: e.target.value, page: 1 }))}
+                >
+                  <option value="">{t('Eligibility (hammasi)')}</option>
+                  <option value="true">{t('Faqat kiradi')}</option>
+                  <option value="false">{t("Faqat kirmaydi")}</option>
+                </Select>
+                <Select
+                  value={String(employeeConfigFilters.limit)}
+                  onChange={(e) => setEmployeeConfigFilters((prev) => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+                >
+                  {[10, 20, 50].map((size) => (
+                    <option key={size} value={size}>{size}</option>
+                  ))}
+                </Select>
+                <Button variant="secondary" onClick={() => payrollEmployeesQuery.refetch()} disabled={payrollEmployeesState.loading}>
+                  {t('Yangilash')}
+                </Button>
+              </div>
+            )}
+          >
+            <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              {t("FIXED rejimda oklad summasi musbat bo'lishi shart. MIXED rejimda dars + oklad birga hisoblanadi.")}
+            </div>
+            {payrollEmployeesState.loading ? (
+              <StateView type="skeleton" />
+            ) : payrollEmployeesState.error ? (
+              <StateView type="error" description={payrollEmployeesState.error} />
+            ) : (
+              <>
+                <DataTable
+                  columns={payrollEmployeeColumns}
+                  rows={payrollEmployees}
+                  density="compact"
+                  maxHeightClassName="max-h-[500px]"
+                />
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+                  <div>{t('Jami')}: {payrollEmployeesState.total}</div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={payrollEmployeesState.page <= 1}
+                      onClick={() =>
+                        setEmployeeConfigFilters((prev) => ({ ...prev, page: Math.max(1, payrollEmployeesState.page - 1) }))
+                      }
+                    >
+                      {t('Oldingi')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={payrollEmployeesState.page >= payrollEmployeesState.pages}
+                      onClick={() =>
+                        setEmployeeConfigFilters((prev) => ({ ...prev, page: Math.min(payrollEmployeesState.pages, payrollEmployeesState.page + 1) }))
+                      }
+                    >
+                      {t('Keyingi')}
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
+          </Card>
+        )}
+
+        {!isManagerView && tab === 'settings' && settingsTab === 'rates' && (
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <Card
               title={t('Teacher Override Rate')}
@@ -1515,7 +2092,7 @@ export default function PayrollSection() {
               )}
             >
               <div className="hidden grid grid-cols-1 gap-3 md:grid-cols-2">
-                <Field label={t('O‘qituvchi')}>
+                <Field label={t('OР В Р вЂ Р В РІР‚С™Р вЂ™Р’Вqituvchi')}>
                   <Combobox
                     value={teacherRateForm.teacherId}
                     onChange={(e) => setTeacherRateForm((prev) => ({ ...prev, teacherId: e.target.value }))}
@@ -1624,11 +2201,11 @@ export default function PayrollSection() {
           </div>
         )}
 
-        {!isManagerView && tab === 'lessons' && (
+        {!isManagerView && tab === 'settings' && settingsTab === 'lessons' && (
           <>
-            <Card title={t('Real Lesson qo‘shish')}>
+            <Card title={t('Real Lesson qoР В Р вЂ Р В РІР‚С™Р вЂ™Р’Вshish')}>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <Field label={t('O‘qituvchi')}>
+                <Field label={t('OР В Р вЂ Р В РІР‚С™Р вЂ™Р’Вqituvchi')}>
                   <Combobox
                     value={realLessonForm.teacherId}
                     onChange={(e) => setRealLessonForm((prev) => ({ ...prev, teacherId: e.target.value }))}
@@ -1788,7 +2365,7 @@ export default function PayrollSection() {
                       }
                       onClick={handleBulkLessonStatusUpdate}
                     >
-                      {t('Bulk status qo‘llash')}
+                      {t('Bulk status qoР В Р вЂ Р В РІР‚С™Р вЂ™Р’Вllash')}
                     </Button>
                   </div>
                 </div>
@@ -1825,6 +2402,124 @@ export default function PayrollSection() {
               )}
             </Card>
           </>
+        )}
+
+        {!isManagerView && tab === 'settings' && settingsTab === 'advances' && (
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <Card
+              title={t("Avans qo'shish")}
+              subtitle={t("Oy davomida berilgan avansni kiriting. Generate vaqtida bu summa ushlanadi.")}
+              className="xl:col-span-1"
+            >
+              <div className="space-y-3">
+                <Field label={t('Oy')}>
+                  <Input
+                    type="month"
+                    value={advanceForm.periodMonth}
+                    onChange={(e) => setAdvanceForm((prev) => ({ ...prev, periodMonth: e.target.value }))}
+                    disabled={busy}
+                  />
+                </Field>
+                <Field label={t("O'qituvchi")}>
+                  <Combobox
+                    value={advanceForm.teacherId}
+                    onChange={(e) => setAdvanceForm((prev) => ({ ...prev, teacherId: e.target.value }))}
+                    placeholder={t('Tanlang')}
+                    noOptionsText={t("O'qituvchi topilmadi")}
+                    options={teacherComboboxOptions}
+                    disabled={busy}
+                  />
+                </Field>
+                <Field label={t('Avans summasi')}>
+                  <MoneyInputUz
+                    value={advanceForm.amount}
+                    onValueChange={(raw) => setAdvanceForm((prev) => ({ ...prev, amount: raw }))}
+                    disabled={busy}
+                  />
+                </Field>
+                <Field label={t('Berilgan sana (ixtiyoriy)')}>
+                  <Input
+                    type="datetime-local"
+                    value={advanceForm.paidAt}
+                    onChange={(e) => setAdvanceForm((prev) => ({ ...prev, paidAt: e.target.value }))}
+                    disabled={busy}
+                  />
+                </Field>
+                <Field label={t('Izoh')}>
+                  <Textarea
+                    rows={3}
+                    value={advanceForm.note}
+                    onChange={(e) => setAdvanceForm((prev) => ({ ...prev, note: e.target.value }))}
+                    disabled={busy}
+                  />
+                </Field>
+                <Button
+                  className="w-full"
+                  variant="indigo"
+                  onClick={handleCreateAdvance}
+                  disabled={!advanceForm.periodMonth || !advanceForm.teacherId || !advanceForm.amount || busy}
+                >
+                  {t("Avans qo'shish")}
+                </Button>
+              </div>
+            </Card>
+
+            <Card
+              title={t("Avanslar ro'yxati")}
+              className="xl:col-span-2"
+              actions={(
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                  <Input
+                    type="month"
+                    value={advanceFilters.periodMonth}
+                    onChange={(e) => setAdvanceFilters((prev) => ({ ...prev, periodMonth: e.target.value, page: 1 }))}
+                  />
+                  <Select
+                    value={String(advanceFilters.limit)}
+                    onChange={(e) => setAdvanceFilters((prev) => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+                  >
+                    {[10, 20, 50].map((size) => (
+                      <option key={size} value={size}>{size}</option>
+                    ))}
+                  </Select>
+                  <Button variant="secondary" onClick={() => payrollAdvancesQuery.refetch()} disabled={advancesState.loading}>
+                    {t('Yangilash')}
+                  </Button>
+                </div>
+              )}
+            >
+              {advancesState.loading ? (
+                <StateView type="skeleton" />
+              ) : advancesState.error ? (
+                <StateView type="error" description={advancesState.error} />
+              ) : (
+                <>
+                  <DataTable columns={advanceColumns} rows={advances} density="compact" maxHeightClassName="max-h-[460px]" />
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+                    <div>{t('Jami')}: {advancesState.total}</div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={advancesState.page <= 1}
+                        onClick={() => setAdvanceFilters((prev) => ({ ...prev, page: Math.max(1, advancesState.page - 1) }))}
+                      >
+                        {t('Oldingi')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={advancesState.page >= advancesState.pages}
+                        onClick={() => setAdvanceFilters((prev) => ({ ...prev, page: Math.min(advancesState.pages, advancesState.page + 1) }))}
+                      >
+                        {t('Keyingi')}
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </Card>
+          </div>
         )}
 
         <Drawer
@@ -2039,6 +2734,161 @@ export default function PayrollSection() {
         </Drawer>
 
         <Modal
+          open={payItemModal.open}
+          onClose={closePayItemModal}
+          title={t("Xodim bo'yicha to'lov")}
+          subtitle={payItemModal.ownerLabel || '-'}
+          maxWidth="max-w-xl"
+        >
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="text-xs text-slate-500">{t("To'lanadi")}</div>
+                <div className="mt-1 font-semibold text-slate-900">{formatMoney(payItemModal.payableAmount)}</div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="text-xs text-slate-500">{t("To'langan")}</div>
+                <div className="mt-1 font-semibold text-slate-900">{formatMoney(payItemModal.paidAmount)}</div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="text-xs text-slate-500">{t('Qoldiq')}</div>
+                <div className="mt-1 font-semibold text-slate-900">{formatMoney(Math.max(0, payItemModal.payableAmount - payItemModal.paidAmount))}</div>
+              </div>
+            </div>
+            <Field label={t('Summa')}>
+              <MoneyInputUz
+                value={payItemForm.amount}
+                onValueChange={(raw) => setPayItemForm((prev) => ({ ...prev, amount: raw }))}
+                disabled={busy}
+              />
+            </Field>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <Field label={t("To'lov usuli")}>
+                <Select
+                  value={payItemForm.paymentMethod}
+                  onChange={(e) => setPayItemForm((prev) => ({ ...prev, paymentMethod: e.target.value }))}
+                  disabled={busy}
+                >
+                  <option value="BANK">BANK</option>
+                  <option value="CASH">CASH</option>
+                  <option value="CLICK">CLICK</option>
+                  <option value="PAYME">PAYME</option>
+                </Select>
+              </Field>
+              <Field label={t("To'langan sana (ixtiyoriy)")}>
+                <Input
+                  type="datetime-local"
+                  value={payItemForm.paidAt}
+                  onChange={(e) => setPayItemForm((prev) => ({ ...prev, paidAt: e.target.value }))}
+                  disabled={busy}
+                />
+              </Field>
+            </div>
+            <Field label={t('External Ref')}>
+              <Input
+                value={payItemForm.externalRef}
+                onChange={(e) => setPayItemForm((prev) => ({ ...prev, externalRef: e.target.value }))}
+                disabled={busy}
+              />
+            </Field>
+            <Field label={t('Izoh')}>
+              <Textarea
+                rows={3}
+                value={payItemForm.note}
+                onChange={(e) => setPayItemForm((prev) => ({ ...prev, note: e.target.value }))}
+                disabled={busy}
+              />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={closePayItemModal} disabled={busy}>
+                {t('Bekor qilish')}
+              </Button>
+              <Button
+                variant="success"
+                onClick={handlePayItem}
+                disabled={!payItemForm.amount || busy}
+              >
+                {t("To'lovni tasdiqlash")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        <Modal
+          open={employeeConfigModal.open}
+          onClose={closeEmployeeConfigModal}
+          title={t('Payroll Config tahrirlash')}
+          subtitle={employeeConfigModal.displayName || '-'}
+          maxWidth="max-w-2xl"
+        >
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <Field label={t('Payroll mode')}>
+                <Select
+                  value={employeeConfigModal.payrollMode}
+                  onChange={(e) => setEmployeeConfigModal((prev) => ({ ...prev, payrollMode: e.target.value }))}
+                  disabled={busy}
+                >
+                  <option value="LESSON_BASED">LESSON_BASED</option>
+                  <option value="FIXED">FIXED</option>
+                  <option value="MIXED">MIXED</option>
+                  <option value="MANUAL_ONLY">MANUAL_ONLY</option>
+                </Select>
+              </Field>
+              <Field label={t('Bandlik holati')}>
+                <Select
+                  value={employeeConfigModal.employmentStatus}
+                  onChange={(e) => setEmployeeConfigModal((prev) => ({ ...prev, employmentStatus: e.target.value }))}
+                  disabled={busy}
+                >
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="INACTIVE">INACTIVE</option>
+                  <option value="ARCHIVED">ARCHIVED</option>
+                </Select>
+              </Field>
+              <Field label={t('Oklad')}>
+                <MoneyInputUz
+                  value={employeeConfigModal.fixedSalaryAmount}
+                  onValueChange={(raw) => setEmployeeConfigModal((prev) => ({ ...prev, fixedSalaryAmount: raw }))}
+                  disabled={busy}
+                />
+              </Field>
+              <Field label={t('Payrollga kiradi')}>
+                <Select
+                  value={employeeConfigModal.isPayrollEligible ? 'true' : 'false'}
+                  onChange={(e) =>
+                    setEmployeeConfigModal((prev) => ({ ...prev, isPayrollEligible: e.target.value === 'true' }))
+                  }
+                  disabled={busy}
+                >
+                  <option value="true">{t('Ha')}</option>
+                  <option value="false">{t("Yo'q")}</option>
+                </Select>
+              </Field>
+            </div>
+            <Field label={t('Izoh')}>
+              <Textarea
+                rows={4}
+                value={employeeConfigModal.note}
+                onChange={(e) => setEmployeeConfigModal((prev) => ({ ...prev, note: e.target.value }))}
+                disabled={busy}
+              />
+            </Field>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              {t("FIXED rejimda oklad bo'sh yoki 0 bo'lishi mumkin emas. Okladni tozalash uchun bo'sh qoldiring va boshqa mode tanlang.")}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={closeEmployeeConfigModal} disabled={busy}>
+                {t('Bekor qilish')}
+              </Button>
+              <Button variant="indigo" onClick={handleSaveEmployeeConfig} disabled={busy || !employeeConfigModal.employeeId}>
+                {t('Saqlash')}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        <Modal
           open={rateEditModal.open}
           onClose={closeRateEditModal}
           title={rateEditModal.kind === 'teacher' ? t('Teacher rate tahrirlash') : t('Subject rate tahrirlash')}
@@ -2189,3 +3039,7 @@ export default function PayrollSection() {
     </AutoTranslate>
   );
 }
+
+
+
+

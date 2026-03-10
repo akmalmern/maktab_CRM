@@ -49,6 +49,8 @@ export const baseApi = createApi({
     'PayrollRun',
     'PayrollRate',
     'PayrollRealLesson',
+    'PayrollAdvance',
+    'PayrollEmployee',
     'PayrollPayslip',
   ],
   endpoints: () => ({}),

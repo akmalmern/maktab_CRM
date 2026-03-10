@@ -10,6 +10,18 @@ const payrollLineIdParamSchema = z.object({
   lineId: z.string().cuid("lineId noto'g'ri"),
 });
 
+const payrollItemIdParamSchema = z.object({
+  itemId: z.string().cuid("itemId noto'g'ri"),
+});
+
+const payrollEmployeeIdParamSchema = z.object({
+  employeeId: z.string().cuid("employeeId noto'g'ri"),
+});
+
+const advancePaymentIdParamSchema = z.object({
+  advanceId: z.string().cuid("advanceId noto'g'ri"),
+});
+
 const realLessonIdParamSchema = z.object({
   lessonId: z.string().cuid("lessonId noto'g'ri"),
 });
@@ -21,6 +33,76 @@ const teacherRateIdParamSchema = z.object({
 const subjectDefaultRateIdParamSchema = z.object({
   rateId: z.string().cuid("rateId noto'g'ri"),
 });
+
+const payrollEmployeeModeSchema = z.enum([
+  "LESSON_BASED",
+  "FIXED",
+  "MIXED",
+  "MANUAL_ONLY",
+]);
+
+const payrollEmploymentStatusSchema = z.enum([
+  "ACTIVE",
+  "INACTIVE",
+  "ARCHIVED",
+]);
+
+const queryBooleanSchema = z.preprocess((value) => {
+  if (value === undefined) return undefined;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return value;
+}, z.boolean());
+
+const bodyBooleanSchema = z.preprocess((value) => {
+  if (value === undefined) return undefined;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return value;
+}, z.boolean());
+
+const listPayrollEmployeesQuerySchema = z.object({
+  kind: z.enum(["TEACHER", "STAFF"]).optional(),
+  payrollMode: payrollEmployeeModeSchema.optional(),
+  employmentStatus: payrollEmploymentStatusSchema.optional(),
+  isPayrollEligible: queryBooleanSchema.optional(),
+  search: z.string().trim().max(120).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+const updatePayrollEmployeeConfigSchema = z
+  .object({
+    payrollMode: payrollEmployeeModeSchema.optional(),
+    fixedSalaryAmount: z
+      .union([
+        z
+          .coerce
+          .number()
+          .min(0, "fixedSalaryAmount manfiy bo'lmasligi kerak")
+          .max(999999999999, "fixedSalaryAmount juda katta"),
+        z.null(),
+      ])
+      .optional(),
+    isPayrollEligible: z.boolean().optional(),
+    employmentStatus: payrollEmploymentStatusSchema.optional(),
+    note: z.string().trim().max(500).optional().nullable(),
+  })
+  .superRefine((value, ctx) => {
+    if (Object.keys(value).length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["root"],
+        message: "Kamida bitta field yuboring",
+      });
+    }
+  });
 
 const teacherRateBaseSchema = z.object({
   teacherId: z.string().cuid("teacherId noto'g'ri"),
@@ -208,6 +290,39 @@ const generatePayrollRunSchema = z.object({
   periodMonth: z.string().trim().regex(monthKeyRegex, "periodMonth formati YYYY-MM bo'lishi kerak"),
 });
 
+const payrollAutomationHealthQuerySchema = z.object({
+  periodMonth: z.string().trim().regex(monthKeyRegex, "periodMonth formati YYYY-MM bo'lishi kerak").optional(),
+  includeDetails: queryBooleanSchema.optional(),
+});
+
+const payrollMonthlyReportQuerySchema = z.object({
+  periodMonth: z.string().trim().regex(monthKeyRegex, "periodMonth formati YYYY-MM bo'lishi kerak").optional(),
+  includeDetails: queryBooleanSchema.optional(),
+});
+
+const payrollAutomationRunSchema = z
+  .object({
+    periodMonth: z.string().trim().regex(monthKeyRegex, "periodMonth formati YYYY-MM bo'lishi kerak").optional(),
+    generate: bodyBooleanSchema.optional(),
+    autoApprove: bodyBooleanSchema.optional(),
+    autoPay: bodyBooleanSchema.optional(),
+    dryRun: bodyBooleanSchema.optional(),
+    force: bodyBooleanSchema.optional(),
+    paymentMethod: z.enum(["CASH", "BANK", "CLICK", "PAYME"]).optional(),
+    paidAt: z.coerce.date().optional(),
+    externalRef: z.string().trim().max(120).optional(),
+    note: z.string().trim().max(500).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.autoPay === true && !value.paymentMethod) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["paymentMethod"],
+        message: "autoPay=true bo'lsa paymentMethod majburiy",
+      });
+    }
+  });
+
 const listPayrollRunsQuerySchema = z.object({
   periodMonth: z.string().trim().regex(monthKeyRegex, "periodMonth formati YYYY-MM bo'lishi kerak").optional(),
   status: z.enum(["DRAFT", "APPROVED", "PAID", "REVERSED"]).optional(),
@@ -218,7 +333,7 @@ const listPayrollRunsQuerySchema = z.object({
 const payrollRunLinesQuerySchema = z.object({
   teacherId: z.string().cuid().optional(),
   employeeId: z.string().cuid().optional(),
-  type: z.enum(["LESSON", "BONUS", "PENALTY", "MANUAL"]).optional(),
+  type: z.enum(["LESSON", "FIXED_SALARY", "ADVANCE_DEDUCTION", "BONUS", "PENALTY", "MANUAL"]).optional(),
   page: z.coerce.number().int().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
@@ -243,6 +358,36 @@ const payPayrollRunSchema = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
+const payPayrollItemSchema = z.object({
+  paymentMethod: z.enum(["CASH", "BANK", "CLICK", "PAYME"]),
+  amount: z.coerce.number().positive("amount musbat bo'lishi kerak").optional(),
+  paidAt: z.coerce.date().optional(),
+  externalRef: z.string().trim().max(120).optional(),
+  note: z.string().trim().max(500).optional(),
+});
+
+const listAdvancePaymentsQuerySchema = z.object({
+  periodMonth: z.string().trim().regex(monthKeyRegex, "periodMonth formati YYYY-MM bo'lishi kerak").optional(),
+  teacherId: z.string().cuid().optional(),
+  employeeId: z.string().cuid().optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+const createAdvancePaymentSchema = z
+  .object({
+    periodMonth: z.string().trim().regex(monthKeyRegex, "periodMonth formati YYYY-MM bo'lishi kerak").optional(),
+    teacherId: z.string().cuid("teacherId noto'g'ri").optional(),
+    employeeId: z.string().cuid("employeeId noto'g'ri").optional(),
+    amount: z.coerce.number().positive("amount musbat bo'lishi kerak"),
+    paidAt: z.coerce.date().optional(),
+    note: z.string().trim().max(500).optional(),
+  })
+  .refine((value) => Boolean(value.teacherId || value.employeeId), {
+    message: "teacherId yoki employeeId kerak",
+    path: ["teacherId"],
+  });
+
 const reversePayrollRunSchema = z.object({
   reason: z.string().trim().min(3).max(500),
 });
@@ -257,9 +402,14 @@ const teacherPayslipListQuerySchema = z.object({
 module.exports = {
   payrollRunIdParamSchema,
   payrollLineIdParamSchema,
+  payrollItemIdParamSchema,
+  payrollEmployeeIdParamSchema,
+  advancePaymentIdParamSchema,
   realLessonIdParamSchema,
   teacherRateIdParamSchema,
   subjectDefaultRateIdParamSchema,
+  listPayrollEmployeesQuerySchema,
+  updatePayrollEmployeeConfigSchema,
   createTeacherRateSchema,
   updateTeacherRateSchema,
   listTeacherRatesQuerySchema,
@@ -271,10 +421,16 @@ module.exports = {
   bulkUpdateRealLessonStatusSchema,
   listRealLessonsQuerySchema,
   generatePayrollRunSchema,
+  payrollAutomationHealthQuerySchema,
+  payrollMonthlyReportQuerySchema,
+  payrollAutomationRunSchema,
   listPayrollRunsQuerySchema,
   payrollRunLinesQuerySchema,
   addPayrollAdjustmentSchema,
   payPayrollRunSchema,
+  payPayrollItemSchema,
+  listAdvancePaymentsQuerySchema,
+  createAdvancePaymentSchema,
   reversePayrollRunSchema,
   teacherPayslipListQuerySchema,
 };

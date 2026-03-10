@@ -57,9 +57,14 @@ const {
 const {
   payrollRunIdParamSchema,
   payrollLineIdParamSchema,
+  payrollItemIdParamSchema,
+  payrollEmployeeIdParamSchema,
+  advancePaymentIdParamSchema,
   realLessonIdParamSchema,
   teacherRateIdParamSchema,
   subjectDefaultRateIdParamSchema,
+  listPayrollEmployeesQuerySchema,
+  updatePayrollEmployeeConfigSchema,
   createTeacherRateSchema,
   updateTeacherRateSchema,
   listTeacherRatesQuerySchema,
@@ -71,10 +76,16 @@ const {
   bulkUpdateRealLessonStatusSchema,
   listRealLessonsQuerySchema,
   generatePayrollRunSchema,
+  payrollAutomationHealthQuerySchema,
+  payrollMonthlyReportQuerySchema,
+  payrollAutomationRunSchema,
   listPayrollRunsQuerySchema,
   payrollRunLinesQuerySchema,
   addPayrollAdjustmentSchema,
   payPayrollRunSchema,
+  payPayrollItemSchema,
+  listAdvancePaymentsQuerySchema,
+  createAdvancePaymentSchema,
   reversePayrollRunSchema,
 } = require("../validators/payrollSchemas");
 const SubjectIdParamSchema = z.object({ id: z.string().cuid() });
@@ -533,12 +544,70 @@ router.delete(
   asyncHandler(payroll.deleteSubjectDefaultRate),
 );
 
+router.get(
+  "/moliya/oylik/employees",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER"),
+  validate({ query: listPayrollEmployeesQuerySchema }),
+  asyncHandler(payroll.listPayrollEmployees),
+);
+router.patch(
+  "/moliya/oylik/employees/:employeeId",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: payrollEmployeeIdParamSchema, body: updatePayrollEmployeeConfigSchema }),
+  asyncHandler(payroll.updatePayrollEmployeeConfig),
+);
+
+router.get(
+  "/moliya/oylik/advances",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER"),
+  validate({ query: listAdvancePaymentsQuerySchema }),
+  asyncHandler(payroll.listAdvancePayments),
+);
+router.post(
+  "/moliya/oylik/advances",
+  requireAuth,
+  requireRole("ADMIN"),
+  validateBody(createAdvancePaymentSchema),
+  asyncHandler(payroll.createAdvancePayment),
+);
+router.delete(
+  "/moliya/oylik/advances/:advanceId",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: advancePaymentIdParamSchema }),
+  asyncHandler(payroll.deleteAdvancePayment),
+);
+
 router.post(
   "/moliya/oylik/runs/generate",
   requireAuth,
   requireRole("ADMIN"),
   validateBody(generatePayrollRunSchema),
   asyncHandler(payroll.generatePayrollRun),
+);
+router.get(
+  "/moliya/oylik/automation/health",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER"),
+  validate({ query: payrollAutomationHealthQuerySchema }),
+  asyncHandler(payroll.getPayrollAutomationHealth),
+);
+router.post(
+  "/moliya/oylik/automation/run",
+  requireAuth,
+  requireRole("ADMIN"),
+  validateBody(payrollAutomationRunSchema),
+  asyncHandler(payroll.runPayrollAutomation),
+);
+router.get(
+  "/moliya/oylik/reports/monthly",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER"),
+  validate({ query: payrollMonthlyReportQuerySchema }),
+  asyncHandler(payroll.getPayrollMonthlyReport),
 );
 router.get(
   "/moliya/oylik/runs",
@@ -588,6 +657,13 @@ router.post(
   requireRole("ADMIN"),
   validate({ params: payrollRunIdParamSchema, body: payPayrollRunSchema }),
   asyncHandler(payroll.payPayrollRun),
+);
+router.post(
+  "/moliya/oylik/runs/:runId/items/:itemId/pay",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: payrollRunIdParamSchema.merge(payrollItemIdParamSchema), body: payPayrollItemSchema }),
+  asyncHandler(payroll.payPayrollItem),
 );
 router.post(
   "/moliya/oylik/runs/:runId/reverse",

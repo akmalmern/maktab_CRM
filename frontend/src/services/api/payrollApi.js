@@ -124,6 +124,67 @@ export const payrollApi = baseApi.injectEndpoints({
       ],
     }),
 
+    getPayrollEmployees: builder.query({
+      query: (params = {}) => ({
+        path: '/api/admin/moliya/oylik/employees',
+        query: params,
+      }),
+      providesTags: (result) => [
+        { type: 'PayrollEmployee', id: 'LIST' },
+        ...((result?.employees || []).map((row) => ({ type: 'PayrollEmployee', id: row.id }))),
+      ],
+    }),
+    updatePayrollEmployeeConfig: builder.mutation({
+      query: ({ employeeId, payload }) => ({
+        path: `/api/admin/moliya/oylik/employees/${employeeId}`,
+        method: 'PATCH',
+        body: payload,
+      }),
+      invalidatesTags: (result, error, { employeeId }) => [
+        { type: 'PayrollEmployee', id: 'LIST' },
+        { type: 'PayrollEmployee', id: employeeId },
+        { type: 'PayrollRun', id: 'LIST' },
+        { type: 'PayrollPayslip', id: 'LIST' },
+      ],
+    }),
+
+    getPayrollAdvances: builder.query({
+      query: (params = {}) => ({
+        path: '/api/admin/moliya/oylik/advances',
+        query: params,
+      }),
+      providesTags: (result) => [
+        { type: 'PayrollAdvance', id: 'LIST' },
+        ...((result?.advances || []).map((row) => ({ type: 'PayrollAdvance', id: row.id }))),
+      ],
+    }),
+    createPayrollAdvance: builder.mutation({
+      query: (payload) => ({
+        path: '/api/admin/moliya/oylik/advances',
+        method: 'POST',
+        body: payload,
+      }),
+      invalidatesTags: [
+        { type: 'PayrollAdvance', id: 'LIST' },
+        { type: 'PayrollRun', id: 'LIST' },
+        { type: 'PayrollRun', id: 'MONTHLY_REPORT' },
+        { type: 'PayrollPayslip', id: 'LIST' },
+      ],
+    }),
+    deletePayrollAdvance: builder.mutation({
+      query: (advanceId) => ({
+        path: `/api/admin/moliya/oylik/advances/${advanceId}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: (result, error, advanceId) => [
+        { type: 'PayrollAdvance', id: 'LIST' },
+        { type: 'PayrollAdvance', id: advanceId },
+        { type: 'PayrollRun', id: 'LIST' },
+        { type: 'PayrollRun', id: 'MONTHLY_REPORT' },
+        { type: 'PayrollPayslip', id: 'LIST' },
+      ],
+    }),
+
     generatePayrollRun: builder.mutation({
       query: (payload) => ({
         path: '/api/admin/moliya/oylik/runs/generate',
@@ -132,9 +193,38 @@ export const payrollApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: [
         { type: 'PayrollRun', id: 'LIST' },
+        { type: 'PayrollRun', id: 'MONTHLY_REPORT' },
         { type: 'PayrollRealLesson', id: 'LIST' },
         { type: 'PayrollPayslip', id: 'LIST' },
       ],
+    }),
+    getPayrollAutomationHealth: builder.query({
+      query: (params = {}) => ({
+        path: '/api/admin/moliya/oylik/automation/health',
+        query: params,
+      }),
+      providesTags: [{ type: 'PayrollRun', id: 'AUTOMATION_HEALTH' }],
+    }),
+    runPayrollAutomation: builder.mutation({
+      query: (payload) => ({
+        path: '/api/admin/moliya/oylik/automation/run',
+        method: 'POST',
+        body: payload,
+      }),
+      invalidatesTags: [
+        { type: 'PayrollRun', id: 'LIST' },
+        { type: 'PayrollRun', id: 'AUTOMATION_HEALTH' },
+        { type: 'PayrollRun', id: 'MONTHLY_REPORT' },
+        { type: 'PayrollRealLesson', id: 'LIST' },
+        { type: 'PayrollPayslip', id: 'LIST' },
+      ],
+    }),
+    getPayrollMonthlyReport: builder.query({
+      query: (params = {}) => ({
+        path: '/api/admin/moliya/oylik/reports/monthly',
+        query: params,
+      }),
+      providesTags: [{ type: 'PayrollRun', id: 'MONTHLY_REPORT' }],
     }),
     getPayrollRuns: builder.query({
       query: (params = {}) => ({
@@ -164,6 +254,7 @@ export const payrollApi = baseApi.injectEndpoints({
       invalidatesTags: (result, error, { runId }) => [
         { type: 'PayrollRun', id: 'LIST' },
         { type: 'PayrollRun', id: runId },
+        { type: 'PayrollRun', id: 'MONTHLY_REPORT' },
         { type: 'PayrollPayslip', id: 'LIST' },
       ],
     }),
@@ -175,6 +266,7 @@ export const payrollApi = baseApi.injectEndpoints({
       invalidatesTags: (result, error, { runId }) => [
         { type: 'PayrollRun', id: 'LIST' },
         { type: 'PayrollRun', id: runId },
+        { type: 'PayrollRun', id: 'MONTHLY_REPORT' },
         { type: 'PayrollPayslip', id: 'LIST' },
       ],
     }),
@@ -186,6 +278,7 @@ export const payrollApi = baseApi.injectEndpoints({
       invalidatesTags: (result, error, runId) => [
         { type: 'PayrollRun', id: 'LIST' },
         { type: 'PayrollRun', id: runId },
+        { type: 'PayrollRun', id: 'MONTHLY_REPORT' },
         { type: 'PayrollPayslip', id: 'LIST' },
       ],
     }),
@@ -198,6 +291,20 @@ export const payrollApi = baseApi.injectEndpoints({
       invalidatesTags: (result, error, { runId }) => [
         { type: 'PayrollRun', id: 'LIST' },
         { type: 'PayrollRun', id: runId },
+        { type: 'PayrollRun', id: 'MONTHLY_REPORT' },
+        { type: 'PayrollPayslip', id: 'LIST' },
+      ],
+    }),
+    payPayrollItem: builder.mutation({
+      query: ({ runId, itemId, payload }) => ({
+        path: `/api/admin/moliya/oylik/runs/${runId}/items/${itemId}/pay`,
+        method: 'POST',
+        body: payload,
+      }),
+      invalidatesTags: (result, error, { runId }) => [
+        { type: 'PayrollRun', id: 'LIST' },
+        { type: 'PayrollRun', id: runId },
+        { type: 'PayrollRun', id: 'MONTHLY_REPORT' },
         { type: 'PayrollPayslip', id: 'LIST' },
       ],
     }),
@@ -210,6 +317,7 @@ export const payrollApi = baseApi.injectEndpoints({
       invalidatesTags: (result, error, { runId }) => [
         { type: 'PayrollRun', id: 'LIST' },
         { type: 'PayrollRun', id: runId },
+        { type: 'PayrollRun', id: 'MONTHLY_REPORT' },
         { type: 'PayrollPayslip', id: 'LIST' },
       ],
     }),
@@ -268,13 +376,22 @@ export const {
   useCreatePayrollSubjectRateMutation,
   useUpdatePayrollSubjectRateMutation,
   useDeletePayrollSubjectRateMutation,
+  useGetPayrollEmployeesQuery,
+  useUpdatePayrollEmployeeConfigMutation,
+  useGetPayrollAdvancesQuery,
+  useCreatePayrollAdvanceMutation,
+  useDeletePayrollAdvanceMutation,
   useGeneratePayrollRunMutation,
+  useGetPayrollAutomationHealthQuery,
+  useRunPayrollAutomationMutation,
+  useGetPayrollMonthlyReportQuery,
   useGetPayrollRunsQuery,
   useGetPayrollRunDetailQuery,
   useAddPayrollAdjustmentMutation,
   useDeletePayrollAdjustmentMutation,
   useApprovePayrollRunMutation,
   usePayPayrollRunMutation,
+  usePayPayrollItemMutation,
   useReversePayrollRunMutation,
   useExportPayrollRunCsvMutation,
   useGetTeacherPayslipsQuery,
