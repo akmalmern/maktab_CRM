@@ -14,6 +14,7 @@ export default function FinancePaymentsList({
   sumFormat,
   exporting,
   onExportDebtors,
+  onOpenPayroll,
   isClassroomSelected,
   openPaymentModal,
   MiniStatCard,
@@ -32,6 +33,7 @@ export default function FinancePaymentsList({
         locale={locale}
         sumFormat={sumFormat}
         MiniStatCard={MiniStatCard}
+        onOpenPayroll={onOpenPayroll}
       />
 
       <div className="mb-3 space-y-3">

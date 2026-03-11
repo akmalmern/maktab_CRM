@@ -4,6 +4,7 @@ const {
   buildDebtInfo,
   buildMonthRange,
   buildImtiyozMonthMap,
+  monthKeyFromDate,
 } = require("../src/services/financeDebtService");
 
 test("buildMonthRange creates sequential months", () => {
@@ -73,4 +74,35 @@ test("buildImtiyozMonthMap legacy inactive record ignores future months", () => 
   assert.equal(map.get("2026-02"), 150000);
   assert.equal(map.has("2026-03"), false);
   assert.equal(map.has("2026-04"), false);
+});
+
+test("monthKeyFromDate uses Tashkent month at UTC boundary", () => {
+  const utcLateMonth = new Date("2026-08-31T19:30:00.000Z"); // Tashkent: 2026-09-01 00:30
+  assert.equal(monthKeyFromDate(utcLateMonth), "2026-09");
+});
+
+test("buildImtiyozMonthMap logs warning when fixed discount is >= monthly amount", () => {
+  const originalWarn = console.warn;
+  const warnCalls = [];
+  console.warn = (...args) => warnCalls.push(args);
+
+  try {
+    const map = buildImtiyozMonthMap({
+      oylikSumma: 200000,
+      imtiyozlar: [
+        {
+          turi: "SUMMA",
+          qiymat: 250000,
+          boshlanishOy: "2026-01",
+          oylarSoni: 1,
+        },
+      ],
+    });
+
+    assert.equal(map.get("2026-01"), 0);
+    assert.equal(warnCalls.length, 1);
+    assert.match(String(warnCalls[0][0]), /Imtiyoz summa bazadan katta yoki teng/);
+  } finally {
+    console.warn = originalWarn;
+  }
 });

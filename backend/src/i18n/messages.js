@@ -57,6 +57,12 @@ const ERROR_MESSAGES = {
     PAYMENT_MONTH_RANGE_INVALID: "To'lov oy oralig'i noto'g'ri",
     PAYMENT_NOT_FOUND: "To'lov topilmadi",
     PAYMENT_NOT_REQUIRED: "Bu oylar uchun to'lov talab etilmaydi",
+    PAYMENT_PARTIAL_REVERT_SUMMA_INVALID:
+      "Qisman qaytarish summasi musbat butun son bo'lishi kerak",
+    PAYMENT_PARTIAL_REVERT_SUMMA_TOO_HIGH:
+      "Qisman qaytarish summasi to'lov summasidan kichik bo'lishi kerak",
+    PAYMENT_PARTIAL_REVERT_ALLOCATION_FAILED:
+      "Qisman qaytarishni oylar bo'yicha taqsimlab bo'lmadi",
     PROFILE_NOT_FOUND: "Profil topilmadi",
     PROMOTION_CONFLICT: "Sinf ko'chirishda konflikt yuz berdi",
     REFRESH_TOKEN_INVALID: "Refresh token noto'g'ri yoki eskirgan",
@@ -224,6 +230,12 @@ const ERROR_MESSAGES = {
     PAYMENT_MONTH_RANGE_INVALID: "Invalid payment month range",
     PAYMENT_NOT_FOUND: "Payment not found",
     PAYMENT_NOT_REQUIRED: "Payment is not required for selected months",
+    PAYMENT_PARTIAL_REVERT_SUMMA_INVALID:
+      "Partial refund amount must be a positive integer",
+    PAYMENT_PARTIAL_REVERT_SUMMA_TOO_HIGH:
+      "Partial refund amount must be less than payment amount",
+    PAYMENT_PARTIAL_REVERT_ALLOCATION_FAILED:
+      "Unable to allocate partial refund across covered months",
     PROFILE_NOT_FOUND: "Profile not found",
     PROMOTION_CONFLICT: "Class promotion conflict occurred",
     REFRESH_TOKEN_INVALID: "Refresh token is invalid or expired",

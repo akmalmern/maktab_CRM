@@ -91,7 +91,6 @@ const updatePayrollEmployeeConfigSchema = z
       ])
       .optional(),
     isPayrollEligible: z.boolean().optional(),
-    employmentStatus: payrollEmploymentStatusSchema.optional(),
     note: z.string().trim().max(500).optional().nullable(),
   })
   .superRefine((value, ctx) => {

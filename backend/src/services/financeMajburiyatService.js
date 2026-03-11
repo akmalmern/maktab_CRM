@@ -114,16 +114,16 @@ async function syncStudentOyMajburiyatlar({
       oylikSumma,
     });
     const paidAmountMap = paidMap.get(student.id) || new Map();
+    const dueMonthWhere = [];
+    const monthRows = [];
 
     for (const row of dueMonths) {
+      dueMonthWhere.push({ yil: row.yil, oy: row.oy });
       if (
         Array.isArray(normalizedChargeableMonths) &&
         normalizedChargeableMonths.length > 0 &&
         !normalizedChargeableMonths.includes(row.oy)
       ) {
-        await prismaClient.studentOyMajburiyat.deleteMany({
-          where: { studentId: student.id, yil: row.yil, oy: row.oy },
-        });
         continue;
       }
       const key = monthKey(row.yil, row.oy);
@@ -140,31 +140,33 @@ async function syncStudentOyMajburiyatlar({
         holat = "QISMAN_TOLANGAN";
       }
 
-      await prismaClient.studentOyMajburiyat.upsert({
+      monthRows.push({
+        studentId: student.id,
+        yil: row.yil,
+        oy: row.oy,
+        bazaSumma: baza,
+        imtiyozSumma,
+        netSumma: net,
+        tolanganSumma,
+        qoldiqSumma,
+        holat,
+        source: imtiyozSumma > 0 ? "IMTIYOZ" : "BAZA",
+      });
+    }
+
+    if (dueMonthWhere.length) {
+      await prismaClient.studentOyMajburiyat.deleteMany({
         where: {
-          studentId_yil_oy: { studentId: student.id, yil: row.yil, oy: row.oy },
-        },
-        create: {
           studentId: student.id,
-          yil: row.yil,
-          oy: row.oy,
-          bazaSumma: baza,
-          imtiyozSumma,
-          netSumma: net,
-          tolanganSumma,
-          qoldiqSumma,
-          holat,
-          source: imtiyozSumma > 0 ? "IMTIYOZ" : "BAZA",
+          OR: dueMonthWhere,
         },
-        update: {
-          bazaSumma: baza,
-          imtiyozSumma,
-          netSumma: net,
-          tolanganSumma,
-          qoldiqSumma,
-          holat,
-          source: imtiyozSumma > 0 ? "IMTIYOZ" : "BAZA",
-        },
+      });
+    }
+
+    if (monthRows.length) {
+      await prismaClient.studentOyMajburiyat.createMany({
+        data: monthRows,
+        skipDuplicates: true,
       });
     }
   }

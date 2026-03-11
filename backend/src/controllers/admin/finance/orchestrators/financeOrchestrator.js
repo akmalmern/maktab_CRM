@@ -514,6 +514,29 @@ async function fetchFinanceSummary({
   const cashflowMonthEnd = new Date(
     Date.UTC(parsedCashflowMonth.year, parsedCashflowMonth.month, 1),
   );
+  const mainOrg = await prisma.organization.findUnique({
+    where: { key: "MAIN" },
+    select: { id: true },
+  });
+  const payrollCashflowRows = mainOrg?.id
+    ? await prisma.payrollCashEntry.groupBy({
+        by: ["entryType"],
+        where: {
+          organizationId: mainOrg.id,
+          occurredAt: { gte: cashflowMonthStart, lt: cashflowMonthEnd },
+        },
+        _sum: { amount: true },
+      })
+    : [];
+  const payrollCashByType = new Map(
+    payrollCashflowRows.map((row) => [row.entryType, Number(row?._sum?.amount || 0)]),
+  );
+  const payrollPayoutAmount = Math.abs(Number(payrollCashByType.get("PAYROLL_PAYOUT") || 0));
+  const payrollReversalAmount = Number(payrollCashByType.get("PAYROLL_REVERSAL") || 0);
+  const payrollNetAmount = payrollCashflowRows.reduce(
+    (acc, row) => acc + Number(row?._sum?.amount || 0),
+    0,
+  );
   const cashflowPlanStudentIds = cohortRows.map((row) => row.id);
   let cashflowPlanAmount = 0;
   let cashflowCollectedAmount = 0;
@@ -598,6 +621,7 @@ async function fetchFinanceSummary({
         ? selectedMonthDebtAmount
         : 0;
   const cashflowDiffAmount = cashflowPlanAmount - cashflowCollectedAmount;
+  const cashflowNetAmount = cashflowCollectedAmount + payrollNetAmount;
 
   const studentIds = debtMonthFiltered.map((row) => row.id);
   const monthStart = startOfMonthUtc(now);
@@ -652,6 +676,10 @@ async function fetchFinanceSummary({
       monthFormatted: safeFormatMonthKey(cashflowMonthKey),
       planAmount: cashflowPlanAmount,
       collectedAmount: cashflowCollectedAmount,
+      payrollPayoutAmount,
+      payrollReversalAmount,
+      payrollNetAmount,
+      netAmount: cashflowNetAmount,
       debtAmount: cashflowDebtAmount,
       diffAmount: cashflowDiffAmount,
     },
@@ -846,6 +874,9 @@ async function buildFinanceSettingsPayload(settings) {
       gapYearly: Number(summary.totalDebtAmount || 0),
       thisMonthPaidAmount: Number(summary.thisMonthPaidAmount || 0),
       thisYearPaidAmount: Number(summary.thisYearPaidAmount || 0),
+      thisMonthPayrollPayoutAmount: Number(summary.cashflow?.payrollPayoutAmount || 0),
+      thisMonthPayrollNetAmount: Number(summary.cashflow?.payrollNetAmount || 0),
+      thisMonthNetCashflowAmount: Number(summary.cashflow?.netAmount || 0),
       cashflowDiffAmount: Number(summary.cashflow?.diffAmount || 0),
     },
     constraints: {
@@ -1517,6 +1548,15 @@ function getPaymentRequestInput(req) {
   };
 }
 
+function getPartialRevertRequestInput(req) {
+  const refundSumma = Number(req.body?.summa);
+  const sabab =
+    req.body?.sabab && String(req.body.sabab).trim()
+      ? String(req.body.sabab).trim()
+      : null;
+  return { refundSumma, sabab };
+}
+
 async function buildStudentPaymentDraftContext({
   prismaClient = prisma,
   studentId,
@@ -2035,6 +2075,178 @@ async function revertPayment(req, res) {
   });
 }
 
+async function partialRevertPayment(req, res) {
+  const { tolovId } = req.params;
+  const { refundSumma, sabab } = getPartialRevertRequestInput(req);
+
+  if (!Number.isFinite(refundSumma) || !Number.isInteger(refundSumma) || refundSumma <= 0) {
+    throw new ApiError(
+      400,
+      "PAYMENT_PARTIAL_REVERT_SUMMA_INVALID",
+      "Qisman qaytarish summasi musbat butun son bo'lishi kerak",
+    );
+  }
+
+  const settings = await getOrCreateSettings();
+  const accessTxn = await prisma.tolovTranzaksiya.findUnique({
+    where: { id: tolovId },
+    select: { studentId: true },
+  });
+
+  if (!accessTxn) {
+    throw new ApiError(404, "PAYMENT_NOT_FOUND", "To'lov topilmadi");
+  }
+  if (req.user?.role === "MANAGER") {
+    await ensureManagerCanAccessStudent({
+      managerUserId: req.user.sub,
+      studentId: accessTxn.studentId,
+    });
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const txn = await tx.tolovTranzaksiya.findUnique({
+      where: { id: tolovId },
+      include: {
+        qoplamalar: {
+          select: { id: true, yil: true, oy: true, summa: true },
+          orderBy: [{ yil: "desc" }, { oy: "desc" }],
+        },
+      },
+    });
+
+    if (!txn) {
+      throw new ApiError(404, "PAYMENT_NOT_FOUND", "To'lov topilmadi");
+    }
+    if (txn.holat === "BEKOR_QILINGAN") {
+      throw new ApiError(
+        409,
+        "PAYMENT_ALREADY_REVERTED",
+        "Bu to'lov allaqachon bekor qilingan",
+      );
+    }
+
+    const currentTxnSumma = Number(txn.summa || 0);
+    if (refundSumma >= currentTxnSumma) {
+      throw new ApiError(
+        400,
+        "PAYMENT_PARTIAL_REVERT_SUMMA_TOO_HIGH",
+        "Qisman qaytarish summasi to'lov summasidan kichik bo'lishi kerak",
+        { currentSumma: currentTxnSumma },
+      );
+    }
+
+    const totalAllocated = txn.qoplamalar.reduce(
+      (acc, row) => acc + Math.max(0, Number(row.summa || 0)),
+      0,
+    );
+    if (refundSumma > totalAllocated) {
+      throw new ApiError(
+        409,
+        "PAYMENT_PARTIAL_REVERT_ALLOCATION_FAILED",
+        "Qisman qaytarishni qoplamalar bo'yicha taqsimlab bo'lmadi",
+        { totalAllocated },
+      );
+    }
+
+    let remaining = refundSumma;
+    const updateRows = [];
+    const deleteIds = [];
+    const refundedAllocations = [];
+
+    for (const row of txn.qoplamalar) {
+      if (remaining <= 0) break;
+      const rowSumma = Math.max(0, Number(row.summa || 0));
+      if (rowSumma <= 0) continue;
+
+      const refundFromRow = Math.min(rowSumma, remaining);
+      const nextSumma = rowSumma - refundFromRow;
+      const key = `${row.yil}-${String(row.oy).padStart(2, "0")}`;
+
+      refundedAllocations.push({
+        key,
+        yil: row.yil,
+        oy: row.oy,
+        summa: refundFromRow,
+      });
+
+      if (nextSumma <= 0) {
+        deleteIds.push(row.id);
+      } else {
+        updateRows.push({ id: row.id, summa: nextSumma });
+      }
+
+      remaining -= refundFromRow;
+    }
+
+    if (remaining > 0) {
+      throw new ApiError(
+        409,
+        "PAYMENT_PARTIAL_REVERT_ALLOCATION_FAILED",
+        "Qisman qaytarishni qoplamalar bo'yicha yakunlab bo'lmadi",
+        { remaining },
+      );
+    }
+
+    if (deleteIds.length) {
+      await tx.tolovQoplama.deleteMany({
+        where: { id: { in: deleteIds } },
+      });
+    }
+
+    for (const row of updateRows) {
+      await tx.tolovQoplama.update({
+        where: { id: row.id },
+        data: { summa: row.summa },
+      });
+    }
+
+    const updateData = {
+      summa: currentTxnSumma - refundSumma,
+    };
+    if (sabab) {
+      updateData.izoh = [txn.izoh, `[PARTIAL_REVERT ${refundSumma}] ${sabab}`]
+        .filter(Boolean)
+        .join("\n");
+    }
+
+    const updatedTxn = await tx.tolovTranzaksiya.update({
+      where: { id: tolovId },
+      data: updateData,
+      select: { summa: true, studentId: true },
+    });
+
+    await syncStudentOyMajburiyatlar({
+      prismaClient: tx,
+      studentIds: [updatedTxn.studentId],
+      oylikSumma: settings.oylikSumma,
+      futureMonths: 3,
+      chargeableMonths: readTarifChargeableMonths(settings),
+    });
+
+    return {
+      remainingSumma: Number(updatedTxn.summa || 0),
+      refundedAllocations,
+    };
+  });
+
+  const refundedMonthKeys = Array.from(new Set(result.refundedAllocations.map((row) => row.key)));
+
+  res.json({
+    ok: true,
+    partialReverted: true,
+    tolovId,
+    refundedSumma: refundSumma,
+    remainingSumma: result.remainingSumma,
+    sabab,
+    refundedMonths: refundedMonthKeys,
+    refundedMonthsFormatted: refundedMonthKeys.map(safeFormatMonthKey),
+    refundedAllocations: result.refundedAllocations.map((row) => ({
+      ...row,
+      oyLabel: safeFormatMonthKey(row.key),
+    })),
+  });
+}
+
 module.exports = {
   // queries
   getOrCreateSettings,
@@ -2056,4 +2268,5 @@ module.exports = {
   previewStudentPayment,
   createStudentPayment,
   revertPayment,
+  partialRevertPayment,
 };

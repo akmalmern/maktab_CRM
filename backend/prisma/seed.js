@@ -923,8 +923,8 @@ async function seedFinanceData() {
 
   for (let i = 0; i < students.length; i += 1) {
     const studentId = students[i].id;
-    const pattern = i % 4;
-    const unpaidCount = pattern === 0 ? 0 : pattern === 1 ? 1 : pattern === 2 ? 2 : 3;
+    // Talabga ko'ra: seeddan keyin qarzdor student qolmasin.
+    const unpaidCount = 0;
     const paidMonths = recentMonths.slice(0, recentMonths.length - unpaidCount);
 
     if (paidMonths.length) {
@@ -951,6 +951,7 @@ async function seedFinanceData() {
           tranzaksiyaId: txn.id,
           yil: m.yil,
           oy: m.oy,
+          summa: settings.oylikSumma,
         })),
         skipDuplicates: true,
       });
@@ -1308,10 +1309,29 @@ async function seedPayrollRealLessonsHistory({ organizationId, startDateUtc, end
   };
 }
 
-async function seedPayrollRunsHistory({ adminUserId, startDateUtc, endDateUtc }) {
+async function clearPayrollRunsInRange({ organizationId, startDateUtc, endDateUtc }) {
   const monthTuples = buildMonthTuplesBetweenUtc(startDateUtc, endDateUtc);
   if (!monthTuples.length) {
-    return { months: [], generated: 0, approved: 0, paid: 0, totals: [] };
+    return { months: [], deletedRuns: 0 };
+  }
+
+  const deletedRuns = await prisma.payrollRun.deleteMany({
+    where: {
+      organizationId,
+      periodMonth: { in: monthTuples.map((m) => m.key) },
+    },
+  });
+
+  return {
+    months: monthTuples.map((m) => m.key),
+    deletedRuns: deletedRuns.count,
+  };
+}
+
+async function seedPayrollRunsHistory({ adminUserId, startDateUtc, endDateUtc, unpaidMonthKey = null }) {
+  const monthTuples = buildMonthTuplesBetweenUtc(startDateUtc, endDateUtc);
+  if (!monthTuples.length) {
+    return { months: [], generated: 0, approved: 0, paid: 0, totals: [], unpaidMonthKey };
   }
 
   const org = await ensurePayrollOrganization();
@@ -1340,18 +1360,34 @@ async function seedPayrollRunsHistory({ adminUserId, startDateUtc, endDateUtc })
       throw new Error(`Payroll run generate natijasi noto'g'ri: ${month.key}`);
     }
 
-    if ((run.sourceLessonsCount || 0) > 0) {
-      await payrollService.approvePayrollRun({
+    const canFinalizeRun =
+      Number(run.sourceLessonsCount || 0) > 0 ||
+      Number(run.teacherCount || 0) > 0 ||
+      Number(run.payableAmount || 0) !== 0;
+
+    if (canFinalizeRun) {
+      const approveRes = await payrollService.approvePayrollRun({
         runId: run.id,
         actorUserId: adminUserId,
         req: null,
       });
       approved += 1;
 
+      const shouldKeepMonthUnpaid = Boolean(unpaidMonthKey) && month.key === unpaidMonthKey;
+      if (shouldKeepMonthUnpaid) {
+        totals.push({
+          periodMonth: month.key,
+          status: approveRes?.run?.status || "APPROVED",
+          teacherCount: Number(approveRes?.run?.teacherCount || run.teacherCount || 0),
+          lessons: Number(approveRes?.run?.sourceLessonsCount || run.sourceLessonsCount || 0),
+          payableAmount: Number(approveRes?.run?.payableAmount || run.payableAmount || 0),
+        });
+        continue;
+      }
+
       const isCurrentMonth =
         month.yil === endDateUtc.getUTCFullYear() &&
         month.oy === endDateUtc.getUTCMonth() + 1;
-
       const paidAt = isCurrentMonth
         ? new Date()
         : endOfMonthUtc(month.yil, month.oy);
@@ -1393,12 +1429,14 @@ async function seedPayrollRunsHistory({ adminUserId, startDateUtc, endDateUtc })
     approved,
     paid,
     totals,
+    unpaidMonthKey,
   };
 }
 
 async function seedPayrollFromSeptemberToCurrentMonth() {
   const todayUtc = toUtcDateOnly(new Date());
   const payrollStartDate = startOfPayrollSeasonUtc(todayUtc);
+  const unpaidMarchMonthKey = buildMonthKey(todayUtc.getUTCFullYear(), 3);
 
   const adminUser = await prisma.user.findFirst({
     where: { role: "ADMIN", isActive: true },
@@ -1416,6 +1454,14 @@ async function seedPayrollFromSeptemberToCurrentMonth() {
     startDateUtc: payrollStartDate,
   });
 
+  // realLesson deleteMany paytida FK (ON DELETE SET NULL) LESSON line shape checkini buzmasligi
+  // uchun avval shu oraliqdagi runlarni tozalab olamiz.
+  const cleanupRunsResult = await clearPayrollRunsInRange({
+    organizationId: org.id,
+    startDateUtc: payrollStartDate,
+    endDateUtc: todayUtc,
+  });
+
   const realLessonsResult = await seedPayrollRealLessonsHistory({
     organizationId: org.id,
     startDateUtc: payrollStartDate,
@@ -1426,6 +1472,7 @@ async function seedPayrollFromSeptemberToCurrentMonth() {
     adminUserId: adminUser.id,
     startDateUtc: payrollStartDate,
     endDateUtc: todayUtc,
+    unpaidMonthKey: unpaidMarchMonthKey,
   });
 
   const totalPayable = runsResult.totals.reduce(
@@ -1440,8 +1487,10 @@ async function seedPayrollFromSeptemberToCurrentMonth() {
     localEndDate: utcDateToTashkentIsoDate(todayUtc),
     employees: employeesResult,
     rates: ratesResult,
+    cleanupRuns: cleanupRunsResult,
     realLessons: realLessonsResult,
     runs: runsResult,
+    unpaidMonthKey: unpaidMarchMonthKey,
     totalPayable,
   };
 }
@@ -1556,12 +1605,14 @@ async function main() {
   console.log(
     `Payroll rates => subjectRates created: ${payrollResult.rates.createdSubjectRates}, deletedTeacherRates: ${payrollResult.rates.deletedTeacherRates}, deletedSubjectRates: ${payrollResult.rates.deletedSubjectRates}`,
   );
+  console.log(`Payroll cleanup runs => deleted: ${payrollResult.cleanupRuns.deletedRuns}`);
   console.log(
     `Payroll realLessons => deleted: ${payrollResult.realLessons.deleted}, created: ${payrollResult.realLessons.created}`,
   );
   console.log(
     `Payroll runs => generated: ${payrollResult.runs.generated}, approved: ${payrollResult.runs.approved}, paid: ${payrollResult.runs.paid}, total payable: ${Math.round(payrollResult.totalPayable)}`,
   );
+  console.log(`Payroll unpaid month (seed rule) => ${payrollResult.unpaidMonthKey}`);
   console.log(
     `Payroll months => ${payrollResult.runs.totals.map((row) => `${row.periodMonth}:${row.status}`).join(", ")}`,
   );

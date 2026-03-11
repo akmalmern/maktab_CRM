@@ -13,6 +13,7 @@ const {
 const {
   studentIdParamSchema: financeStudentIdParamSchema,
   tolovIdParamSchema,
+  partialRevertPaymentSchema,
   createPaymentSchema,
   createImtiyozSchema,
   imtiyozIdParamSchema,
@@ -96,6 +97,14 @@ router.delete(
   requireRole("MANAGER"),
   validate({ params: tolovIdParamSchema }),
   asyncHandler(finance.revertPayment),
+);
+
+router.post(
+  "/tolov/:tolovId/partial-revert",
+  requireAuth,
+  requireRole("MANAGER"),
+  validate({ params: tolovIdParamSchema, body: partialRevertPaymentSchema }),
+  asyncHandler(finance.partialRevertPayment),
 );
 
 module.exports = router;

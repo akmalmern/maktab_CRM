@@ -1,4 +1,5 @@
 const { ApiError } = require("../utils/apiError");
+const { utcDateToTashkentIsoDate } = require("../utils/tashkentTime");
 
 const OY_NOMLARI = [
   "Yanvar",
@@ -41,7 +42,12 @@ function formatMonthKey(monthKey) {
 }
 
 function monthKeyFromDate(date) {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+  const tashkentIsoDate = utcDateToTashkentIsoDate(date);
+  if (tashkentIsoDate) {
+    return tashkentIsoDate.slice(0, 7);
+  }
+  const fallback = new Date(date);
+  return `${fallback.getUTCFullYear()}-${String(fallback.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 function nextMonth(year, month) {
@@ -99,6 +105,12 @@ function calculateImtiyozMonthAmount({ turi, qiymat, oylikSumma }) {
   }
   if (turi === "SUMMA") {
     const chegirmaSumma = Number(qiymat || 0);
+    if (Number.isFinite(chegirmaSumma) && chegirmaSumma >= base) {
+      console.warn("Imtiyoz summa bazadan katta yoki teng", {
+        chegirmaSumma,
+        oylikSumma: base,
+      });
+    }
     return Math.max(0, base - chegirmaSumma);
   }
   return base;
@@ -193,14 +205,8 @@ function buildDueMonths(fromDateInput, toDateInput = new Date()) {
     return [];
   }
 
-  const start = {
-    year: fromDate.getUTCFullYear(),
-    month: fromDate.getUTCMonth() + 1,
-  };
-  const end = {
-    year: toDate.getUTCFullYear(),
-    month: toDate.getUTCMonth() + 1,
-  };
+  const start = parseMonthKey(monthKeyFromDate(fromDate));
+  const end = parseMonthKey(monthKeyFromDate(toDate));
 
   if (
     start.year > end.year ||
@@ -216,7 +222,7 @@ function buildDueMonths(fromDateInput, toDateInput = new Date()) {
     cursor.year < end.year ||
     (cursor.year === end.year && cursor.month <= end.month)
   ) {
-    const key = `${cursor.year}-${String(cursor.month).padStart(2, "0")}`;
+    const key = monthKeyFromParts(cursor.year, cursor.month);
     result.push({
       yil: cursor.year,
       oy: cursor.month,

@@ -157,6 +157,9 @@ export default function AdminWorkspace({ section }) {
       gapYearly: 0,
       thisMonthPaidAmount: 0,
       thisYearPaidAmount: 0,
+      thisMonthPayrollPayoutAmount: 0,
+      thisMonthPayrollNetAmount: 0,
+      thisMonthNetCashflowAmount: 0,
       cashflowDiffAmount: 0,
     },
     tarifHistory: financeSettingsQuery.data?.tarifHistory || [],
@@ -190,6 +193,10 @@ export default function AdminWorkspace({ section }) {
         monthFormatted: '',
         planAmount: 0,
         collectedAmount: 0,
+        payrollPayoutAmount: 0,
+        payrollReversalAmount: 0,
+        payrollNetAmount: 0,
+        netAmount: 0,
         debtAmount: 0,
         diffAmount: 0,
       },
@@ -503,6 +510,7 @@ export default function AdminWorkspace({ section }) {
           onRollbackTarif={handleRollbackFinanceTarif}
           onRevertPayment={handleRevertFinancePayment}
           onExportDebtors={handleExportFinanceDebtors}
+          onOpenPayroll={() => navigate('/admin/oylik')}
           exporting={exporting}
         />
       )}

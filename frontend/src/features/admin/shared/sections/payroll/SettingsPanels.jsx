@@ -21,6 +21,42 @@ function Field({ label, children }) {
   );
 }
 
+function getEmployeeKindLabel(value, t) {
+  const labels = {
+    TEACHER: t("O'qituvchi"),
+    STAFF: t('Xodim'),
+  };
+  return labels[value] || value || '-';
+}
+
+function getPayrollModeLabel(value, t) {
+  const labels = {
+    LESSON_BASED: t("Dars asosida"),
+    FIXED: t('Oklad'),
+    MIXED: t('Dars + oklad'),
+    MANUAL_ONLY: t("Faqat qo'lda"),
+  };
+  return labels[value] || value || '-';
+}
+
+function getEmploymentStatusLabel(value, t) {
+  const labels = {
+    ACTIVE: t('Faol'),
+    INACTIVE: t('Nofaol'),
+    ARCHIVED: t('Arxiv'),
+  };
+  return labels[value] || value || '-';
+}
+
+function getLessonStatusLabel(value, t) {
+  const labels = {
+    DONE: t('Bajarilgan'),
+    CANCELED: t('Bekor qilingan'),
+    REPLACED: t("Almashtirilgan"),
+  };
+  return labels[value] || value || '-';
+}
+
 export function PayrollSettingsHeader({
   tab,
   isManagerView,
@@ -73,33 +109,33 @@ export function PayrollConfigPanel({
             onChange={(e) => setEmployeeConfigFilters((prev) => ({ ...prev, kind: e.target.value, page: 1 }))}
           >
             <option value="">{t('Barcha tur')}</option>
-            <option value="TEACHER">TEACHER</option>
-            <option value="STAFF">STAFF</option>
+            <option value="TEACHER">{getEmployeeKindLabel('TEACHER', t)}</option>
+            <option value="STAFF">{getEmployeeKindLabel('STAFF', t)}</option>
           </Select>
           <Select
             value={employeeConfigFilters.payrollMode}
             onChange={(e) => setEmployeeConfigFilters((prev) => ({ ...prev, payrollMode: e.target.value, page: 1 }))}
           >
-            <option value="">{t('Barcha mode')}</option>
-            <option value="LESSON_BASED">LESSON_BASED</option>
-            <option value="FIXED">FIXED</option>
-            <option value="MIXED">MIXED</option>
-            <option value="MANUAL_ONLY">MANUAL_ONLY</option>
+            <option value="">{t('Barcha rejim')}</option>
+            <option value="LESSON_BASED">{getPayrollModeLabel('LESSON_BASED', t)}</option>
+            <option value="FIXED">{getPayrollModeLabel('FIXED', t)}</option>
+            <option value="MIXED">{getPayrollModeLabel('MIXED', t)}</option>
+            <option value="MANUAL_ONLY">{getPayrollModeLabel('MANUAL_ONLY', t)}</option>
           </Select>
           <Select
             value={employeeConfigFilters.employmentStatus}
             onChange={(e) => setEmployeeConfigFilters((prev) => ({ ...prev, employmentStatus: e.target.value, page: 1 }))}
           >
             <option value="">{t('Barcha bandlik')}</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="INACTIVE">INACTIVE</option>
-            <option value="ARCHIVED">ARCHIVED</option>
+            <option value="ACTIVE">{getEmploymentStatusLabel('ACTIVE', t)}</option>
+            <option value="INACTIVE">{getEmploymentStatusLabel('INACTIVE', t)}</option>
+            <option value="ARCHIVED">{getEmploymentStatusLabel('ARCHIVED', t)}</option>
           </Select>
           <Select
             value={employeeConfigFilters.isPayrollEligible}
             onChange={(e) => setEmployeeConfigFilters((prev) => ({ ...prev, isPayrollEligible: e.target.value, page: 1 }))}
           >
-            <option value="">{t('Eligibility (hammasi)')}</option>
+            <option value="">{t("Oylikka kirish (hammasi)")}</option>
             <option value="true">{t('Faqat kiradi')}</option>
             <option value="false">{t("Faqat kirmaydi")}</option>
           </Select>
@@ -118,7 +154,7 @@ export function PayrollConfigPanel({
       )}
     >
       <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-        {t("FIXED rejimda oklad summasi musbat bo'lishi shart. MIXED rejimda dars + oklad birga hisoblanadi.")}
+        {t("Oklad rejimida oylik summa musbat bo'lishi shart. Dars + oklad rejimida ikki qism birga hisoblanadi.")}
       </div>
       {payrollEmployeesState.loading ? (
         <StateView type="skeleton" />
@@ -288,11 +324,11 @@ export function PayrollLessonsPanel({
               ))}
             </Select>
           </Field>
-          <Field label={t('Status')}>
+          <Field label={t('Holat')}>
             <Select value={realLessonForm.status} onChange={(e) => setRealLessonForm((prev) => ({ ...prev, status: e.target.value }))}>
-              <option value="DONE">DONE</option>
-              <option value="CANCELED">CANCELED</option>
-              <option value="REPLACED">REPLACED</option>
+              <option value="DONE">{getLessonStatusLabel('DONE', t)}</option>
+              <option value="CANCELED">{getLessonStatusLabel('CANCELED', t)}</option>
+              <option value="REPLACED">{getLessonStatusLabel('REPLACED', t)}</option>
             </Select>
           </Field>
           <Field label={t('Boshlanish')}>
@@ -338,10 +374,10 @@ export function PayrollLessonsPanel({
           <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
             <Input type="month" value={lessonFilters.periodMonth} onChange={(e) => setLessonFilters((prev) => ({ ...prev, periodMonth: e.target.value, page: 1 }))} />
             <Select value={lessonFilters.status} onChange={(e) => setLessonFilters((prev) => ({ ...prev, status: e.target.value, page: 1 }))}>
-              <option value="">{t('Barcha status')}</option>
-              <option value="DONE">DONE</option>
-              <option value="CANCELED">CANCELED</option>
-              <option value="REPLACED">REPLACED</option>
+              <option value="">{t('Barcha holat')}</option>
+              <option value="DONE">{getLessonStatusLabel('DONE', t)}</option>
+              <option value="CANCELED">{getLessonStatusLabel('CANCELED', t)}</option>
+              <option value="REPLACED">{getLessonStatusLabel('REPLACED', t)}</option>
             </Select>
             <Combobox
               value={lessonFilters.teacherId}
@@ -396,9 +432,9 @@ export function PayrollLessonsPanel({
                 }
                 disabled={busy}
               >
-                <option value="DONE">DONE</option>
-                <option value="CANCELED">CANCELED</option>
-                <option value="REPLACED">REPLACED</option>
+                <option value="DONE">{getLessonStatusLabel('DONE', t)}</option>
+                <option value="CANCELED">{getLessonStatusLabel('CANCELED', t)}</option>
+                <option value="REPLACED">{getLessonStatusLabel('REPLACED', t)}</option>
               </Select>
               <Combobox
                 value={bulkLessonStatusForm.replacedByTeacherId}
@@ -423,7 +459,7 @@ export function PayrollLessonsPanel({
                 }
                 onClick={handleBulkLessonStatusUpdate}
               >
-                {t("Bulk status qo'llash")}
+                {t("Ommaviy holatni qo'llash")}
               </Button>
             </div>
           </div>
@@ -487,7 +523,7 @@ export function PayrollAdvancesPanel({
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
       <Card
         title={t("Avans qo'shish")}
-        subtitle={t("Oy davomida berilgan avansni kiriting. Generate vaqtida bu summa ushlanadi.")}
+        subtitle={t("Oy davomida berilgan avansni kiriting. Hisoblash paytida bu summa ushlanadi.")}
         className="xl:col-span-1"
       >
         <div className="space-y-3">

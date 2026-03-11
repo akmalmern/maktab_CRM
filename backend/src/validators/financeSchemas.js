@@ -88,6 +88,11 @@ const tolovIdParamSchema = z.object({
   tolovId: z.string().cuid("tolovId noto'g'ri"),
 });
 
+const partialRevertPaymentSchema = z.object({
+  summa: z.coerce.number().int().positive("summa musbat bo'lishi kerak"),
+  sabab: z.string().trim().min(3).max(300).optional(),
+});
+
 const createPaymentSchema = z.object({
   turi: z.enum(["OYLIK", "YILLIK", "IXTIYORIY"]),
   startMonth: z.string().trim().regex(oyKeyRegex, "startMonth formati YYYY-MM bo'lishi kerak"),
@@ -174,6 +179,7 @@ module.exports = {
   financeStudentsQuerySchema,
   studentIdParamSchema,
   tolovIdParamSchema,
+  partialRevertPaymentSchema,
   createPaymentSchema,
   createImtiyozSchema,
   imtiyozIdParamSchema,

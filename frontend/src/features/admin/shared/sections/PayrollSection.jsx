@@ -139,7 +139,39 @@ function formatEmployeeConfigName(row) {
   return username ? `${base} (${username})` : base;
 }
 
+function getPayrollStatusLabel(value, t) {
+  const labels = {
+    DRAFT: t('Loyiha'),
+    APPROVED: t('Tasdiqlangan'),
+    PAID: t("To'langan"),
+    REVERSED: t('Bekor qilingan'),
+    DONE: t('Bajarilgan'),
+    CANCELED: t('Bekor qilingan'),
+    REPLACED: t("Almashtirilgan"),
+    LESSON: t('Dars'),
+    FIXED_SALARY: t('Oklad'),
+    ADVANCE_DEDUCTION: t('Avans ushlanma'),
+    BONUS: t('Bonus'),
+    PENALTY: t('Jarima'),
+    MANUAL: t("Qo'lda"),
+    LESSON_BASED: t("Dars asosida"),
+    FIXED: t('Oklad'),
+    MIXED: t('Dars + oklad'),
+    MANUAL_ONLY: t("Faqat qo'lda"),
+    ACTIVE: t('Faol'),
+    INACTIVE: t('Nofaol'),
+    ARCHIVED: t('Arxiv'),
+    UNPAID: t("To'lanmagan"),
+    PARTIAL: t("Qisman to'langan"),
+    NOT_GENERATED: t('Hisoblanmagan'),
+    TEACHER: t("O'qituvchi"),
+    STAFF: t('Xodim'),
+  };
+  return labels[value] || value || '-';
+}
+
 function StatusPill({ value }) {
+  const { t } = useTranslation();
   const colorMap = {
     DRAFT: 'bg-slate-100 text-slate-700 border-slate-200',
     APPROVED: 'bg-amber-50 text-amber-700 border-amber-200',
@@ -167,7 +199,7 @@ function StatusPill({ value }) {
   };
   return (
     <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${colorMap[value] || 'bg-slate-50 text-slate-700 border-slate-200'}`}>
-      {value || '-'}
+      {getPayrollStatusLabel(value, t)}
     </span>
   );
 }
@@ -316,7 +348,7 @@ export default function PayrollSection() {
   });
 
   const teacherListQuery = useGetTeachersQuery(
-    { page: 1, limit: 100, filter: 'all', sort: 'name:asc' },
+    { page: 1, limit: 500, filter: 'all', sort: 'name:asc' },
     { skip: isManagerView },
   );
   const subjectsQuery = useGetSubjectsQuery(undefined, { skip: isManagerView });
@@ -436,15 +468,17 @@ export default function PayrollSection() {
   const selectedRun = payrollRunDetailQuery.data?.run || null;
   const selectedRunTeacherRows = useMemo(() => {
     if (!selectedRun) return [];
-    if (!teachers.length) return selectedRun.items || [];
+    const runItems = selectedRun.items || [];
+    if (!teachers.length) return runItems;
 
     const itemByTeacherId = new Map(
-      (selectedRun.items || [])
+      runItems
         .filter((item) => item.teacherId)
         .map((item) => [item.teacherId, item]),
     );
-
-    return teachers.map((teacher) => {
+    const mappedTeacherIds = new Set();
+    const rows = teachers.map((teacher) => {
+      mappedTeacherIds.add(teacher.id);
       const existing = itemByTeacherId.get(teacher.id);
       if (existing) return existing;
 
@@ -462,12 +496,19 @@ export default function PayrollSection() {
         paymentStatus: 'NOT_GENERATED',
       };
     });
+
+    // Agar teacher list limiti sabab ayrim run itemlar tushmay qolsa, ularni ham ko'rsatamiz.
+    for (const item of runItems) {
+      if (item.teacherId && mappedTeacherIds.has(item.teacherId)) continue;
+      rows.push(item);
+    }
+    return rows;
   }, [selectedRun, teachers]);
   const selectedRunPaidAmount = useMemo(
     () => (selectedRun?.items || []).reduce((sum, item) => sum + Number(item.paidAmount || 0), 0),
     [selectedRun?.items],
   );
-  const selectedRunPayableAmount = Number(selectedRun?.payableAmount || 0);
+  const selectedRunPayableAmount = Math.max(0, Number(selectedRun?.payableAmount || 0));
   const selectedRunRemainingAmount = Math.max(0, selectedRunPayableAmount - selectedRunPaidAmount);
   const canEditSelectedRun = isAdminView && selectedRun?.status === 'DRAFT';
   const canApproveSelectedRun = (isAdminView || isManagerView) && selectedRun?.status === 'DRAFT';
@@ -570,7 +611,7 @@ export default function PayrollSection() {
     }
     try {
       const res = await generatePayrollRun({ periodMonth }).unwrap();
-      toast.success(t('Payroll generate qilindi'));
+      toast.success(t("Oylik hisob-kitobi yaratildi"));
       setRunFilters((prev) => ({ ...prev, periodMonth, page: 1 }));
       if (res?.run?.id) {
         setSelectedRunId(res.run.id);
@@ -579,9 +620,9 @@ export default function PayrollSection() {
       const payload = error?.data?.error?.meta || error?.data?.meta;
       if (payload?.totalMissing) {
         toast.error(
-          t("Rate topilmagan darslar bor: {{count}} ta", {
+          t("Soat narxi topilmagan darslar bor: {{count}} ta", {
             count: payload.totalMissing,
-            defaultValue: `Rate topilmagan darslar bor: ${payload.totalMissing} ta`,
+            defaultValue: `Soat narxi topilmagan darslar bor: ${payload.totalMissing} ta`,
           }),
         );
       } else {
@@ -600,7 +641,7 @@ export default function PayrollSection() {
         ...(teacherRateForm.effectiveTo ? { effectiveTo: teacherRateForm.effectiveTo } : {}),
         ...(teacherRateForm.note ? { note: teacherRateForm.note } : {}),
       }).unwrap();
-      toast.success(t("Teacher rate saqlandi"));
+      toast.success(t("O'qituvchi stavkasi saqlandi"));
       setTeacherRateForm((prev) => ({ ...prev, ratePerHour: '', note: '' }));
       setRateCreateDrawer((prev) => ({ ...prev, open: false }));
     } catch (error) {
@@ -609,11 +650,11 @@ export default function PayrollSection() {
   }
 
   const handleDeleteTeacherRate = useCallback(async (rateId) => {
-    const ok = window.confirm(t("Teacher rate ni o'chirmoqchimisiz?"));
+    const ok = window.confirm(t("O'qituvchi stavkasini o'chirmoqchimisiz?"));
     if (!ok) return;
     try {
       await deletePayrollTeacherRate(rateId).unwrap();
-      toast.success(t("Teacher rate o'chirildi"));
+      toast.success(t("O'qituvchi stavkasi o'chirildi"));
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
@@ -628,7 +669,7 @@ export default function PayrollSection() {
         ...(subjectRateForm.effectiveTo ? { effectiveTo: subjectRateForm.effectiveTo } : {}),
         ...(subjectRateForm.note ? { note: subjectRateForm.note } : {}),
       }).unwrap();
-      toast.success(t('Subject default rate saqlandi'));
+      toast.success(t("Fan bo'yicha standart stavka saqlandi"));
       setSubjectRateForm((prev) => ({ ...prev, ratePerHour: '', note: '' }));
       setRateCreateDrawer((prev) => ({ ...prev, open: false }));
     } catch (error) {
@@ -637,11 +678,11 @@ export default function PayrollSection() {
   }
 
   const handleDeleteSubjectRate = useCallback(async (rateId) => {
-    const ok = window.confirm(t("Subject default rate ni o'chirmoqchimisiz?"));
+    const ok = window.confirm(t("Fan bo'yicha standart stavkani o'chirmoqchimisiz?"));
     if (!ok) return;
     try {
       await deletePayrollSubjectRate(rateId).unwrap();
-      toast.success(t("Subject default rate o'chirildi"));
+      toast.success(t("Fan bo'yicha standart stavka o'chirildi"));
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
@@ -711,13 +752,13 @@ export default function PayrollSection() {
           rateId: rateEditModal.rateId,
           payload: { ...payload, teacherId: rateEditModal.teacherId },
         }).unwrap();
-        toast.success(t('Teacher rate yangilandi'));
+        toast.success(t("O'qituvchi stavkasi yangilandi"));
       } else {
         await updatePayrollSubjectRate({
           rateId: rateEditModal.rateId,
           payload,
         }).unwrap();
-        toast.success(t('Subject rate yangilandi'));
+        toast.success(t("Fan stavkasi yangilandi"));
       }
 
       closeRateEditModal();
@@ -741,7 +782,7 @@ export default function PayrollSection() {
           : {}),
         ...(realLessonForm.note ? { note: realLessonForm.note } : {}),
       }).unwrap();
-      toast.success(t("Real lesson qo'shildi"));
+      toast.success(t("O'tilgan dars qo'shildi"));
       setRealLessonForm((prev) => ({ ...prev, durationMinutes: '', note: '' }));
     } catch (error) {
       toast.error(getErrorMessage(error));
@@ -784,7 +825,7 @@ export default function PayrollSection() {
           note: lessonStatusModal.note || null,
         },
       }).unwrap();
-      toast.success(t('RealLesson status yangilandi'));
+      toast.success(t("O'tilgan dars holati yangilandi"));
       closeLessonStatusModal();
     } catch (error) {
       toast.error(getErrorMessage(error));
@@ -837,11 +878,11 @@ export default function PayrollSection() {
       const updatedCount = Number(result?.summary?.updatedCount || 0);
       const skippedCount = Number(result?.summary?.skippedCount || 0);
       if (updatedCount && skippedCount) {
-        toast.success(t('Bulk update: {{updated}} ta yangilandi, {{skipped}} ta skip qilindi', { updated: updatedCount, skipped: skippedCount }));
+        toast.success(t("Ommaviy yangilash: {{updated}} ta yangilandi, {{skipped}} ta o'tkazib yuborildi", { updated: updatedCount, skipped: skippedCount }));
       } else if (updatedCount) {
-        toast.success(t('Bulk update: {{updated}} ta dars yangilandi', { updated: updatedCount }));
+        toast.success(t("Ommaviy yangilash: {{updated}} ta dars yangilandi", { updated: updatedCount }));
       } else {
-        toast.error(t("Tanlangan darslar yangilanmadi (hammasi skip bo'ldi)"));
+        toast.error(t("Tanlangan darslar yangilanmadi (hammasi o'tkazib yuborildi)"));
       }
       setSelectedRealLessonIds([]);
     } catch (error) {
@@ -851,7 +892,7 @@ export default function PayrollSection() {
 
   async function handleAddAdjustment() {
     if (!activeRunId) {
-      toast.error(t('Payroll run tanlang'));
+      toast.error(t("Hisob-kitobni tanlang"));
       return;
     }
     const ownerFilter = parseOwnerKey(adjustmentForm.ownerKey);
@@ -869,7 +910,7 @@ export default function PayrollSection() {
           description: adjustmentForm.description,
         },
       }).unwrap();
-      toast.success(t("Adjustment qo'shildi"));
+      toast.success(t("Tuzatma qo'shildi"));
       setAdjustmentForm((prev) => ({ ...prev, amount: '', description: '' }));
       setAdjustmentDrawerOpen(false);
     } catch (error) {
@@ -879,11 +920,11 @@ export default function PayrollSection() {
 
   const handleApproveRun = useCallback(async () => {
     if (!activeRunId) return;
-    const ok = window.confirm(t('Payroll run ni tasdiqlaysizmi?'));
+    const ok = window.confirm(t("Hisob-kitobni tasdiqlaysizmi?"));
     if (!ok) return;
     try {
       await approvePayrollRun(activeRunId).unwrap();
-      toast.success(t('Payroll tasdiqlandi'));
+      toast.success(t("Hisob-kitob tasdiqlandi"));
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
@@ -901,7 +942,7 @@ export default function PayrollSection() {
           ...(payForm.note ? { note: payForm.note } : {}),
         },
       }).unwrap();
-      toast.success(t("Payroll to'landi (PAID)"));
+      toast.success(t("Hisob-kitob to'landi (to'langan holat)"));
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
@@ -915,7 +956,7 @@ export default function PayrollSection() {
       fallbackName: snapshotName,
       fallbackId: row.teacherId || row.employeeId || '',
     });
-    const payableAmount = Number(row.payableAmount || 0);
+    const payableAmount = Math.max(0, Number(row.payableAmount || 0));
     const paidAmount = Number(row.paidAmount || 0);
     const remaining = Math.max(0, payableAmount - paidAmount);
     setPayItemModal({
@@ -1040,8 +1081,11 @@ export default function PayrollSection() {
       toast.error(t("Oklad summasi noto'g'ri"));
       return;
     }
-    if (employeeConfigModal.payrollMode === 'FIXED' && (!Number.isFinite(fixedSalaryAmount) || fixedSalaryAmount <= 0)) {
-      toast.error(t('FIXED rejimda oklad summasi musbat bo\'lishi shart'));
+    if (
+      ['FIXED', 'MIXED'].includes(employeeConfigModal.payrollMode)
+      && (!Number.isFinite(fixedSalaryAmount) || fixedSalaryAmount <= 0)
+    ) {
+      toast.error(t("FIXED/MIXED rejimda oklad summasi musbat bo'lishi shart"));
       return;
     }
 
@@ -1051,12 +1095,13 @@ export default function PayrollSection() {
         payload: {
           payrollMode: employeeConfigModal.payrollMode,
           fixedSalaryAmount,
-          isPayrollEligible: Boolean(employeeConfigModal.isPayrollEligible),
-          employmentStatus: employeeConfigModal.employmentStatus,
+          ...(employeeConfigModal.payrollMode !== 'MANUAL_ONLY'
+            ? { isPayrollEligible: Boolean(employeeConfigModal.isPayrollEligible) }
+            : {}),
           note: employeeConfigModal.note || '',
         },
       }).unwrap();
-      toast.success(t("Payroll konfiguratsiya saqlandi"));
+      toast.success(t("Oylik konfiguratsiyasi saqlandi"));
       closeEmployeeConfigModal();
     } catch (error) {
       toast.error(getErrorMessage(error));
@@ -1070,7 +1115,7 @@ export default function PayrollSection() {
         runId: activeRunId,
         payload: { reason: reverseReason },
       }).unwrap();
-      toast.success(t('Payroll reverse qilindi'));
+      toast.success(t("Hisob-kitob bekor qilindi"));
       setReverseReason('');
     } catch (error) {
       toast.error(getErrorMessage(error));
@@ -1079,7 +1124,7 @@ export default function PayrollSection() {
 
   async function handleExportRunCsv() {
     if (!activeRunId) {
-      toast.error(t('Run tanlang'));
+      toast.error(t("Hisob-kitobni tanlang"));
       return;
     }
     try {
@@ -1139,14 +1184,14 @@ export default function PayrollSection() {
       if (dryRun) {
         toast.success(
           doneSteps
-            ? t('Dry-run yakunlandi: {{steps}}', { steps: doneSteps })
-            : t('Dry-run yakunlandi'),
+            ? t("Sinov rejimi yakunlandi: {{steps}}", { steps: doneSteps })
+            : t("Sinov rejimi yakunlandi"),
         );
       } else {
         toast.success(
           doneSteps
-            ? t('Auto process yakunlandi: {{steps}}', { steps: doneSteps })
-            : t('Auto process yakunlandi'),
+            ? t("Avto jarayon yakunlandi: {{steps}}", { steps: doneSteps })
+            : t("Avto jarayon yakunlandi"),
         );
       }
       setRunFilters((prev) => ({ ...prev, periodMonth, page: 1 }));
@@ -1160,7 +1205,7 @@ export default function PayrollSection() {
       const blockerCount = Number(error?.data?.error?.meta?.health?.summary?.blockerCount || 0);
       if (error?.data?.error?.code === 'PAYROLL_AUTOMATION_BLOCKED' && blockerCount > 0) {
         toast.error(
-          t("Auto process to'xtadi. Blockerlar soni: {{count}}", { count: blockerCount }),
+          t("Avto jarayon to'xtadi. To'siqlar soni: {{count}}", { count: blockerCount }),
         );
       } else {
         toast.error(getErrorMessage(error));
@@ -1226,7 +1271,7 @@ export default function PayrollSection() {
           return `${formatMoney(rates[0])} - ${formatMoney(rates[rates.length - 1])}`;
         },
       },
-      { key: 'payableAmount', header: t('Oylik summasi'), render: (row) => formatMoney(row.payableAmount) },
+      { key: 'payableAmount', header: t('Oylik summasi'), render: (row) => formatMoney(Math.max(0, Number(row.payableAmount || 0))) },
       { key: 'paymentStatus', header: t("To'lov holati"), render: (row) => <StatusPill value={row.paymentStatus || 'UNPAID'} /> },
       {
         key: 'remainingAmount',
@@ -1256,7 +1301,7 @@ export default function PayrollSection() {
 
     if ((isAdminView || isManagerView) && selectedRun.status === 'DRAFT') {
       return {
-        label: t('Approve'),
+        label: t('Tasdiqlash'),
         onClick: handleApproveRun,
         disabled: !canApproveSelectedRun || busy,
         variant: 'indigo',
@@ -1265,7 +1310,7 @@ export default function PayrollSection() {
 
     if (isAdminView && selectedRun.status === 'APPROVED') {
       return {
-        label: t("Pay all"),
+        label: t("Barchasini to'lash"),
         onClick: handlePayRun,
         disabled: !canPaySelectedRun || busy,
         variant: 'success',
@@ -1395,7 +1440,7 @@ export default function PayrollSection() {
         render: (row) =>
           isAdminView ? (
             <Button size="sm" variant="secondary" onClick={() => openLessonStatusModal(row)}>
-              {t('Status')}
+              {t("Holatni o'zgartirish")}
             </Button>
           ) : (
             '-'
@@ -1462,7 +1507,7 @@ export default function PayrollSection() {
       },
       {
         key: 'payrollMode',
-        header: t('Payroll mode'),
+        header: t('Oylik rejimi'),
         render: (row) => <StatusPill value={row.payrollMode} />,
       },
       {
@@ -1472,7 +1517,7 @@ export default function PayrollSection() {
       },
       {
         key: 'isPayrollEligible',
-        header: t('Payrollga kiradi'),
+        header: t("Oylikka kiradi"),
         render: (row) => (row.isPayrollEligible ? t('Ha') : t("Yo'q")),
       },
       {
@@ -1544,7 +1589,7 @@ export default function PayrollSection() {
   const selectedRunTeacherCount = selectedRunTeacherRows.length;
 
   const payrollTabs = isManagerView
-    ? [{ value: 'runs', label: t('Payroll Runs') }]
+    ? [{ value: 'runs', label: t("Oylik hisob-kitoblari") }]
     : [
         { value: 'runs', label: t('Oyliklar') },
         { value: 'settings', label: t('Sozlamalar') },
@@ -1560,11 +1605,11 @@ export default function PayrollSection() {
     <AutoTranslate>
       <div className="space-y-4">
         <Card
-          title={t("O'qituvchi Oyligi (Payroll)")}
+          title={t("O'qituvchi oyligi")}
           subtitle={
             isManagerView
-              ? t("Menejer uchun review/approve rejimi. Generate, rate, real lesson va pay/reverse amallari yopiq.")
-              : t("Minimal oqim: oy tanlash, run ko'rish, approve va to'lash.")
+              ? t("Menejer uchun ko'rish va tasdiqlash rejimi. Yaratish, stavka, dars, to'lash va bekor qilish amallari yopiq.")
+              : t("Minimal oqim: oy tanlash, hisob-kitobni ko'rish, tasdiqlash va to'lash.")
           }
         >
           <Tabs
@@ -1697,8 +1742,8 @@ export default function PayrollSection() {
           onClose={closeRateCreateDrawer}
           title={rateCreateDrawer.kind === 'teacher' ? t("Yangi o'qituvchi stavkasi") : t('Yangi fan stavkasi')}
           subtitle={rateCreateDrawer.kind === 'teacher'
-            ? t("Teacher + fan bo'yicha override rate yarating")
-            : t("Fan bo'yicha umumiy default rate yarating")}
+            ? t("O'qituvchi + fan bo'yicha alohida stavka yarating")
+            : t("Fan bo'yicha umumiy standart stavka yarating")}
           widthClassName="max-w-2xl"
         >
           <div className="space-y-4">
@@ -1734,7 +1779,7 @@ export default function PayrollSection() {
                       disabled={busy}
                     />
                   </Field>
-                  <Field label={t('effectiveFrom')}>
+                  <Field label={t('Boshlanish sanasi')}>
                     <Input
                       type="date"
                       value={teacherRateForm.effectiveFrom}
@@ -1742,7 +1787,7 @@ export default function PayrollSection() {
                       disabled={busy}
                     />
                   </Field>
-                  <Field label={t('effectiveTo')}>
+                  <Field label={t('Tugash sanasi')}>
                     <Input
                       type="date"
                       value={teacherRateForm.effectiveTo}
@@ -1767,7 +1812,7 @@ export default function PayrollSection() {
                     disabled={!teacherRateForm.teacherId || !teacherRateForm.subjectId || !teacherRateForm.ratePerHour || !teacherRateForm.effectiveFrom || busy}
                     onClick={handleCreateTeacherRate}
                   >
-                    {t("Teacher rate qo'shish")}
+                    {t("O'qituvchi stavkasi qo'shish")}
                   </Button>
                 </div>
               </>
@@ -1793,7 +1838,7 @@ export default function PayrollSection() {
                       disabled={busy}
                     />
                   </Field>
-                  <Field label={t('effectiveFrom')}>
+                  <Field label={t('Boshlanish sanasi')}>
                     <Input
                       type="date"
                       value={subjectRateForm.effectiveFrom}
@@ -1801,7 +1846,7 @@ export default function PayrollSection() {
                       disabled={busy}
                     />
                   </Field>
-                  <Field label={t('effectiveTo')}>
+                  <Field label={t('Tugash sanasi')}>
                     <Input
                       type="date"
                       value={subjectRateForm.effectiveTo}
@@ -1828,7 +1873,7 @@ export default function PayrollSection() {
                     disabled={!subjectRateForm.subjectId || !subjectRateForm.ratePerHour || !subjectRateForm.effectiveFrom || busy}
                     onClick={handleCreateSubjectRate}
                   >
-                    {t("Subject rate qo'shish")}
+                    {t("Fan stavkasi qo'shish")}
                   </Button>
                 </div>
               </>
@@ -1839,13 +1884,13 @@ export default function PayrollSection() {
         <Drawer
           open={adjustmentDrawerOpen}
           onClose={() => setAdjustmentDrawerOpen(false)}
-          title={t('Manual Adjustment')}
-          subtitle={selectedRun?.periodLabel ? t('Tanlangan run: {{period}}', { period: selectedRun.periodLabel }) : t('Payroll run tanlang')}
+          title={t("Qo'lda tuzatma")}
+          subtitle={selectedRun?.periodLabel ? t("Tanlangan hisob-kitob: {{period}}", { period: selectedRun.periodLabel }) : t("Hisob-kitobni tanlang")}
           widthClassName="max-w-xl"
         >
           <div className="space-y-4">
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-              <span className="font-medium text-slate-900">{t('Run status')}:</span> {selectedRun?.status || '-'}
+              <span className="font-medium text-slate-900">{t("Hisob-kitob holati")}:</span> {getPayrollStatusLabel(selectedRun?.status, t)}
             </div>
             <Field label={t("O'qituvchi")}>
               <Combobox
@@ -1863,9 +1908,9 @@ export default function PayrollSection() {
                 onChange={(e) => setAdjustmentForm((prev) => ({ ...prev, type: e.target.value }))}
                 disabled={!canEditSelectedRun || busy}
               >
-                <option value="BONUS">BONUS</option>
-                <option value="PENALTY">PENALTY</option>
-                <option value="MANUAL">MANUAL</option>
+                <option value="BONUS">{t('Bonus')}</option>
+                <option value="PENALTY">{t('Jarima')}</option>
+                <option value="MANUAL">{t("Qo'lda")}</option>
               </Select>
             </Field>
             <Field label={t('Summa')}>
@@ -1885,7 +1930,7 @@ export default function PayrollSection() {
             </Field>
             {!canEditSelectedRun && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                {t("Adjustment faqat DRAFT run uchun qo'shiladi.")}
+                {t("Tuzatma faqat loyiha (DRAFT) holatidagi hisob-kitobga qo'shiladi.")}
               </div>
             )}
             <div className="flex justify-end gap-2">
@@ -1897,7 +1942,7 @@ export default function PayrollSection() {
                 disabled={!canEditSelectedRun || !adjustmentForm.ownerKey || !adjustmentForm.amount || !adjustmentForm.description.trim() || busy}
                 onClick={handleAddAdjustment}
               >
-                {t("Adjustment qo'shish")}
+                {t("Tuzatma qo'shish")}
               </Button>
             </div>
           </div>
@@ -1939,10 +1984,10 @@ export default function PayrollSection() {
                   onChange={(e) => setPayItemForm((prev) => ({ ...prev, paymentMethod: e.target.value }))}
                   disabled={busy}
                 >
-                  <option value="BANK">BANK</option>
-                  <option value="CASH">CASH</option>
-                  <option value="CLICK">CLICK</option>
-                  <option value="PAYME">PAYME</option>
+                  <option value="BANK">{t("Bank o'tkazmasi")}</option>
+                  <option value="CASH">{t('Naqd pul')}</option>
+                  <option value="CLICK">Click</option>
+                  <option value="PAYME">Payme</option>
                 </Select>
               </Field>
               <Field label={t("To'langan sana (ixtiyoriy)")}>
@@ -1954,7 +1999,7 @@ export default function PayrollSection() {
                 />
               </Field>
             </div>
-            <Field label={t('External Ref')}>
+            <Field label={t("Tashqi ID (Ref)")}>
               <Input
                 value={payItemForm.externalRef}
                 onChange={(e) => setPayItemForm((prev) => ({ ...prev, externalRef: e.target.value }))}
@@ -1993,48 +2038,54 @@ export default function PayrollSection() {
         >
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <Field label={t('Payroll mode')}>
+              <Field label={t('Oylik rejimi')}>
                 <Select
                   value={employeeConfigModal.payrollMode}
                   onChange={(e) => setEmployeeConfigModal((prev) => ({ ...prev, payrollMode: e.target.value }))}
                   disabled={busy}
                 >
-                  <option value="LESSON_BASED">LESSON_BASED</option>
-                  <option value="FIXED">FIXED</option>
-                  <option value="MIXED">MIXED</option>
-                  <option value="MANUAL_ONLY">MANUAL_ONLY</option>
+                  <option value="LESSON_BASED">{getPayrollStatusLabel('LESSON_BASED', t)}</option>
+                  <option value="FIXED">{getPayrollStatusLabel('FIXED', t)}</option>
+                  <option value="MIXED">{getPayrollStatusLabel('MIXED', t)}</option>
+                  <option value="MANUAL_ONLY">{getPayrollStatusLabel('MANUAL_ONLY', t)}</option>
                 </Select>
               </Field>
               <Field label={t('Bandlik holati')}>
-                <Select
-                  value={employeeConfigModal.employmentStatus}
-                  onChange={(e) => setEmployeeConfigModal((prev) => ({ ...prev, employmentStatus: e.target.value }))}
-                  disabled={busy}
-                >
-                  <option value="ACTIVE">ACTIVE</option>
-                  <option value="INACTIVE">INACTIVE</option>
-                  <option value="ARCHIVED">ARCHIVED</option>
-                </Select>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  {getPayrollStatusLabel(employeeConfigModal.employmentStatus, t)}
+                </div>
               </Field>
-              <Field label={t('Oklad')}>
-                <MoneyInputUz
-                  value={employeeConfigModal.fixedSalaryAmount}
-                  onValueChange={(raw) => setEmployeeConfigModal((prev) => ({ ...prev, fixedSalaryAmount: raw }))}
-                  disabled={busy}
-                />
-              </Field>
-              <Field label={t('Payrollga kiradi')}>
-                <Select
-                  value={employeeConfigModal.isPayrollEligible ? 'true' : 'false'}
-                  onChange={(e) =>
-                    setEmployeeConfigModal((prev) => ({ ...prev, isPayrollEligible: e.target.value === 'true' }))
-                  }
-                  disabled={busy}
-                >
-                  <option value="true">{t('Ha')}</option>
-                  <option value="false">{t("Yo'q")}</option>
-                </Select>
-              </Field>
+              {['FIXED', 'MIXED'].includes(employeeConfigModal.payrollMode) ? (
+                <Field label={t('Oklad')}>
+                  <MoneyInputUz
+                    value={employeeConfigModal.fixedSalaryAmount}
+                    onValueChange={(raw) => setEmployeeConfigModal((prev) => ({ ...prev, fixedSalaryAmount: raw }))}
+                    disabled={busy}
+                  />
+                </Field>
+              ) : (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  {t("Bu rejimda oklad qo'llanmaydi")}
+                </div>
+              )}
+              {employeeConfigModal.payrollMode !== 'MANUAL_ONLY' ? (
+                <Field label={t("Oylikka kiradi")}>
+                  <Select
+                    value={employeeConfigModal.isPayrollEligible ? 'true' : 'false'}
+                    onChange={(e) =>
+                      setEmployeeConfigModal((prev) => ({ ...prev, isPayrollEligible: e.target.value === 'true' }))
+                    }
+                    disabled={busy}
+                  >
+                    <option value="true">{t('Ha')}</option>
+                    <option value="false">{t("Yo'q")}</option>
+                  </Select>
+                </Field>
+              ) : (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  {t("Faqat qo'lda rejimda bu xodim uchun to'lovlar avtomatik hisoblanmaydi.")}
+                </div>
+              )}
             </div>
             <Field label={t('Izoh')}>
               <Textarea
@@ -2044,8 +2095,13 @@ export default function PayrollSection() {
                 disabled={busy}
               />
             </Field>
+            {['FIXED', 'MIXED'].includes(employeeConfigModal.payrollMode) && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                {t("FIXED/MIXED rejimda oklad bo'sh yoki 0 bo'lishi mumkin emas. Okladni tozalash uchun bo'sh qoldiring va boshqa rejimni tanlang.")}
+              </div>
+            )}
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-              {t("FIXED rejimda oklad bo'sh yoki 0 bo'lishi mumkin emas. Okladni tozalash uchun bo'sh qoldiring va boshqa mode tanlang.")}
+              {t("Bandlik holati foydalanuvchi (User) faolligidan olinadi va bu oynada qo'lda tahrirlanmaydi.")}
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={closeEmployeeConfigModal} disabled={busy}>
@@ -2061,8 +2117,8 @@ export default function PayrollSection() {
         <Modal
           open={rateEditModal.open}
           onClose={closeRateEditModal}
-          title={rateEditModal.kind === 'teacher' ? t('Teacher rate tahrirlash') : t('Subject rate tahrirlash')}
-          subtitle={t("Rate qiymati va effective intervalni yangilang")}
+          title={rateEditModal.kind === 'teacher' ? t("O'qituvchi stavkasini tahrirlash") : t('Fan stavkasini tahrirlash')}
+          subtitle={t("Stavka qiymati va amal qilish muddatini yangilang")}
           maxWidth="max-w-2xl"
         >
           <div className="space-y-4">
@@ -2098,7 +2154,7 @@ export default function PayrollSection() {
                   disabled={busy}
                 />
               </Field>
-              <Field label={t('effectiveFrom')}>
+              <Field label={t('Boshlanish sanasi')}>
                 <Input
                   type="date"
                   value={rateEditModal.effectiveFrom}
@@ -2106,7 +2162,7 @@ export default function PayrollSection() {
                   disabled={busy}
                 />
               </Field>
-              <Field label={t('effectiveTo')}>
+              <Field label={t('Tugash sanasi')}>
                 <Input
                   type="date"
                   value={rateEditModal.effectiveTo}
@@ -2146,16 +2202,16 @@ export default function PayrollSection() {
         <Modal
           open={lessonStatusModal.open}
           onClose={closeLessonStatusModal}
-          title={t('RealLesson statusini yangilash')}
-          subtitle={lessonStatusModal.lessonLabel || t('Lesson tanlangan')}
+          title={t("O'tilgan dars holatini yangilash")}
+          subtitle={lessonStatusModal.lessonLabel || t('Dars tanlangan')}
           maxWidth="max-w-2xl"
         >
           <div className="space-y-4">
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-              {t('Joriy status')}: <span className="font-semibold text-slate-900">{lessonStatusModal.currentStatus || '-'}</span>
+              {t('Joriy holat')}: <span className="font-semibold text-slate-900">{getPayrollStatusLabel(lessonStatusModal.currentStatus, t)}</span>
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <Field label={t('Yangi status')}>
+              <Field label={t('Yangi holat')}>
                 <Select
                   value={lessonStatusModal.status}
                   onChange={(e) =>
@@ -2167,9 +2223,9 @@ export default function PayrollSection() {
                   }
                   disabled={busy}
                 >
-                  <option value="DONE">DONE</option>
-                  <option value="CANCELED">CANCELED</option>
-                  <option value="REPLACED">REPLACED</option>
+                  <option value="DONE">{getPayrollStatusLabel('DONE', t)}</option>
+                  <option value="CANCELED">{getPayrollStatusLabel('CANCELED', t)}</option>
+                  <option value="REPLACED">{getPayrollStatusLabel('REPLACED', t)}</option>
                 </Select>
               </Field>
               <Field label={t("O'rinbosar o'qituvchi")}>
@@ -2200,7 +2256,7 @@ export default function PayrollSection() {
                 onClick={handleSubmitLessonStatus}
                 disabled={busy || (lessonStatusModal.status === 'REPLACED' && !lessonStatusModal.replacedByTeacherId)}
               >
-                {t('Statusni saqlash')}
+                {t("Holatni saqlash")}
               </Button>
             </div>
           </div>

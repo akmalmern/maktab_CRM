@@ -4,4 +4,5 @@ module.exports = {
   previewStudentPayment: orchestrator.previewStudentPayment,
   createStudentPayment: orchestrator.createStudentPayment,
   revertPayment: orchestrator.revertPayment,
+  partialRevertPayment: orchestrator.partialRevertPayment,
 };

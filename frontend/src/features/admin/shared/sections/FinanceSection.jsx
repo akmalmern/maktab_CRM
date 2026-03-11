@@ -968,6 +968,7 @@ export default function FinanceSection({
   onRollbackTarif,
   onRevertPayment,
   onExportDebtors,
+  onOpenPayroll,
   exporting,
 }) {
   const { t, i18n } = useTranslation();
@@ -1080,6 +1081,8 @@ export default function FinanceSection({
     const jamiQarz = Number(studentsSummary?.totalDebtAmount || 0);
     const buOyTolangan = Number(studentsSummary?.thisMonthPaidAmount || 0);
     const buOyQarz = Number(studentsSummary?.thisMonthDebtAmount || 0);
+    const buOyOylikChiqimi = Number(studentsSummary?.cashflow?.payrollPayoutAmount || 0);
+    const buOySofOqim = Number(studentsSummary?.cashflow?.netAmount || 0);
     const tarifOylik = Number(studentsSummary?.tarifOylikSumma || settings?.oylikSumma || 0);
     const tarifYillik = Number(studentsSummary?.tarifYillikSumma || settings?.yillikSumma || 0);
     const tarifOylarSoni = normalizeBillingMonths(
@@ -1092,6 +1095,8 @@ export default function FinanceSection({
       { label: t('Umumiy qarzdorlik summasi'), value: sumFormat(jamiQarz, locale) },
       { label: t("Shu oy tushgan to'lovlar"), value: `${sumFormat(buOyTolangan, locale)} ${t("so'm")}` },
       { label: t("Shu oy yopilmagan qarz"), value: `${sumFormat(buOyQarz, locale)} ${t("so'm")}` },
+      { label: t("Shu oy oylik chiqimi"), value: `${sumFormat(buOyOylikChiqimi, locale)} ${t("so'm")}` },
+      { label: t("Shu oy sof pul oqimi"), value: `${sumFormat(buOySofOqim, locale)} ${t("so'm")}` },
       { label: `${t("Amaldagi tarif (oylik / yillik)")} (${tarifOylarSoni} ${t('oy')})`, value: `${sumFormat(tarifOylik, locale)} / ${sumFormat(tarifYillik, locale)}` },
       { label: `${t('Sahifa')}: ${studentsState.page}/${studentsState.pages || 1}`, value: `${t('Yozuvlar')}: ${studentsState.limit || 20}` },
     ];
@@ -1110,6 +1115,10 @@ export default function FinanceSection({
       collectedAmount: Number(flow.collectedAmount || 0),
       debtAmount: Number(flow.debtAmount || 0),
       diffAmount: Number(flow.diffAmount || 0),
+      payrollPayoutAmount: Number(flow.payrollPayoutAmount || 0),
+      payrollReversalAmount: Number(flow.payrollReversalAmount || 0),
+      payrollNetAmount: Number(flow.payrollNetAmount || 0),
+      netAmount: Number(flow.netAmount || 0),
     };
   }, [studentsSummary, locale]);
 
@@ -1535,6 +1544,7 @@ export default function FinanceSection({
           sumFormat={sumFormat}
           exporting={exporting}
           onExportDebtors={onExportDebtors}
+          onOpenPayroll={onOpenPayroll}
           isClassroomSelected={isClassroomSelected}
           openPaymentModal={openPaymentModal}
           MiniStatCard={MiniStatCard}

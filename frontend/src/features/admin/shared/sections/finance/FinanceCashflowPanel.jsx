@@ -1,4 +1,4 @@
-import { Input } from '../../../../../components/ui';
+import { Button, Input } from '../../../../../components/ui';
 
 export default function FinanceCashflowPanel({
   t,
@@ -8,19 +8,27 @@ export default function FinanceCashflowPanel({
   locale,
   sumFormat,
   MiniStatCard,
+  onOpenPayroll,
 }) {
   void MiniStatCard;
   return (
     <div className="mb-3 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 ring-1 ring-slate-200/50">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-semibold tracking-tight text-slate-800">{t("Oylik pul oqimi (hisobot)")}</p>
-        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1">
-          <p className="text-xs text-slate-500">{t("Qaysi oy bo'yicha hisobot")}</p>
-          <Input
-            type="month"
-            value={query.cashflowMonth || ''}
-            onChange={(e) => onChangeQuery({ cashflowMonth: e.target.value || '' })}
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1">
+            <p className="text-xs text-slate-500">{t("Qaysi oy bo'yicha hisobot")}</p>
+            <Input
+              type="month"
+              value={query.cashflowMonth || ''}
+              onChange={(e) => onChangeQuery({ cashflowMonth: e.target.value || '' })}
+            />
+          </div>
+          {typeof onOpenPayroll === 'function' && (
+            <Button variant="secondary" onClick={onOpenPayroll}>
+              {t("Oylik bo'limiga o'tish")}
+            </Button>
+          )}
         </div>
       </div>
       <p className="mb-1 text-xs text-slate-600">
@@ -59,6 +67,23 @@ export default function FinanceCashflowPanel({
                 : ''}
           </p>
         </div>
+      </div>
+      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
+        <MiniStatCard
+          label={t("Oylik chiqimi (payroll)")}
+          value={`${sumFormat(cashflowPanel.payrollPayoutAmount || 0, locale)} ${t("so'm")}`}
+          tone="warning"
+        />
+        <MiniStatCard
+          label={t("Oylik qaytarma (reversal)")}
+          value={`${sumFormat(cashflowPanel.payrollReversalAmount || 0, locale)} ${t("so'm")}`}
+          tone="info"
+        />
+        <MiniStatCard
+          label={t("Sof pul oqimi (tushum - oylik)")}
+          value={`${sumFormat(cashflowPanel.netAmount || 0, locale)} ${t("so'm")}`}
+          tone={(cashflowPanel.netAmount || 0) >= 0 ? "success" : "danger"}
+        />
       </div>
     </div>
   );

@@ -9,6 +9,26 @@ import {
   Textarea,
 } from '../../../../../components/ui';
 
+function getRunStatusLabel(value, t) {
+  const labels = {
+    DRAFT: t('Loyiha'),
+    APPROVED: t('Tasdiqlangan'),
+    PAID: t("To'langan"),
+    REVERSED: t('Bekor qilingan'),
+  };
+  return labels[value] || value || '-';
+}
+
+function getPaymentMethodLabel(value, t) {
+  const labels = {
+    BANK: t("Bank o'tkazmasi"),
+    CASH: t('Naqd pul'),
+    CLICK: 'Click',
+    PAYME: 'Payme',
+  };
+  return labels[value] || value || '-';
+}
+
 function Field({ label, children }) {
   return (
     <label className="space-y-1.5">
@@ -19,6 +39,7 @@ function Field({ label, children }) {
 }
 
 function StatusPill({ value }) {
+  const { t } = useTranslation();
   const colorMap = {
     DRAFT: 'bg-slate-100 text-slate-700 border-slate-200',
     APPROVED: 'bg-amber-50 text-amber-700 border-amber-200',
@@ -27,7 +48,7 @@ function StatusPill({ value }) {
   };
   return (
     <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${colorMap[value] || 'bg-slate-50 text-slate-700 border-slate-200'}`}>
-      {value || '-'}
+      {getRunStatusLabel(value, t)}
     </span>
   );
 }
@@ -67,15 +88,7 @@ export function PayrollRunsPanel({
   busy,
   handleRefreshRunsDashboard,
   handleGenerateRun,
-  automationHealth,
-  monthlyReportSummary,
-  monthlyReport,
-  automationHealthState,
-  monthlyReportState,
   formatMoney,
-  automationForm,
-  setAutomationForm,
-  handleRunAutomation,
   selectedRunPayableAmount,
   selectedRunPaidAmount,
   selectedRunRemainingAmount,
@@ -99,7 +112,7 @@ export function PayrollRunsPanel({
     <>
       <Card
         title={t('Joriy Oylik')}
-        subtitle={t("Faqat asosiy oqim: generate, ko'rish, approve va to'lash")}
+        subtitle={t("Faqat asosiy oqim: yaratish, ko'rish, tasdiqlash va to'lash")}
         actions={(
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
             <Input
@@ -115,13 +128,13 @@ export function PayrollRunsPanel({
               <Select value={activeRunId} onChange={(e) => setSelectedRunId(e.target.value)}>
                 {runs.map((run) => (
                   <option key={run.id} value={run.id}>
-                    {run.periodMonth} | {run.status}
+                    {run.periodMonth} | {getRunStatusLabel(run.status, t)}
                   </option>
                 ))}
               </Select>
             ) : (
               <div className="flex items-center rounded-xl border border-slate-200 px-3 text-sm text-slate-600">
-                {selectedRun ? selectedRun.status : t("Run yo'q")}
+                {selectedRun ? getRunStatusLabel(selectedRun.status, t) : t("Hisob-kitob yo'q")}
               </div>
             )}
             <Button variant="secondary" onClick={handleRefreshRunsDashboard} disabled={runsState.loading || busy}>
@@ -129,7 +142,7 @@ export function PayrollRunsPanel({
             </Button>
             {isAdminView && (
               <Button variant="indigo" onClick={handleGenerateRun} disabled={busy || !periodMonth}>
-                {selectedRun ? t('Regenerate') : t('Generate')}
+                {selectedRun ? t('Qayta yaratish') : t('Yaratish')}
               </Button>
             )}
           </div>
@@ -138,129 +151,11 @@ export function PayrollRunsPanel({
         {runsState.loading || runDetailLoading ? <StateView type="skeleton" /> : null}
         {runsState.error ? <StateView type="error" description={runsState.error} /> : null}
         {runDetailError ? <StateView type="error" description={runDetailError} /> : null}
-        {!runsState.error && !runDetailError && (
-          <div className="mb-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <StatWidget
-                label={t('Automation holati')}
-                value={automationHealth?.summary?.readyForGenerate ? t('Tayyor') : t('Tekshirish kerak')}
-                tone={automationHealth?.summary?.readyForGenerate ? 'emerald' : 'amber'}
-                subtitle={t('Blocker: {{blockers}} | Warning: {{warnings}}', {
-                  blockers: automationHealth?.summary?.blockerCount || 0,
-                  warnings: automationHealth?.summary?.warningCount || 0,
-                })}
-              />
-              <StatWidget
-                label={t("Report: To'lanadi")}
-                value={formatMoney(monthlyReportSummary?.payableAmount || 0)}
-                tone="indigo"
-                subtitle={t('Oy: {{month}}', { month: periodMonth })}
-              />
-              <StatWidget
-                label={t("Report: Qoldiq")}
-                value={formatMoney(monthlyReportSummary?.remainingAmount || 0)}
-                tone={Number(monthlyReportSummary?.remainingAmount || 0) > 0 ? 'amber' : 'slate'}
-                subtitle={t("To'lovlar soni: {{count}}", { count: monthlyReportSummary?.paymentCount || 0 })}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-              <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 xl:col-span-2">
-                {(automationHealthState.loading || monthlyReportState.loading) ? (
-                  <StateView type="skeleton" />
-                ) : null}
-                {automationHealthState.error ? <StateView type="error" description={automationHealthState.error} /> : null}
-                {monthlyReportState.error ? <StateView type="error" description={monthlyReportState.error} /> : null}
-                {!automationHealthState.loading && !monthlyReportState.loading && !automationHealthState.error && !monthlyReportState.error && (
-                  <>
-                    <div>
-                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        {t('Line Type kesimi')}
-                      </div>
-                      {(monthlyReport?.lineTypeBreakdown || []).length ? (
-                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                          {(monthlyReport?.lineTypeBreakdown || []).slice(0, 6).map((row) => (
-                            <div key={`line-${row.type}`} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                              <span className="text-slate-600">{row.type}</span>
-                              <span className="font-semibold text-slate-900">{formatMoney(row.amount)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                          {t("Line type bo'yicha ma'lumot yo'q")}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t('Automation')}</div>
-                {isAdminView ? (
-                  <>
-                    <Field label={t('Rejim')}>
-                      <Select
-                        value={automationForm.mode}
-                        onChange={(e) => setAutomationForm((prev) => ({ ...prev, mode: e.target.value }))}
-                        disabled={busy}
-                      >
-                        <option value="GENERATE_ONLY">{t('Generate only')}</option>
-                        <option value="GENERATE_APPROVE">{t('Generate + Approve')}</option>
-                        <option value="FULL_PAY">{t('Generate + Approve + Pay')}</option>
-                      </Select>
-                    </Field>
-                    {automationForm.mode === 'FULL_PAY' && (
-                      <Field label={t("To'lov usuli")}>
-                        <Select
-                          value={automationForm.paymentMethod}
-                          onChange={(e) => setAutomationForm((prev) => ({ ...prev, paymentMethod: e.target.value }))}
-                          disabled={busy}
-                        >
-                          <option value="BANK">BANK</option>
-                          <option value="CASH">CASH</option>
-                          <option value="CLICK">CLICK</option>
-                          <option value="PAYME">PAYME</option>
-                        </Select>
-                      </Field>
-                    )}
-                    <Field label={t('Force')}>
-                      <Select
-                        value={automationForm.force ? 'true' : 'false'}
-                        onChange={(e) => setAutomationForm((prev) => ({ ...prev, force: e.target.value === 'true' }))}
-                        disabled={busy}
-                      >
-                        <option value="false">{t("Yo'q")}</option>
-                        <option value="true">{t('Ha')}</option>
-                      </Select>
-                    </Field>
-                    <div className="grid grid-cols-1 gap-2">
-                      <Button variant="secondary" onClick={() => handleRunAutomation({ dryRun: true })} disabled={busy}>
-                        {t('Dry Run')}
-                      </Button>
-                      <Button variant="indigo" onClick={() => handleRunAutomation({ dryRun: false })} disabled={busy}>
-                        {t('Auto Process')}
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                    {t("Menejer bu blokda faqat holatni kuzatadi")}
-                  </div>
-                )}
-                <Button variant="secondary" onClick={handleRefreshRunsDashboard} disabled={busy}>
-                  {t('Health/Report yangilash')}
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {!runsState.loading && !runsState.error && !selectedRun && (
           <StateView
             type="empty"
-            description={t("Tanlangan oy uchun run topilmadi. Avval Generate bosing.")}
+            description={t("Tanlangan oy uchun hisob-kitob topilmadi. Avval Yaratish tugmasini bosing.")}
           />
         )}
 
@@ -271,7 +166,7 @@ export function PayrollRunsPanel({
                 label={t("To'lanadi")}
                 value={formatMoney(selectedRunPayableAmount)}
                 tone="indigo"
-                subtitle={`${selectedRun.periodMonth} | ${selectedRun.status}`}
+                subtitle={`${selectedRun.periodMonth} | ${getRunStatusLabel(selectedRun.status, t)}`}
               />
               <StatWidget
                 label={t("To'langan")}
@@ -304,7 +199,7 @@ export function PayrollRunsPanel({
                 <div className="space-y-3">
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                     <div className="flex items-center justify-between">
-                      <span>{t('Run holati')}</span>
+                      <span>{t("Hisob-kitob holati")}</span>
                       <StatusPill value={selectedRun.status} />
                     </div>
                     <div className="mt-2">{t("O'qituvchilar")}: {selectedRunTeacherCount || 0}</div>
@@ -318,10 +213,10 @@ export function PayrollRunsPanel({
                           onChange={(e) => setPayForm((prev) => ({ ...prev, paymentMethod: e.target.value }))}
                           disabled={!canPaySelectedRun || busy}
                         >
-                          <option value="BANK">BANK</option>
-                          <option value="CASH">CASH</option>
-                          <option value="CLICK">CLICK</option>
-                          <option value="PAYME">PAYME</option>
+                          <option value="BANK">{getPaymentMethodLabel('BANK', t)}</option>
+                          <option value="CASH">{getPaymentMethodLabel('CASH', t)}</option>
+                          <option value="CLICK">{getPaymentMethodLabel('CLICK', t)}</option>
+                          <option value="PAYME">{getPaymentMethodLabel('PAYME', t)}</option>
                         </Select>
                       </Field>
                     </div>
@@ -344,7 +239,7 @@ export function PayrollRunsPanel({
 
                   {!isManagerView && canReverseSelectedRun && (
                     <div className="space-y-2 rounded-xl border border-rose-200 bg-rose-50/40 p-3">
-                      <Field label={t('Reverse sababi')}>
+                      <Field label={t('Bekor qilish sababi')}>
                         <Textarea
                           rows={2}
                           value={reverseReason}
@@ -358,7 +253,7 @@ export function PayrollRunsPanel({
                         disabled={!canReverseSelectedRun || !reverseReason.trim() || busy}
                         onClick={handleReverseRun}
                       >
-                        {t('Reverse')}
+                        {t('Bekor qilish')}
                       </Button>
                     </div>
                   )}

@@ -42,6 +42,7 @@ const {
   financeStudentsQuerySchema,
   studentIdParamSchema,
   tolovIdParamSchema,
+  partialRevertPaymentSchema,
   createPaymentSchema,
   createImtiyozSchema,
   imtiyozIdParamSchema,
@@ -454,6 +455,13 @@ router.delete(
   requireRole("ADMIN"),
   validate({ params: tolovIdParamSchema }),
   asyncHandler(finance.revertPayment),
+);
+router.post(
+  "/moliya/tolov/:tolovId/partial-revert",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: tolovIdParamSchema, body: partialRevertPaymentSchema }),
+  asyncHandler(finance.partialRevertPayment),
 );
 
 // Payroll (Teacher oylik) - ADMIN / MANAGER

@@ -12,6 +12,7 @@ const ACTIVE_PAYROLL_STATUSES = ["DRAFT", "APPROVED", "PAID"];
 const DECIMAL_ZERO = new Prisma.Decimal(0);
 const MANUAL_ADJUSTMENT_TYPES = new Set(["BONUS", "PENALTY", "MANUAL"]);
 const REGENERATE_LINE_TYPES = ["LESSON", "FIXED_SALARY", "ADVANCE_DEDUCTION"];
+const LESSON_PAYROLL_MODES = new Set(["LESSON_BASED", "MIXED"]);
 const HAFTA_KUNI_TO_WEEKDAY = Object.freeze({
   DUSHANBA: 1,
   SESHANBA: 2,
@@ -44,6 +45,13 @@ function clampPaidAmountToPayable(paidAmount, payableAmount) {
   if (paid.lte(DECIMAL_ZERO)) return DECIMAL_ZERO;
   if (paid.gte(payable)) return payable;
   return paid;
+}
+
+function isEmployeeLessonPayrollEligible(employee) {
+  if (!employee) return false;
+  if (!employee.isPayrollEligible) return false;
+  if (employee.employmentStatus !== "ACTIVE") return false;
+  return LESSON_PAYROLL_MODES.has(employee.payrollMode);
 }
 
 function getPayrollItemPaymentStatus({ paidAmount, payableAmount }) {
@@ -219,6 +227,7 @@ async function createPayrollCashEntry(
     payrollItemPaymentId = null,
     amount,
     paymentMethod,
+    entryType = "PAYROLL_PAYOUT",
     occurredAt,
     externalRef,
     note,
@@ -234,6 +243,7 @@ async function createPayrollCashEntry(
       payrollItemPaymentId,
       amount,
       paymentMethod,
+      entryType,
       occurredAt: occurredAt || new Date(),
       externalRef: cleanOptional(externalRef) || null,
       note: cleanOptional(note) || null,
@@ -895,10 +905,14 @@ async function updatePayrollEmployeeConfig({ employeeId, body, actorUserId, req 
           : money(body.fixedSalaryAmount)
         : before.fixedSalaryAmount;
 
-    if (nextPayrollMode === "FIXED") {
+    if (["FIXED", "MIXED"].includes(nextPayrollMode)) {
       const fixedSalary = nextFixedSalaryAmount === null ? DECIMAL_ZERO : decimal(nextFixedSalaryAmount);
       if (fixedSalary.lte(DECIMAL_ZERO)) {
-        throw new ApiError(400, "PAYROLL_FIXED_SALARY_REQUIRED", "FIXED rejim uchun oklad summasi musbat bo'lishi kerak");
+        throw new ApiError(
+          400,
+          "PAYROLL_FIXED_SALARY_REQUIRED",
+          "FIXED/MIXED rejim uchun oklad summasi musbat bo'lishi kerak",
+        );
       }
     }
 
@@ -908,7 +922,6 @@ async function updatePayrollEmployeeConfig({ employeeId, body, actorUserId, req 
       patch.fixedSalaryAmount = body.fixedSalaryAmount === null ? null : money(body.fixedSalaryAmount);
     }
     if (body.isPayrollEligible !== undefined) patch.isPayrollEligible = body.isPayrollEligible;
-    if (body.employmentStatus !== undefined) patch.employmentStatus = body.employmentStatus;
     if (body.note !== undefined) patch.note = cleanOptional(body.note) || null;
 
     if (Object.keys(patch).length === 0) {
@@ -1752,7 +1765,8 @@ function buildItemSummaryFromLines(lines) {
   const adjustmentAmount = money(
     bonusAmount.plus(manualAmount).plus(penaltyAmountSigned).plus(advanceDeductionAmountSigned),
   );
-  const payableAmount = money(grossAmount.plus(adjustmentAmount));
+  const rawPayableAmount = money(grossAmount.plus(adjustmentAmount));
+  const payableAmount = rawPayableAmount.lte(DECIMAL_ZERO) ? DECIMAL_ZERO : rawPayableAmount;
 
   return {
     totalMinutes,
@@ -2061,6 +2075,11 @@ async function collectPayrollPeriodDiagnosticsTx(
     periodStart,
     periodEnd,
   });
+  const lessonEligibilityByTeacherId = new Map(
+    teacherEmployees
+      .filter((row) => row.teacher?.id)
+      .map((row) => [row.teacher.id, isEmployeeLessonPayrollEligible(row)]),
+  );
 
   const actualMinutesByTeacher = new Map();
   const lessonCountByTeacher = new Map();
@@ -2083,6 +2102,11 @@ async function collectPayrollPeriodDiagnosticsTx(
         continue;
       }
       throw error;
+    }
+
+    // Payrolldan chiqarilgan / nofaol xodim darslari rate blocker hisoblanmaydi.
+    if (lessonEligibilityByTeacherId.get(payrollTeacherId) === false) {
+      continue;
     }
 
     incrementMapNumber(actualMinutesByTeacher, payrollTeacherId, Number(lesson.durationMinutes || 0));
@@ -2460,76 +2484,80 @@ async function refreshDraftPayrollForLesson({ lessonId, actorUserId, req }) {
 
     let linePayload = null;
     if (lessonEligible) {
-      const { teacherMap, subjectMap } = await loadRatesForPeriod(tx, {
-        organizationId: org.id,
-        lessons: [lesson],
-        periodStart,
-        periodEnd,
-      });
       const payrollTeacherId = resolvePayrollTeacherIdForLesson(lesson);
-      const resolved = resolveRateForLesson({
-        lesson: { ...lesson, teacherId: payrollTeacherId },
-        teacherRateMap: teacherMap,
-        subjectDefaultRateMap: subjectMap,
-      });
-      if (!resolved) {
-        throw new ApiError(
-          409,
-          "PAYROLL_RATE_NOT_FOUND",
-          "Dars uchun rate topilmadi. Avval rate kiriting",
-          {
-            totalMissing: 1,
-            missingRateLessons: [
-              {
-                realLessonId: lesson.id,
-                teacherId: payrollTeacherId,
-                sourceTeacherId: lesson.teacherId,
-                status: lesson.status,
-                replacedByTeacherId: lesson.replacedByTeacherId || null,
-                subjectId: lesson.subjectId,
-                classroomId: lesson.classroomId,
-                startAt: lesson.startAt,
-              },
-            ],
-          },
-        );
-      }
       const owner = await ensureEmployeeForTeacher(tx, {
         teacherId: payrollTeacherId,
         organizationId: org.id,
       });
-      const item = await getOrCreatePayrollItem(tx, {
-        organizationId: org.id,
-        payrollRunId: run.id,
-        teacherId: payrollTeacherId,
-        employeeId: owner.employee.id,
-      });
-      const amount = calcLessonAmount(resolved.ratePerHour, lesson.durationMinutes);
-      linePayload = {
-        organizationId: org.id,
-        payrollRunId: run.id,
-        payrollItemId: item.id,
-        employeeId: owner.employee.id,
-        teacherId: payrollTeacherId,
-        type: "LESSON",
-        realLessonId: lesson.id,
-        subjectId: lesson.subjectId,
-        classroomId: lesson.classroomId,
-        lessonStartAt: lesson.startAt,
-        minutes: lesson.durationMinutes,
-        ratePerHour: resolved.ratePerHour,
-        amount,
-        rateSource: resolved.rateSource,
-        teacherRateId: resolved.teacherRateId,
-        subjectDefaultRateId: resolved.subjectDefaultRateId,
-        createdByUserId: actorUserId || null,
-        meta: {
-          resolution: { rateSource: resolved.rateSource },
-          sourceTeacherId: lesson.teacherId,
-          lessonStatus: lesson.status,
-          replacedByTeacherId: lesson.replacedByTeacherId || null,
-        },
-      };
+
+      // Lesson payroll faqat ACTIVE + eligible + LESSON_BASED/MIXED xodimlarda yuradi.
+      if (isEmployeeLessonPayrollEligible(owner.employee)) {
+        const { teacherMap, subjectMap } = await loadRatesForPeriod(tx, {
+          organizationId: org.id,
+          lessons: [lesson],
+          periodStart,
+          periodEnd,
+        });
+        const resolved = resolveRateForLesson({
+          lesson: { ...lesson, teacherId: payrollTeacherId },
+          teacherRateMap: teacherMap,
+          subjectDefaultRateMap: subjectMap,
+        });
+        if (!resolved) {
+          throw new ApiError(
+            409,
+            "PAYROLL_RATE_NOT_FOUND",
+            "Dars uchun rate topilmadi. Avval rate kiriting",
+            {
+              totalMissing: 1,
+              missingRateLessons: [
+                {
+                  realLessonId: lesson.id,
+                  teacherId: payrollTeacherId,
+                  sourceTeacherId: lesson.teacherId,
+                  status: lesson.status,
+                  replacedByTeacherId: lesson.replacedByTeacherId || null,
+                  subjectId: lesson.subjectId,
+                  classroomId: lesson.classroomId,
+                  startAt: lesson.startAt,
+                },
+              ],
+            },
+          );
+        }
+        const item = await getOrCreatePayrollItem(tx, {
+          organizationId: org.id,
+          payrollRunId: run.id,
+          teacherId: payrollTeacherId,
+          employeeId: owner.employee.id,
+        });
+        const amount = calcLessonAmount(resolved.ratePerHour, lesson.durationMinutes);
+        linePayload = {
+          organizationId: org.id,
+          payrollRunId: run.id,
+          payrollItemId: item.id,
+          employeeId: owner.employee.id,
+          teacherId: payrollTeacherId,
+          type: "LESSON",
+          realLessonId: lesson.id,
+          subjectId: lesson.subjectId,
+          classroomId: lesson.classroomId,
+          lessonStartAt: lesson.startAt,
+          minutes: lesson.durationMinutes,
+          ratePerHour: resolved.ratePerHour,
+          amount,
+          rateSource: resolved.rateSource,
+          teacherRateId: resolved.teacherRateId,
+          subjectDefaultRateId: resolved.subjectDefaultRateId,
+          createdByUserId: actorUserId || null,
+          meta: {
+            resolution: { rateSource: resolved.rateSource },
+            sourceTeacherId: lesson.teacherId,
+            lessonStatus: lesson.status,
+            replacedByTeacherId: lesson.replacedByTeacherId || null,
+          },
+        };
+      }
     }
 
     if (existingLine) {
@@ -2658,9 +2686,25 @@ async function generatePayrollRun({ body, actorUserId, req }) {
       periodEnd,
     });
 
+    const teacherEmployeeCache = new Map();
+    const getLessonOwner = async (payrollTeacherId) => {
+      let owner = teacherEmployeeCache.get(payrollTeacherId);
+      if (!owner) {
+        owner = await ensureEmployeeForTeacher(tx, {
+          teacherId: payrollTeacherId,
+          organizationId: org.id,
+        });
+        teacherEmployeeCache.set(payrollTeacherId, owner);
+      }
+      return owner;
+    };
+
     const missingRateLessons = [];
     for (const lesson of lessons) {
       const payrollTeacherId = resolvePayrollTeacherIdForLesson(lesson);
+      const owner = await getLessonOwner(payrollTeacherId);
+      if (!isEmployeeLessonPayrollEligible(owner.employee)) continue;
+
       const resolved = resolveRateForLesson({
         lesson: { ...lesson, teacherId: payrollTeacherId },
         teacherRateMap: teacherMap,
@@ -2706,18 +2750,12 @@ async function generatePayrollRun({ body, actorUserId, req }) {
       if (item?.teacherId) itemByTeacherCache.set(item.teacherId, item);
       if (item?.employeeId) itemByEmployeeCache.set(item.employeeId, item);
     };
-    const teacherEmployeeCache = new Map();
 
+    const lessonLineRows = [];
     for (const lesson of lessons) {
       const payrollTeacherId = resolvePayrollTeacherIdForLesson(lesson);
-      let owner = teacherEmployeeCache.get(payrollTeacherId);
-      if (!owner) {
-        owner = await ensureEmployeeForTeacher(tx, {
-          teacherId: payrollTeacherId,
-          organizationId: org.id,
-        });
-        teacherEmployeeCache.set(payrollTeacherId, owner);
-      }
+      const owner = await getLessonOwner(payrollTeacherId);
+      if (!isEmployeeLessonPayrollEligible(owner.employee)) continue;
 
       let item = itemByTeacherCache.get(payrollTeacherId) || itemByEmployeeCache.get(owner.employee.id);
       if (!item) {
@@ -2739,39 +2777,41 @@ async function generatePayrollRun({ body, actorUserId, req }) {
         });
         setItemCache(item);
       }
+
       const resolved = resolveRateForLesson({
         lesson: { ...lesson, teacherId: payrollTeacherId },
         teacherRateMap: teacherMap,
         subjectDefaultRateMap: subjectMap,
       });
       const amount = calcLessonAmount(resolved.ratePerHour, lesson.durationMinutes);
-      await tx.payrollLine.create({
-        data: {
-          organizationId: org.id,
-          payrollRunId: run.id,
-          payrollItemId: item.id,
-          employeeId: owner.employee.id,
-          teacherId: payrollTeacherId,
-          type: "LESSON",
-          realLessonId: lesson.id,
-          subjectId: lesson.subjectId,
-          classroomId: lesson.classroomId,
-          lessonStartAt: lesson.startAt,
-          minutes: lesson.durationMinutes,
-          ratePerHour: resolved.ratePerHour,
-          amount,
-          rateSource: resolved.rateSource,
-          teacherRateId: resolved.teacherRateId,
-          subjectDefaultRateId: resolved.subjectDefaultRateId,
-          createdByUserId: actorUserId || null,
-          meta: {
-            resolution: { rateSource: resolved.rateSource },
-            sourceTeacherId: lesson.teacherId,
-            lessonStatus: lesson.status,
-            replacedByTeacherId: lesson.replacedByTeacherId || null,
-          },
+      lessonLineRows.push({
+        organizationId: org.id,
+        payrollRunId: run.id,
+        payrollItemId: item.id,
+        employeeId: owner.employee.id,
+        teacherId: payrollTeacherId,
+        type: "LESSON",
+        realLessonId: lesson.id,
+        subjectId: lesson.subjectId,
+        classroomId: lesson.classroomId,
+        lessonStartAt: lesson.startAt,
+        minutes: lesson.durationMinutes,
+        ratePerHour: resolved.ratePerHour,
+        amount,
+        rateSource: resolved.rateSource,
+        teacherRateId: resolved.teacherRateId,
+        subjectDefaultRateId: resolved.subjectDefaultRateId,
+        createdByUserId: actorUserId || null,
+        meta: {
+          resolution: { rateSource: resolved.rateSource },
+          sourceTeacherId: lesson.teacherId,
+          lessonStatus: lesson.status,
+          replacedByTeacherId: lesson.replacedByTeacherId || null,
         },
       });
+    }
+    if (lessonLineRows.length) {
+      await tx.payrollLine.createMany({ data: lessonLineRows });
     }
 
     const fixedSalaryEmployees = await tx.employee.findMany({
@@ -2897,13 +2937,14 @@ async function generatePayrollRun({ body, actorUserId, req }) {
 
     const beforeGeneratedAt = run.generatedAt;
     const now = new Date();
+    const lessonLinesCreated = lessonLineRows.length;
     await tx.payrollRun.update({
       where: { id: run.id },
       data: {
         generatedAt: now,
         generationSummary: {
           periodMonth,
-          lessonCount: lessons.length,
+          lessonCount: lessonLinesCreated,
           fixedSalaryCount: fixedSalaryEmployees.length,
           advanceCount: advances.length,
           generatedAt: now.toISOString(),
@@ -2920,7 +2961,7 @@ async function generatePayrollRun({ body, actorUserId, req }) {
       entityId: run.id,
       payrollRunId: run.id,
       before: { status: run.status, generatedAt: beforeGeneratedAt || null },
-      after: { status: "DRAFT", lessonCount: lessons.length },
+      after: { status: "DRAFT", lessonCount: lessonLinesCreated },
       req,
     });
 
@@ -2954,7 +2995,7 @@ async function generatePayrollRun({ body, actorUserId, req }) {
 
     return {
       run: freshRun,
-      generation: { lessonsProcessed: lessons.length },
+      generation: { lessonsProcessed: lessonLinesCreated },
     };
   });
 }
@@ -2996,6 +3037,26 @@ async function getPayrollRunOrThrow(tx, { runId, organizationId }) {
   });
   if (!run) throw new ApiError(404, "PAYROLL_RUN_NOT_FOUND", "Payroll run topilmadi");
   return run;
+}
+
+async function lockPayrollRunRow(tx, { runId, organizationId }) {
+  await tx.$executeRaw`
+    SELECT id
+    FROM "PayrollRun"
+    WHERE id = ${runId} AND "organizationId" = ${organizationId}
+    FOR UPDATE
+  `;
+}
+
+async function lockPayrollItemRow(tx, { itemId, runId, organizationId }) {
+  await tx.$executeRaw`
+    SELECT id
+    FROM "PayrollItem"
+    WHERE id = ${itemId}
+      AND "payrollRunId" = ${runId}
+      AND "organizationId" = ${organizationId}
+    FOR UPDATE
+  `;
 }
 
 function assertRunStatus(run, allowed) {
@@ -3479,6 +3540,7 @@ async function approvePayrollRun({ runId, actorUserId, req }) {
 async function payPayrollRun({ runId, body, actorUserId, req }) {
   return prisma.$transaction(async (tx) => {
     const org = await ensureMainOrganization(tx);
+    await lockPayrollRunRow(tx, { runId, organizationId: org.id });
     const run = await getPayrollRunOrThrow(tx, { runId, organizationId: org.id });
     assertRunStatus(run, ["APPROVED"]);
     const paidAt = body.paidAt || new Date();
@@ -3588,8 +3650,10 @@ async function payPayrollRun({ runId, body, actorUserId, req }) {
 async function payPayrollItem({ runId, itemId, body, actorUserId, req }) {
   return prisma.$transaction(async (tx) => {
     const org = await ensureMainOrganization(tx);
+    await lockPayrollRunRow(tx, { runId, organizationId: org.id });
     const run = await getPayrollRunOrThrow(tx, { runId, organizationId: org.id });
     assertRunStatus(run, ["APPROVED"]);
+    await lockPayrollItemRow(tx, { itemId, runId: run.id, organizationId: org.id });
 
     const item = await tx.payrollItem.findFirst({
       where: { id: itemId, payrollRunId: run.id, organizationId: org.id },
@@ -3751,13 +3815,98 @@ async function payPayrollItem({ runId, itemId, body, actorUserId, req }) {
 async function reversePayrollRun({ runId, body, actorUserId, req }) {
   return prisma.$transaction(async (tx) => {
     const org = await ensureMainOrganization(tx);
+    await lockPayrollRunRow(tx, { runId, organizationId: org.id });
     const run = await getPayrollRunOrThrow(tx, { runId, organizationId: org.id });
     assertRunStatus(run, ["APPROVED", "PAID"]);
+    const reversedAt = new Date();
+
+    // Item/payment update paytda parallel yozuvlarning oldini olish uchun item satrlarini lock qilamiz.
+    await tx.$executeRaw`
+      SELECT id
+      FROM "PayrollItem"
+      WHERE "payrollRunId" = ${run.id}
+        AND "organizationId" = ${org.id}
+      FOR UPDATE
+    `;
+
+    const runPayments = await tx.payrollItemPayment.findMany({
+      where: { payrollRunId: run.id, organizationId: org.id },
+      orderBy: [{ paidAt: "asc" }, { createdAt: "asc" }],
+      select: {
+        id: true,
+        payrollItemId: true,
+        employeeId: true,
+        teacherId: true,
+        amount: true,
+        paymentMethod: true,
+        externalRef: true,
+      },
+    });
+    let reversedPaymentCount = 0;
+    let reversedTotal = DECIMAL_ZERO;
+    for (const payment of runPayments) {
+      const paymentAmount = money(payment.amount);
+      if (paymentAmount.lte(DECIMAL_ZERO)) continue;
+
+      const reversePayment = await tx.payrollItemPayment.create({
+        data: {
+          organizationId: org.id,
+          payrollRunId: run.id,
+          payrollItemId: payment.payrollItemId,
+          employeeId: payment.employeeId,
+          teacherId: payment.teacherId,
+          amount: paymentAmount.neg(),
+          paymentMethod: payment.paymentMethod,
+          paidAt: reversedAt,
+          externalRef: null,
+          note: `REVERSE: ${body.reason}`,
+          createdByUserId: actorUserId || null,
+        },
+      });
+      await createPayrollCashEntry(tx, {
+        organizationId: org.id,
+        payrollRunId: run.id,
+        payrollItemId: payment.payrollItemId,
+        payrollItemPaymentId: reversePayment.id,
+        amount: paymentAmount,
+        paymentMethod: payment.paymentMethod,
+        entryType: "PAYROLL_REVERSAL",
+        occurredAt: reversedAt,
+        note: body.reason,
+        createdByUserId: actorUserId || null,
+        meta: {
+          source: "PAYROLL_RUN_REVERSE",
+          reversedPaymentId: payment.id,
+          payrollRunId: run.id,
+          payrollItemId: payment.payrollItemId,
+        },
+      });
+      reversedPaymentCount += 1;
+      reversedTotal = reversedTotal.plus(paymentAmount);
+    }
+
+    const runItems = await tx.payrollItem.findMany({
+      where: { payrollRunId: run.id, organizationId: org.id },
+      select: { id: true, payableAmount: true },
+    });
+    for (const item of runItems) {
+      await tx.payrollItem.update({
+        where: { id: item.id },
+        data: {
+          paidAmount: DECIMAL_ZERO,
+          paymentStatus: getPayrollItemPaymentStatus({
+            paidAmount: DECIMAL_ZERO,
+            payableAmount: item.payableAmount,
+          }),
+        },
+      });
+    }
+
     const updated = await tx.payrollRun.update({
       where: { id: run.id },
       data: {
         status: "REVERSED",
-        reversedAt: new Date(),
+        reversedAt,
         reversedByUserId: actorUserId,
         reverseReason: body.reason,
       },
@@ -3770,11 +3919,17 @@ async function reversePayrollRun({ runId, body, actorUserId, req }) {
       entityId: run.id,
       payrollRunId: run.id,
       before: { status: run.status, paidAt: run.paidAt, paymentMethod: run.paymentMethod },
-      after: { status: updated.status, reversedAt: updated.reversedAt, reverseReason: updated.reverseReason },
+      after: {
+        status: updated.status,
+        reversedAt: updated.reversedAt,
+        reverseReason: updated.reverseReason,
+        reversedPaymentCount,
+        reversedTotal: String(money(reversedTotal)),
+      },
       reason: body.reason,
       req,
     });
-    return { run: updated };
+    return { run: updated, reversedPaymentCount, reversedTotal: money(reversedTotal) };
   });
 }
 
@@ -4316,4 +4471,8 @@ module.exports = {
   getPayrollMonthlyReport,
   getTeacherPayslipsByUserId,
   getTeacherPayslipDetailByUserId,
+  __private: {
+    isEmployeeLessonPayrollEligible,
+    buildItemSummaryFromLines,
+  },
 };
