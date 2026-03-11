@@ -258,18 +258,6 @@ export const payrollApi = baseApi.injectEndpoints({
         { type: 'PayrollPayslip', id: 'LIST' },
       ],
     }),
-    deletePayrollAdjustment: builder.mutation({
-      query: ({ runId, lineId }) => ({
-        path: `/api/admin/moliya/oylik/runs/${runId}/adjustments/${lineId}`,
-        method: 'DELETE',
-      }),
-      invalidatesTags: (result, error, { runId }) => [
-        { type: 'PayrollRun', id: 'LIST' },
-        { type: 'PayrollRun', id: runId },
-        { type: 'PayrollRun', id: 'MONTHLY_REPORT' },
-        { type: 'PayrollPayslip', id: 'LIST' },
-      ],
-    }),
     approvePayrollRun: builder.mutation({
       query: (runId) => ({
         path: `/api/admin/moliya/oylik/runs/${runId}/approve`,
@@ -388,7 +376,6 @@ export const {
   useGetPayrollRunsQuery,
   useGetPayrollRunDetailQuery,
   useAddPayrollAdjustmentMutation,
-  useDeletePayrollAdjustmentMutation,
   useApprovePayrollRunMutation,
   usePayPayrollRunMutation,
   usePayPayrollItemMutation,

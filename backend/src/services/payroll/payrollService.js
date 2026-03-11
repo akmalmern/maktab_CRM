@@ -3073,8 +3073,64 @@ async function getPayrollRunDetail({ runId, query }) {
       tx.payrollLine.count({ where: linesWhere }),
     ]);
 
+    const lessonLineGroups = await tx.payrollLine.groupBy({
+      where: {
+        payrollRunId: run.id,
+        type: "LESSON",
+      },
+      by: ["payrollItemId", "subjectId", "ratePerHour"],
+      _sum: {
+        minutes: true,
+        amount: true,
+      },
+      _count: {
+        _all: true,
+      },
+    });
+    const subjectIds = [...new Set(lessonLineGroups.map((row) => row.subjectId).filter(Boolean))];
+    const subjects = subjectIds.length
+      ? await tx.subject.findMany({
+          where: { id: { in: subjectIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const subjectById = new Map(subjects.map((row) => [row.id, row]));
+    const lessonBreakdownByItemId = new Map();
+    for (const group of lessonLineGroups) {
+      const subjectName = subjectById.get(group.subjectId)?.name || group.subjectId || "-";
+      const minutes = Number(group._sum.minutes || 0);
+      const row = {
+        subjectId: group.subjectId || null,
+        subjectName,
+        ratePerHour: group.ratePerHour,
+        lessonMinutes: minutes,
+        lessonHours: money(decimal(minutes).div(60)),
+        amount: money(group._sum.amount || 0),
+        lessonCount: Number(group._count?._all || 0),
+      };
+      const bucket = lessonBreakdownByItemId.get(group.payrollItemId) || [];
+      bucket.push(row);
+      lessonBreakdownByItemId.set(group.payrollItemId, bucket);
+    }
+
+    const runWithBreakdown = {
+      ...run,
+      items: (run.items || []).map((item) => {
+        const subjectBreakdown = (lessonBreakdownByItemId.get(item.id) || [])
+          .slice()
+          .sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0));
+        const primarySubject = subjectBreakdown[0] || null;
+        return {
+          ...item,
+          subjectBreakdown,
+          primarySubjectName: primarySubject?.subjectName || null,
+          primaryRatePerHour: primarySubject?.ratePerHour || null,
+        };
+      }),
+    };
+
     return {
-      run,
+      run: runWithBreakdown,
       lines: {
         page,
         limit,
