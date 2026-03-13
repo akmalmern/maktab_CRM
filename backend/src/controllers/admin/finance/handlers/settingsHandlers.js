@@ -1,7 +1,8 @@
-const orchestrator = require("../orchestrators/financeOrchestrator");
+const queryHandlers = require("./queryHandlers");
+const commandHandlers = require("./commandHandlers");
 
 module.exports = {
-  getFinanceSettings: orchestrator.getFinanceSettings,
-  upsertFinanceSettings: orchestrator.upsertFinanceSettings,
-  rollbackFinanceTarif: orchestrator.rollbackFinanceTarif,
+  getFinanceSettings: queryHandlers.getFinanceSettings,
+  upsertFinanceSettings: commandHandlers.upsertFinanceSettings,
+  rollbackFinanceTarif: commandHandlers.rollbackFinanceTarif,
 };

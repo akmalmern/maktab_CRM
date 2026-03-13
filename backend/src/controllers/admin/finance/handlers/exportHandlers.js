@@ -1,6 +1,6 @@
-const orchestrator = require("../orchestrators/financeOrchestrator");
+const queryHandlers = require("./queryHandlers");
 
 module.exports = {
-  exportDebtorsXlsx: orchestrator.exportDebtorsXlsx,
-  exportDebtorsPdf: orchestrator.exportDebtorsPdf,
+  exportDebtorsXlsx: queryHandlers.exportDebtorsXlsx,
+  exportDebtorsPdf: queryHandlers.exportDebtorsPdf,
 };

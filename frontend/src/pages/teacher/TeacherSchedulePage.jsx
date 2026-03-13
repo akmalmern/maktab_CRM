@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Button, Card, Input, Select, StateView } from '../../components/ui';
 import { getLocalDateInputValue } from '../../lib/dateUtils';
+import { formatScheduleSlotLabel } from '../../lib/scheduleSlotLabel';
 import { useLazyGetTeacherScheduleQuery } from '../../services/api/teacherApi';
 
 const HAFTA_KUNLARI = ['DUSHANBA', 'SESHANBA', 'CHORSHANBA', 'PAYSHANBA', 'JUMA', 'SHANBA'];
@@ -94,7 +95,7 @@ function sanaFromHaftaKuni(haftaKuni) {
 }
 
 export default function TeacherSchedulePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [oquvYili, setOquvYili] = useState('');
   const [monthKey, setMonthKey] = useState(currentMonthKey());
@@ -244,7 +245,7 @@ export default function TeacherSchedulePage() {
                   {vaqtlar.map((vaqt) => (
                     <tr key={vaqt.id} className="border-b border-slate-100 align-top bg-white">
                       <td className="sticky left-0 z-10 w-28 bg-white px-2 py-2 text-slate-700 shadow-[6px_0_8px_-8px_rgba(15,23,42,0.2)]">
-                        <p className="font-semibold text-slate-900">{vaqt.nomi}</p>
+                        <p className="font-semibold text-slate-900">{formatScheduleSlotLabel(vaqt.nomi, i18n.language)}</p>
                         <p className="text-[11px] text-slate-500">
                           {vaqt.boshlanishVaqti} - {vaqt.tugashVaqti}
                         </p>

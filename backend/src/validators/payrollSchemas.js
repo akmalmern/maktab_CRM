@@ -219,6 +219,17 @@ const createRealLessonSchema = z
         message: "REPLACED status uchun replacedByTeacherId majburiy",
       });
     }
+    if (
+      value.status === "REPLACED" &&
+      value.replacedByTeacherId &&
+      value.replacedByTeacherId === value.teacherId
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["replacedByTeacherId"],
+        message: "Asosiy va o'rinbosar o'qituvchi bir xil bo'lishi mumkin emas",
+      });
+    }
     if (value.status !== "REPLACED" && value.replacedByTeacherId) {
       ctx.addIssue({
         code: "custom",

@@ -60,6 +60,7 @@ export default function TeacherAttendancePage() {
   const [saving, setSaving] = useState(false);
 
   const [tarixPeriodType, setTarixPeriodType] = useState('OYLIK');
+  const [tarixHolat, setTarixHolat] = useState('ALL');
   const [tarixPage, setTarixPage] = useState(1);
   const [tarixLimit, setTarixLimit] = useState(20);
   const [tarixPages, setTarixPages] = useState(1);
@@ -127,7 +128,7 @@ export default function TeacherAttendancePage() {
     }
   }, [fetchDarsDetailQuery, t]);
 
-  const loadTarix = useCallback(async (nextSana, nextPeriodType, opts = {}) => {
+  const loadTarix = useCallback(async (nextSana, nextPeriodType, nextHolat = 'ALL', opts = {}) => {
     const nextPage = Number(opts.page || 1);
     const nextLimit = Number(opts.limit || 20);
     setTarixLoading(true);
@@ -135,6 +136,7 @@ export default function TeacherAttendancePage() {
       const data = await fetchTarixQuery({
         sana: nextSana,
         periodType: nextPeriodType,
+        ...(nextHolat && nextHolat !== 'ALL' ? { holat: nextHolat } : {}),
         page: nextPage,
         limit: nextLimit,
       }).unwrap();
@@ -170,8 +172,21 @@ export default function TeacherAttendancePage() {
 
   useEffect(() => {
     if (activeView !== 'history') return;
-    loadTarix(sana, tarixPeriodType, { page: 1, limit: tarixLimit });
-  }, [activeView, loadTarix, sana, tarixLimit, tarixPeriodType]);
+    loadTarix(sana, tarixPeriodType, tarixHolat, { page: 1, limit: tarixLimit });
+  }, [activeView, loadTarix, sana, tarixHolat, tarixLimit, tarixPeriodType]);
+
+  useEffect(() => {
+    function onKeyDown(event) {
+      if (activeView !== 'journal') return;
+      if (!detail?.students?.length || saving) return;
+      if ((event.ctrlKey || event.metaKey) && String(event.key || '').toLowerCase() === 's') {
+        event.preventDefault();
+        handleSave();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
 
   const columns = useMemo(
     () => [
@@ -387,7 +402,7 @@ export default function TeacherAttendancePage() {
       toast.success(t('Davomat saqlandi'));
       await loadDarslar(sana, oquvYili);
       await loadDetail(selectedDarsId, sana);
-      await loadTarix(sana, tarixPeriodType, {
+      await loadTarix(sana, tarixPeriodType, tarixHolat, {
         page: tarixPage,
         limit: tarixLimit,
       });
@@ -396,6 +411,19 @@ export default function TeacherAttendancePage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function applyBulkHolat(nextHolat) {
+    setDetail((prev) => {
+      if (!prev?.students?.length) return prev;
+      return {
+        ...prev,
+        students: prev.students.map((item) => ({
+          ...item,
+          holat: nextHolat,
+        })),
+      };
+    });
   }
 
   return (
@@ -494,6 +522,18 @@ export default function TeacherAttendancePage() {
                   <p className="font-semibold text-slate-900">{detail.dars?.vaqtOraliq?.boshlanishVaqti || '-'}</p>
                 </div>
               </div>
+              <div className="mb-3 flex flex-wrap gap-2">
+                {HOLAT_OPTIONS.map((value) => (
+                  <Button
+                    key={value}
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => applyBulkHolat(value)}
+                  >
+                    {t('Barchaga')}: {holatLabel(t, value)}
+                  </Button>
+                ))}
+              </div>
               {detail.students?.length ? (
                 <DataTable
                   columns={columns}
@@ -505,6 +545,14 @@ export default function TeacherAttendancePage() {
               ) : (
                 <StateView type="empty" description={t("Bu dars uchun studentlar topilmadi")} />
               )}
+              {detail.students?.length ? (
+                <div className="sticky bottom-2 z-10 mt-3 flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white/95 p-2 shadow">
+                  <p className="text-xs text-slate-600">{t('Tezkor saqlash')}: {t('Ctrl+S')}</p>
+                  <Button variant="success" onClick={handleSave} disabled={saving}>
+                    {saving ? t('Saqlanmoqda...') : t('Davomatni saqlash')}
+                  </Button>
+                </div>
+              ) : null}
             </Card>
           )}
         </>
@@ -528,13 +576,24 @@ export default function TeacherAttendancePage() {
               </Select>
             </div>
             <div className={fieldWrapClass}>
+              <p className={fieldLabelClass}>{t('Holat')}</p>
+              <Select value={tarixHolat} onChange={(event) => setTarixHolat(event.target.value)}>
+                <option value="ALL">{t('Barcha holatlar')}</option>
+                {HOLAT_OPTIONS.map((value) => (
+                  <option key={value} value={value}>
+                    {holatLabel(t, value)}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className={fieldWrapClass}>
               <p className={fieldLabelClass}>{t('Sahifa limiti')}</p>
               <Select
                 value={String(tarixLimit)}
                 onChange={(event) => {
                   const nextLimit = Number(event.target.value);
                   setTarixLimit(nextLimit);
-                  loadTarix(sana, tarixPeriodType, { page: 1, limit: nextLimit });
+                  loadTarix(sana, tarixPeriodType, tarixHolat, { page: 1, limit: nextLimit });
                 }}
               >
                 {[20, 50, 100].map((size) => (
@@ -548,11 +607,26 @@ export default function TeacherAttendancePage() {
               <Button
                 variant="secondary"
                 className="w-full"
-                onClick={() => loadTarix(sana, tarixPeriodType, { page: 1, limit: tarixLimit })}
+                onClick={() => loadTarix(sana, tarixPeriodType, tarixHolat, { page: 1, limit: tarixLimit })}
               >
                 {t('Tarixni yangilash')}
               </Button>
             </div>
+          </div>
+          <div className="mb-3 flex flex-wrap gap-2">
+            {['ALL', 'SABABSIZ', 'KECHIKDI', 'SABABLI'].map((value) => (
+              <Button
+                key={value}
+                size="sm"
+                variant={tarixHolat === value ? 'indigo' : 'secondary'}
+                onClick={() => {
+                  setTarixHolat(value);
+                  loadTarix(sana, tarixPeriodType, value, { page: 1, limit: tarixLimit });
+                }}
+              >
+                {value === 'ALL' ? t('Hammasi') : holatLabel(t, value)}
+              </Button>
+            ))}
           </div>
           <div className="mb-3 flex flex-wrap gap-2">
             {tarixRange && (
@@ -583,7 +657,7 @@ export default function TeacherAttendancePage() {
                 <Button
                   variant="secondary"
                   onClick={() =>
-                    loadTarix(sana, tarixPeriodType, {
+                    loadTarix(sana, tarixPeriodType, tarixHolat, {
                       page: Math.max(1, tarixPage - 1),
                       limit: tarixLimit,
                     })
@@ -595,7 +669,7 @@ export default function TeacherAttendancePage() {
                 <Button
                   variant="secondary"
                   onClick={() =>
-                    loadTarix(sana, tarixPeriodType, {
+                    loadTarix(sana, tarixPeriodType, tarixHolat, {
                       page: Math.min(tarixPages, tarixPage + 1),
                       limit: tarixLimit,
                     })

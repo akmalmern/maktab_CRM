@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Badge, Button, Card, Input, Modal, Select } from '../../../components/ui';
+import { formatScheduleSlotLabel } from '../../../lib/scheduleSlotLabel';
 
 const HAFTA_KUNLARI = ['DUSHANBA', 'SESHANBA', 'CHORSHANBA', 'PAYSHANBA', 'JUMA', 'SHANBA'];
 const JADVAL_MENU = [
@@ -103,6 +104,7 @@ export default function DarsJadvaliManager({
   classrooms,
   subjects,
   teachers,
+  teachersState = null,
   vaqtOraliqlari,
   darslar,
   darslarLoading,
@@ -115,7 +117,7 @@ export default function DarsJadvaliManager({
   onSaveTeacherWorkloadPlan,
   onDeleteTeacherWorkloadPlan,
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const defaultAcademicYear = currentAcademicYearLabel();
   const [vaqtForm, setVaqtForm] = useState({
     nomi: '',
@@ -234,6 +236,8 @@ export default function DarsJadvaliManager({
   for (const dars of gridDarslar) {
     gridMap.set(`${dars.haftaKuni}__${dars.vaqtOraliqId}`, dars);
   }
+  const teacherDatasetPartial = Boolean(teachersState?.partial);
+  const teacherDatasetError = teachersState?.error || null;
 
   function openTezQoshish(event, haftaKuni, vaqtOraliqId) {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -402,7 +406,7 @@ export default function DarsJadvaliManager({
             : `<span style='color:#9ca3af'>${t("Bo'sh", { defaultValue: "Bo'sh" })}</span>`;
           return `<td style="border:1px solid #e2e8f0;padding:8px;vertical-align:top;">${body}</td>`;
         }).join('');
-        return `<tr><td style="border:1px solid #e2e8f0;padding:8px;"><b>${vaqt.nomi}</b><br/><small>${vaqt.boshlanishVaqti}-${vaqt.tugashVaqti}</small></td>${cols}</tr>`;
+        return `<tr><td style="border:1px solid #e2e8f0;padding:8px;"><b>${formatScheduleSlotLabel(vaqt.nomi, i18n.language)}</b><br/><small>${vaqt.boshlanishVaqti}-${vaqt.tugashVaqti}</small></td>${cols}</tr>`;
       })
       .join('');
 
@@ -455,6 +459,17 @@ export default function DarsJadvaliManager({
         </div>
       </div>
 
+      {teacherDatasetPartial && (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {t("O'qituvchi ro'yxati qisman yuklandi. Jadvalda ba'zi o'qituvchilar yashirin bo'lishi mumkin.")}
+        </div>
+      )}
+      {teacherDatasetError && (
+        <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+          {t("O'qituvchilar ro'yxatini to'liq yuklab bo'lmadi")}: {teacherDatasetError}
+        </div>
+      )}
+
       {jadvalMenu === 'FAN_RANG' && (
         <div className="mb-4 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm ring-1 ring-slate-200/50">
           <p className="mb-3 text-sm font-semibold tracking-tight text-slate-800">
@@ -485,7 +500,7 @@ export default function DarsJadvaliManager({
             <FieldLabel>{t("Vaqt oralig'i nomi", { defaultValue: "Vaqt oralig'i nomi" })}</FieldLabel>
             <Input
               type="text"
-              placeholder={t('Nomi (1-para)', { defaultValue: 'Nomi (1-para)' })}
+              placeholder={t('Nomi (1-para)', { defaultValue: 'Nomi (1-soat)' })}
               value={vaqtForm.nomi}
               onChange={(event) => setVaqtForm((prev) => ({ ...prev, nomi: event.target.value }))}
               required
@@ -609,7 +624,7 @@ export default function DarsJadvaliManager({
               >
                 {vaqtOraliqlari.map((vaqt) => (
                   <option key={vaqt.id} value={vaqt.id}>
-                    {vaqt.nomi} ({vaqt.boshlanishVaqti}-{vaqt.tugashVaqti})
+                    {formatScheduleSlotLabel(vaqt.nomi, i18n.language)} ({vaqt.boshlanishVaqti}-{vaqt.tugashVaqti})
                   </option>
                 ))}
               </Select>
@@ -727,7 +742,7 @@ export default function DarsJadvaliManager({
               <tbody>
                 {vaqtOraliqlari.map((vaqt) => (
                   <tr key={vaqt.id} className="border-b border-slate-100 bg-white">
-                    <td className="px-2 py-2">{vaqt.tartib}. {vaqt.nomi}</td>
+                    <td className="px-2 py-2">{vaqt.tartib}. {formatScheduleSlotLabel(vaqt.nomi, i18n.language)}</td>
                     <td className="px-2 py-2">{vaqt.boshlanishVaqti}-{vaqt.tugashVaqti}</td>
                     <td className="px-2 py-2 text-right">
                       <Button size="sm" variant="danger" className="min-w-24" onClick={() => onDeleteVaqtOraliq(vaqt.id)}>
@@ -826,7 +841,7 @@ export default function DarsJadvaliManager({
                   {saralanganVaqtlar.map((vaqt) => (
                     <tr key={vaqt.id} className="border-b border-slate-100 align-top bg-white">
                       <td className="sticky left-0 z-10 w-28 bg-white px-2 py-2 text-slate-700 shadow-[6px_0_8px_-8px_rgba(15,23,42,0.2)]">
-                        <p className="font-semibold text-slate-900">{vaqt.nomi}</p>
+                        <p className="font-semibold text-slate-900">{formatScheduleSlotLabel(vaqt.nomi, i18n.language)}</p>
                         <p className="text-[11px] text-slate-500">
                           {vaqt.boshlanishVaqti} - {vaqt.tugashVaqti}
                         </p>

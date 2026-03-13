@@ -13,12 +13,8 @@ const MANAGER_PASSWORD = "manager123";
 const DEFAULT_PASSWORD = "12345678";
 const DEFAULT_ACADEMIC_YEAR = "2025-2026";
 
-const STUDENT_COUNT = 500;
 const STUDENTS_PER_CLASSROOM = 30;
 const TEACHERS_PER_SUBJECT = 3;
-const ATTENDANCE_BATCH_SIZE = 5000;
-const GRADE_BATCH_SIZE = 5000;
-const REAL_LESSON_BATCH_SIZE = 3000;
 
 const SCHOOL_SUBJECTS = [
   "Ona tili va adabiyot",
@@ -95,6 +91,32 @@ const TEACHER_LAST_NAMES = [
 function pad(num, size = 3) {
   return String(num).padStart(size, "0");
 }
+
+function toIntEnv(name, fallback, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+  const raw = process.env[name];
+  const parsed = Number.parseInt(String(raw ?? ""), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function toBoolEnv(name, fallback = false) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || raw === "") return fallback;
+  const normalized = String(raw).trim().toLowerCase();
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
+const STUDENT_COUNT = toIntEnv("SEED_STUDENT_COUNT", 500, { min: 50, max: 5000 });
+const ATTENDANCE_BATCH_SIZE = toIntEnv("SEED_ATTENDANCE_BATCH_SIZE", 1000, { min: 100, max: 10000 });
+const GRADE_BATCH_SIZE = toIntEnv("SEED_GRADE_BATCH_SIZE", 1000, { min: 100, max: 10000 });
+const REAL_LESSON_BATCH_SIZE = toIntEnv("SEED_REAL_LESSON_BATCH_SIZE", 1000, { min: 100, max: 10000 });
+const ATTENDANCE_HISTORY_MONTHS = toIntEnv("SEED_ATTENDANCE_MONTHS", 2, { min: 0, max: 12 });
+const SEED_INCLUDE_ATTENDANCE_HISTORY = toBoolEnv("SEED_INCLUDE_ATTENDANCE_HISTORY", true);
+const SEED_INCLUDE_TODAY_ATTENDANCE = toBoolEnv("SEED_INCLUDE_TODAY_ATTENDANCE", true);
+const SEED_INCLUDE_FINANCE = toBoolEnv("SEED_INCLUDE_FINANCE", true);
+const SEED_INCLUDE_PAYROLL = toBoolEnv("SEED_INCLUDE_PAYROLL", true);
 
 function buildBirthDate(yearOffset) {
   return new Date(1989 + yearOffset, yearOffset % 12, (yearOffset % 27) + 1);
@@ -662,7 +684,7 @@ async function seedSchedule(classrooms, subjectIds) {
 
 async function seedAttendanceAndGradesHistory() {
   const today = toUtcDateOnly(new Date());
-  const startDate = startOfMonthsAgoUtc(today, 2);
+  const startDate = startOfMonthsAgoUtc(today, ATTENDANCE_HISTORY_MONTHS);
 
   const darslar = await prisma.darsJadvali.findMany({
     where: { oquvYili: DEFAULT_ACADEMIC_YEAR },
@@ -1559,20 +1581,68 @@ async function seedAttendanceHistory(months = 0) {
 */
 
 async function main() {
+  console.log(
+    `[seed] config students=${STUDENT_COUNT} attendanceMonths=${ATTENDANCE_HISTORY_MONTHS} attendance=${SEED_INCLUDE_ATTENDANCE_HISTORY} todayAttendance=${SEED_INCLUDE_TODAY_ATTENDANCE} finance=${SEED_INCLUDE_FINANCE} payroll=${SEED_INCLUDE_PAYROLL}`,
+  );
+
   await ensureAdmin();
   await ensureManager();
+  console.log("[seed] auth users ready");
 
   const subjectIds = await ensureDefaultSubjects();
   const classrooms = await ensureDefaultClassrooms();
   await ensureDefaultVaqtOraliqlari();
+  console.log("[seed] subjects, classrooms, and time slots ready");
 
   const teacherResult = await seedTeachers(subjectIds);
   const studentResult = await seedStudents(STUDENT_COUNT, classrooms);
   const scheduleResult = await seedSchedule(classrooms, subjectIds);
-  const historyResult = await seedAttendanceAndGradesHistory();
-  const todayAttendance = await seedTodayAttendanceIfMissing();
-  const financeResult = await seedFinanceData();
-  const payrollResult = await seedPayrollFromSeptemberToCurrentMonth();
+  console.log("[seed] teachers, students, and schedule ready");
+
+  const historyResult = SEED_INCLUDE_ATTENDANCE_HISTORY
+    ? await seedAttendanceAndGradesHistory()
+    : {
+        deletedDavomat: 0,
+        deletedBaholar: 0,
+        createdDavomat: 0,
+        createdBaholar: 0,
+        startDate: null,
+        endDate: null,
+      };
+  console.log("[seed] attendance history ready");
+
+  const todayAttendance = SEED_INCLUDE_TODAY_ATTENDANCE
+    ? await seedTodayAttendanceIfMissing()
+    : { created: 0, skipped: true };
+  console.log("[seed] today attendance ready");
+
+  const financeResult = SEED_INCLUDE_FINANCE
+    ? await seedFinanceData()
+    : {
+        students: 0,
+        transactions: 0,
+        qoplamalar: 0,
+        imtiyozlar: 0,
+        thisMonthDebtors: 0,
+        twoThreeMonthDebtors: 0,
+        debtFree: 0,
+      };
+  console.log("[seed] finance ready");
+
+  const payrollResult = SEED_INCLUDE_PAYROLL
+    ? await seedPayrollFromSeptemberToCurrentMonth()
+    : {
+        startDate: null,
+        endDate: null,
+        totalPayable: 0,
+        unpaidMonthKey: null,
+        employees: { totalUsers: 0, created: 0, updated: 0, linkedTeachers: 0, linkedAdmins: 0, byKind: {} },
+        rates: { createdSubjectRates: 0, deletedTeacherRates: 0, deletedSubjectRates: 0 },
+        cleanupRuns: { deletedRuns: 0 },
+        realLessons: { deleted: 0, created: 0 },
+        runs: { months: [], generated: 0, approved: 0, paid: 0, totals: [] },
+      };
+  console.log("[seed] payroll ready");
 
   console.log("Seed completed");
   console.log(`Subjects => total: ${Object.keys(subjectIds).length}`);
@@ -1580,9 +1650,13 @@ async function main() {
   console.log(`Teachers => target: ${teacherResult.total}, created: ${teacherResult.created}, updated: ${teacherResult.updated}`);
   console.log(`Students => target: ${studentResult.total}, created: ${studentResult.created}, updated: ${studentResult.updated}`);
   console.log(`Schedule lessons => created: ${scheduleResult.created}`);
-  console.log(
-    `Attendance (3 oy -> bugun) => deleted: ${historyResult.deletedDavomat}, created: ${historyResult.createdDavomat}, range: ${historyResult.startDate.toISOString().slice(0, 10)}..${historyResult.endDate.toISOString().slice(0, 10)}`,
-  );
+  if (historyResult.startDate && historyResult.endDate) {
+    console.log(
+      `Attendance (${ATTENDANCE_HISTORY_MONTHS} oy -> bugun) => deleted: ${historyResult.deletedDavomat}, created: ${historyResult.createdDavomat}, range: ${historyResult.startDate.toISOString().slice(0, 10)}..${historyResult.endDate.toISOString().slice(0, 10)}`,
+    );
+  } else {
+    console.log("Attendance => skipped");
+  }
   console.log(`Today attendance ensure => created: ${todayAttendance.created}, skipped: ${todayAttendance.skipped}`);
   console.log(
     `Grades (JORIY/NAZORAT/ORALIQ) => deleted: ${historyResult.deletedBaholar}, created: ${historyResult.createdBaholar}`,
@@ -1593,9 +1667,13 @@ async function main() {
   console.log(
     `Finance segments => shu oy qarzdor: ${financeResult.thisMonthDebtors}, 2-3 oy qarzdor: ${financeResult.twoThreeMonthDebtors}, qarzi yo'q: ${financeResult.debtFree}`,
   );
-  console.log(
-    `Payroll range (Sep -> current month) => ${payrollResult.startDate.toISOString().slice(0, 10)}..${payrollResult.endDate.toISOString().slice(0, 10)} (${payrollResult.runs.months.length} oy)`,
-  );
+  if (payrollResult.startDate && payrollResult.endDate) {
+    console.log(
+      `Payroll range (Sep -> current month) => ${payrollResult.startDate.toISOString().slice(0, 10)}..${payrollResult.endDate.toISOString().slice(0, 10)} (${payrollResult.runs.months.length} oy)`,
+    );
+  } else {
+    console.log("Payroll => skipped");
+  }
   console.log(
     `Payroll employees => total: ${payrollResult.employees.totalUsers}, created: ${payrollResult.employees.created}, updated: ${payrollResult.employees.updated}, linkedTeachers: ${payrollResult.employees.linkedTeachers}, linkedAdmins: ${payrollResult.employees.linkedAdmins}`,
   );

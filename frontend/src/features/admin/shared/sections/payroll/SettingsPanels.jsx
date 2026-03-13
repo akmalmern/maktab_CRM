@@ -70,8 +70,8 @@ export function PayrollSettingsHeader({
 
   return (
     <Card
-      title={t('Sozlamalar')}
-      subtitle={t("Kam ishlatiladigan bo'limlar shu yerga yig'ilgan")}
+      title={t('Kengaytirilgan')}
+      subtitle={t("Faqat oylikka tegishli sozlamalar. O'tilgan darslar va avanslar mos bo'limlarga ko'chirildi.")}
     >
       <Tabs value={settingsTab} onChange={setSettingsTab} items={settingsTabs} />
     </Card>
@@ -206,9 +206,11 @@ export function PayrollRatesPanel({
   busy,
   openRateCreateDrawer,
   payrollTeacherRatesQuery,
+  loadMoreTeacherRates,
   teacherRatesColumns,
   teacherRates,
   payrollSubjectRatesQuery,
+  loadMoreSubjectRates,
   subjectRatesColumns,
   subjectRates,
 }) {
@@ -218,6 +220,26 @@ export function PayrollRatesPanel({
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 px-3 py-2 text-xs text-slate-700 xl:col-span-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-indigo-200 bg-white px-1.5 text-[11px] font-semibold text-indigo-700">
+            1
+          </span>
+          <span className="font-semibold text-slate-800">{t("O'qituvchi stavkalari")}</span>
+          <span className="text-slate-400">{'>'}</span>
+          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-slate-200 bg-white px-1.5 text-[11px] font-semibold text-slate-700">
+            2
+          </span>
+          <span className="font-semibold text-slate-800">{t('Fan stavkalari')}</span>
+        </div>
+        <div className="mt-1 text-slate-600">
+          {t("Bu stavka fan bo'yicha umumiy stavkadan ustun turadi.")}
+        </div>
+        <div className="text-slate-600">
+          {t("Alohida o'qituvchi stavkasi bo'lmasa, shu fan stavkasi qo'llanadi.")}
+        </div>
+      </div>
+
       <Card
         title={t("O'qituvchi stavkalari")}
         subtitle={t("Muayyan o'qituvchi uchun fan kesimida alohida soat narxini belgilang.")}
@@ -236,7 +258,29 @@ export function PayrollRatesPanel({
           ) : payrollTeacherRatesQuery.error ? (
             <StateView type="error" description={payrollTeacherRatesQuery.error?.message} />
           ) : (
-            <DataTable columns={teacherRatesColumns} rows={teacherRates} density="compact" maxHeightClassName="max-h-[380px]" />
+            <>
+              {payrollTeacherRatesQuery.partial && (
+                <div className="mb-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {t("Qisman ma'lumot yuklandi. Hammasi ko'rinmasligi mumkin.")}
+                </div>
+              )}
+              <DataTable columns={teacherRatesColumns} rows={teacherRates} density="compact" maxHeightClassName="max-h-[380px]" />
+              {(payrollTeacherRatesQuery.hasMore || payrollTeacherRatesQuery.data?.total > teacherRates.length) && (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs text-slate-500">
+                    {t('Yuklangan')}: {teacherRates.length} / {payrollTeacherRatesQuery.data?.total || teacherRates.length}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy || payrollTeacherRatesQuery.loadingMore}
+                    onClick={loadMoreTeacherRates}
+                  >
+                    {payrollTeacherRatesQuery.loadingMore ? t('Yuklanmoqda...') : t("Ko'proq yuklash")}
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </Card>
@@ -259,7 +303,29 @@ export function PayrollRatesPanel({
           ) : payrollSubjectRatesQuery.error ? (
             <StateView type="error" description={payrollSubjectRatesQuery.error?.message} />
           ) : (
-            <DataTable columns={subjectRatesColumns} rows={subjectRates} density="compact" maxHeightClassName="max-h-[380px]" />
+            <>
+              {payrollSubjectRatesQuery.partial && (
+                <div className="mb-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {t("Qisman ma'lumot yuklandi. Hammasi ko'rinmasligi mumkin.")}
+                </div>
+              )}
+              <DataTable columns={subjectRatesColumns} rows={subjectRates} density="compact" maxHeightClassName="max-h-[380px]" />
+              {(payrollSubjectRatesQuery.hasMore || payrollSubjectRatesQuery.data?.total > subjectRates.length) && (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs text-slate-500">
+                    {t('Yuklangan')}: {subjectRates.length} / {payrollSubjectRatesQuery.data?.total || subjectRates.length}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy || payrollSubjectRatesQuery.loadingMore}
+                    onClick={loadMoreSubjectRates}
+                  >
+                    {payrollSubjectRatesQuery.loadingMore ? t('Yuklanmoqda...') : t("Ko'proq yuklash")}
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </Card>
@@ -275,6 +341,16 @@ export function PayrollLessonsPanel({
   busy,
   realLessonForm,
   setRealLessonForm,
+  onRealLessonEntryModeChange,
+  onRealLessonScheduleChange,
+  onRealLessonScheduleDateChange,
+  onRealLessonTeacherChange,
+  onRealLessonSubjectChange,
+  onRealLessonStartChange,
+  replacementTeacherComboboxOptions,
+  realLessonSubjectAutoFilled,
+  realLessonLockedBySchedule,
+  scheduleLessonComboboxOptions,
   teacherComboboxOptions,
   subjects,
   classrooms,
@@ -292,6 +368,17 @@ export function PayrollLessonsPanel({
   realLessons,
 }) {
   const { t } = useTranslation();
+  const isScheduleMode = realLessonForm.entryMode === 'SCHEDULE';
+  const scheduleLockedFields = Boolean(realLessonLockedBySchedule || isScheduleMode);
+  const createDisabled =
+    !realLessonForm.teacherId ||
+    !realLessonForm.subjectId ||
+    !realLessonForm.classroomId ||
+    !realLessonForm.startAt ||
+    !realLessonForm.endAt ||
+    (isScheduleMode && (!realLessonForm.darsJadvaliId || !realLessonForm.scheduleDate)) ||
+    (realLessonForm.status === 'REPLACED' && !realLessonForm.replacedByTeacherId) ||
+    busy;
 
   if (isManagerView || tab !== 'settings' || settingsTab !== 'lessons') return null;
 
@@ -299,25 +386,70 @@ export function PayrollLessonsPanel({
     <>
       <Card title={t("O'tilgan dars qo'shish")}>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <Field label={t('Yaratish rejimi')}>
+            <Select
+              value={realLessonForm.entryMode || 'MANUAL'}
+              onChange={onRealLessonEntryModeChange || ((e) => setRealLessonForm((prev) => ({ ...prev, entryMode: e.target.value })))}
+            >
+              <option value="MANUAL">{t("Qo'lda")}</option>
+              <option value="SCHEDULE">{t('Dars jadvalidan')}</option>
+            </Select>
+          </Field>
+          {isScheduleMode ? (
+            <>
+              <Field label={t("Dars jadvali yozuvi")}>
+                <Combobox
+                  value={realLessonForm.darsJadvaliId}
+                  onChange={onRealLessonScheduleChange || ((e) => setRealLessonForm((prev) => ({ ...prev, darsJadvaliId: e.target.value })))}
+                  placeholder={t('Tanlang')}
+                  noOptionsText={t("Ma'lumot topilmadi")}
+                  options={scheduleLessonComboboxOptions || []}
+                />
+              </Field>
+              <Field label={t('Dars sanasi')}>
+                <Input
+                  type="date"
+                  value={realLessonForm.scheduleDate || ''}
+                  onChange={onRealLessonScheduleDateChange || ((e) => setRealLessonForm((prev) => ({ ...prev, scheduleDate: e.target.value })))}
+                />
+              </Field>
+            </>
+          ) : null}
           <Field label={t("O'qituvchi")}>
             <Combobox
               value={realLessonForm.teacherId}
-              onChange={(e) => setRealLessonForm((prev) => ({ ...prev, teacherId: e.target.value }))}
+              onChange={onRealLessonTeacherChange || ((e) => setRealLessonForm((prev) => ({ ...prev, teacherId: e.target.value })))}
+              disabled={scheduleLockedFields}
               placeholder={t('Tanlang')}
               noOptionsText={t("O'qituvchi topilmadi")}
               options={teacherComboboxOptions}
             />
           </Field>
           <Field label={t('Fan')}>
-            <Select value={realLessonForm.subjectId} onChange={(e) => setRealLessonForm((prev) => ({ ...prev, subjectId: e.target.value }))}>
-              <option value="">{t('Tanlang')}</option>
-              {subjects.map((subject) => (
-                <option key={subject.id} value={subject.id}>{subject.name}</option>
-              ))}
-            </Select>
+            <div className="space-y-1">
+              <Select
+                value={realLessonForm.subjectId}
+                onChange={onRealLessonSubjectChange || ((e) => setRealLessonForm((prev) => ({ ...prev, subjectId: e.target.value })))}
+                disabled={scheduleLockedFields}
+              >
+                <option value="">{t('Tanlang')}</option>
+                {subjects.map((subject) => (
+                  <option key={subject.id} value={subject.id}>{subject.name}</option>
+                ))}
+              </Select>
+              {realLessonSubjectAutoFilled ? (
+                <p className="text-[11px] text-emerald-700">
+                  {t("Fan o'qituvchidan avtomatik tanlandi (xohlasangiz o'zgartirishingiz mumkin).")}
+                </p>
+              ) : null}
+            </div>
           </Field>
           <Field label={t('Sinf')}>
-            <Select value={realLessonForm.classroomId} onChange={(e) => setRealLessonForm((prev) => ({ ...prev, classroomId: e.target.value }))}>
+            <Select
+              value={realLessonForm.classroomId}
+              onChange={(e) => setRealLessonForm((prev) => ({ ...prev, classroomId: e.target.value }))}
+              disabled={scheduleLockedFields}
+            >
               <option value="">{t('Tanlang')}</option>
               {classrooms.map((classroom) => (
                 <option key={classroom.id} value={classroom.id}>{classroom.name} ({classroom.academicYear})</option>
@@ -332,10 +464,20 @@ export function PayrollLessonsPanel({
             </Select>
           </Field>
           <Field label={t('Boshlanish')}>
-            <Input type="datetime-local" value={realLessonForm.startAt} onChange={(e) => setRealLessonForm((prev) => ({ ...prev, startAt: e.target.value }))} />
+            <Input
+              type="datetime-local"
+              value={realLessonForm.startAt}
+              onChange={onRealLessonStartChange || ((e) => setRealLessonForm((prev) => ({ ...prev, startAt: e.target.value })))}
+              disabled={scheduleLockedFields}
+            />
           </Field>
           <Field label={t('Tugash')}>
-            <Input type="datetime-local" value={realLessonForm.endAt} onChange={(e) => setRealLessonForm((prev) => ({ ...prev, endAt: e.target.value }))} />
+            <Input
+              type="datetime-local"
+              value={realLessonForm.endAt}
+              onChange={(e) => setRealLessonForm((prev) => ({ ...prev, endAt: e.target.value }))}
+              disabled={scheduleLockedFields}
+            />
           </Field>
           <Field label={t('Daqiqa (ixtiyoriy)')}>
             <Input type="number" value={realLessonForm.durationMinutes} onChange={(e) => setRealLessonForm((prev) => ({ ...prev, durationMinutes: e.target.value }))} />
@@ -347,10 +489,20 @@ export function PayrollLessonsPanel({
               disabled={realLessonForm.status !== 'REPLACED'}
               placeholder={t('Tanlang')}
               noOptionsText={t("O'qituvchi topilmadi")}
-              options={teacherComboboxOptions}
+              options={replacementTeacherComboboxOptions || teacherComboboxOptions}
             />
           </Field>
         </div>
+        {isScheduleMode && (
+          <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+            {t("Jadval rejimi: o'qituvchi, fan, sinf va vaqt tanlangan jadvaldan avtomatik olinadi.")}
+          </div>
+        )}
+        {realLessonForm.status === 'REPLACED' && (
+          <div className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
+            {t("Almashtirilgan: dars soati o'rinbosar o'qituvchiga yoziladi.")}
+          </div>
+        )}
         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
           <Textarea
             rows={2}
@@ -360,7 +512,7 @@ export function PayrollLessonsPanel({
           />
           <Button
             variant="indigo"
-            disabled={!realLessonForm.teacherId || !realLessonForm.subjectId || !realLessonForm.classroomId || !realLessonForm.startAt || !realLessonForm.endAt || (realLessonForm.status === 'REPLACED' && !realLessonForm.replacedByTeacherId) || busy}
+            disabled={createDisabled}
             onClick={handleCreateRealLesson}
           >
             {t("O'tilgan dars qo'shish")}

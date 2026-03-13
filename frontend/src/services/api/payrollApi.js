@@ -328,6 +328,25 @@ export const payrollApi = baseApi.injectEndpoints({
         }
       },
     }),
+    exportPayrollRunExcel: builder.mutation({
+      async queryFn({ runId, params = {} }) {
+        try {
+          const result = await apiDownload({
+            path: `/api/admin/moliya/oylik/runs/${runId}/export/xlsx`,
+            query: params,
+          });
+          return { data: result };
+        } catch (error) {
+          return {
+            error: {
+              status: error?.status || 500,
+              data: error?.payload || null,
+              message: getErrorMessage(error),
+            },
+          };
+        }
+      },
+    }),
 
     getTeacherPayslips: builder.query({
       query: (params = {}) => ({
@@ -357,10 +376,12 @@ export const {
   useUpdatePayrollRealLessonStatusMutation,
   useBulkUpdatePayrollRealLessonStatusMutation,
   useGetPayrollTeacherRatesQuery,
+  useLazyGetPayrollTeacherRatesQuery,
   useCreatePayrollTeacherRateMutation,
   useUpdatePayrollTeacherRateMutation,
   useDeletePayrollTeacherRateMutation,
   useGetPayrollSubjectRatesQuery,
+  useLazyGetPayrollSubjectRatesQuery,
   useCreatePayrollSubjectRateMutation,
   useUpdatePayrollSubjectRateMutation,
   useDeletePayrollSubjectRateMutation,
@@ -381,6 +402,7 @@ export const {
   usePayPayrollItemMutation,
   useReversePayrollRunMutation,
   useExportPayrollRunCsvMutation,
+  useExportPayrollRunExcelMutation,
   useGetTeacherPayslipsQuery,
   useGetTeacherPayslipDetailQuery,
 } = payrollApi;

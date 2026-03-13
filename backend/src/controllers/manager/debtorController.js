@@ -2,7 +2,6 @@ const { Prisma } = require("@prisma/client");
 const prisma = require("../../prisma");
 const { ApiError } = require("../../utils/apiError");
 const { formatMonthKey } = require("../../services/financeDebtService");
-const { syncStudentOyMajburiyatlar } = require("../../services/financeMajburiyatService");
 const {
   resolveManagerScopedClassroomFilter,
   ensureManagerCanAccessStudent,
@@ -356,51 +355,6 @@ async function getDebtors(req, res) {
   const now = new Date();
   const currentYear = now.getUTCFullYear();
   const currentMonth = now.getUTCMonth() + 1;
-  const scopeSql = classroomId
-    ? Prisma.sql`AND EXISTS (
-        SELECT 1
-        FROM "Enrollment" e2
-        WHERE e2."studentId" = s.id
-          AND e2."isActive" = true
-          AND e2."classroomId" = ${classroomId}
-      )`
-    : Array.isArray(classroomIds)
-      ? Prisma.sql`AND EXISTS (
-          SELECT 1
-          FROM "Enrollment" e2
-          WHERE e2."studentId" = s.id
-            AND e2."isActive" = true
-            AND e2."classroomId" IN (${Prisma.join(classroomIds)})
-        )`
-      : Prisma.empty;
-
-  const missingCurrentRows = await prisma.$queryRaw`
-    SELECT s.id
-    FROM "Student" s
-    WHERE NOT EXISTS (
-      SELECT 1
-      FROM "StudentOyMajburiyat" m
-      WHERE m."studentId" = s.id
-        AND m.yil = ${currentYear}
-        AND m.oy = ${currentMonth}
-    )
-    ${scopeSql}
-    LIMIT 500
-  `;
-  if (missingCurrentRows.length) {
-    try {
-      await syncStudentOyMajburiyatlar({
-        studentIds: missingCurrentRows.map((row) => row.id),
-        oylikSumma: settings.oylikSumma,
-        futureMonths: 0,
-        chargeableMonths: settings.chargeableMonths,
-      });
-    } catch (error) {
-      // Compatibility mode: finance schema migrations may be partially applied.
-      // Manager debtor list should still open using existing StudentOyMajburiyat data.
-      if (!isSchemaMismatchError(error)) throw error;
-    }
-  }
 
   const whereSql = buildDebtorsWhereSql({ search, classroomId, classroomIds });
 
@@ -618,17 +572,6 @@ async function createDebtorNote(req, res) {
   if (!student) {
     throw new ApiError(404, "STUDENT_NOT_FOUND", "Student topilmadi");
   }
-  try {
-    await syncStudentOyMajburiyatlar({
-      studentIds: [studentId],
-      oylikSumma: settings.oylikSumma,
-      futureMonths: 0,
-      chargeableMonths: settings.chargeableMonths,
-    });
-  } catch (error) {
-    if (!isSchemaMismatchError(error)) throw error;
-  }
-
   const now = new Date();
   const currentYear = now.getUTCFullYear();
   const currentMonth = now.getUTCMonth() + 1;

@@ -1,6 +1,6 @@
-const orchestrator = require("../orchestrators/financeOrchestrator");
+const queryHandlers = require("./queryHandlers");
 
 module.exports = {
-  getFinanceStudents: orchestrator.getFinanceStudents,
-  getStudentFinanceDetail: orchestrator.getStudentFinanceDetail,
+  getFinanceStudents: queryHandlers.getFinanceStudents,
+  getStudentFinanceDetail: queryHandlers.getStudentFinanceDetail,
 };

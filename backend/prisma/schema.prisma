@@ -199,6 +199,20 @@ model RefreshSession {
   @@index([expiresAt])
 }
 
+model RateLimitBucket {
+  bucketName String
+  bucketKey String
+  count Int @default(0)
+  resetAt DateTime
+  lastSeenAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([bucketName, bucketKey])
+  @@index([resetAt])
+  @@index([lastSeenAt])
+}
+
 model Admin {
   id     String @id @default(cuid())
   userId String @unique

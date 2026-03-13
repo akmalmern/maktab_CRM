@@ -1,9 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { Prisma } = require("@prisma/client");
+const XLSX = require("xlsx");
 const prisma = require("../src/prisma");
 const payrollService = require("../src/services/payroll/payrollService");
 const financeOrchestrator = require("../src/controllers/admin/finance/orchestrators/financeOrchestrator");
+const {
+  executeExportDebtorsXlsx,
+} = require("../src/controllers/admin/finance/useCases/exportDebtorsXlsx");
 
 async function runWithStubs(stubs, fn) {
   const restores = stubs.map(({ obj, key, value }) => {
@@ -599,10 +603,29 @@ test(
             if (sqlText.includes('SELECT s.id') && sqlText.includes('FROM "Student" s')) {
               return [{ id: "student_1" }, { id: "student_2" }];
             }
-            if (sqlText.includes('AS "totalDebtAmount"') && sqlText.includes('GROUP BY m."studentId"')) {
+            if (sqlText.includes('COUNT(*)::int AS "totalRows"') && sqlText.includes("FROM filtered")) {
+              return [
+                {
+                  totalRows: 1,
+                  totalDebtors: 1,
+                  totalDebtAmount: 600000,
+                  thisMonthDebtors: 1,
+                  previousMonthDebtors: 1,
+                  selectedMonthDebtors: 0,
+                  thisMonthDebtAmount: 300000,
+                  previousMonthDebtAmount: 300000,
+                  selectedMonthDebtAmount: 0,
+                },
+              ];
+            }
+            if (sqlText.includes('TRIM(CONCAT') && sqlText.includes('ORDER BY "totalDebtAmount" DESC')) {
               return [
                 {
                   studentId: "student_1",
+                  fullName: "Ali Karimov",
+                  username: "student_1",
+                  classroomId: "class_10a",
+                  classroom: "10-A (2025-2026)",
                   totalDebtAmount: 600000,
                   thisMonthDebtAmount: 300000,
                   previousMonthDebtAmount: 300000,
@@ -610,6 +633,25 @@ test(
                   debtMonths: 2,
                 },
               ];
+            }
+            if (sqlText.includes('COUNT(*)::int AS "debtorCount"') && sqlText.includes('GROUP BY "classroomId"')) {
+              return [
+                {
+                  classroomId: "class_10a",
+                  classroom: "10-A (2025-2026)",
+                  debtorCount: 1,
+                  totalDebtAmount: 600000,
+                  thisMonthDebtAmount: 300000,
+                  previousMonthDebtAmount: 300000,
+                  selectedMonthDebtAmount: 0,
+                },
+              ];
+            }
+            if (sqlText.includes('COALESCE(SUM(m."netSumma"), 0)::int AS "monthlyPlanAmount"')) {
+              return [{ monthlyPlanAmount: 300000 }];
+            }
+            if (sqlText.includes('COALESCE(SUM(CASE WHEN t."tolovSana" >=') && sqlText.includes('AS "thisYearPaidAmount"')) {
+              return [{ thisMonthPaidAmount: 0, thisYearPaidAmount: 0 }];
             }
             if (sqlText.includes('COUNT(*)::int AS "count"')) {
               return [{ count: 1 }];
@@ -667,13 +709,6 @@ test(
               },
             ];
           },
-        },
-        {
-          obj: prisma.studentOyMajburiyat,
-          key: "aggregate",
-          value: async () => ({
-            _sum: { netSumma: new Prisma.Decimal(300000) },
-          }),
         },
         {
           obj: prisma.organization,
@@ -754,3 +789,58 @@ test(
     });
   },
 );
+
+test("integration: finance debtor xlsx export batched rows bilan bir xil ma'lumot qaytaradi", async () => {
+  const result = await executeExportDebtorsXlsx({
+    deps: {
+      processFinanceRowsInBatches: async ({ onBatch }) => {
+        await onBatch([
+          {
+            fullName: "Ali Karimov",
+            username: "student_1",
+            classroom: "10-A (2025-2026)",
+            qarzOylarSoni: 2,
+            qarzOylarFormatted: ["2026-02", "2026-03"],
+            jamiQarzSumma: 600000,
+          },
+        ]);
+        await onBatch([
+          {
+            fullName: "Vali Toshpulatov",
+            username: "student_2",
+            classroom: "10-B (2025-2026)",
+            qarzOylarSoni: 1,
+            qarzOylarFormatted: ["2026-03"],
+            jamiQarzSumma: 300000,
+          },
+        ]);
+      },
+    },
+    search: "",
+    classroomId: null,
+    classroomIds: null,
+  });
+
+  assert.equal(result.rowCount, 2);
+  const workbook = XLSX.read(result.buffer, { type: "buffer" });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet);
+  assert.deepEqual(rows, [
+    {
+      Oquvchi: "Ali Karimov",
+      Username: "student_1",
+      Sinf: "10-A (2025-2026)",
+      QarzOylarSoni: 2,
+      QarzOylar: "2026-02, 2026-03",
+      JamiQarzSom: 600000,
+    },
+    {
+      Oquvchi: "Vali Toshpulatov",
+      Username: "student_2",
+      Sinf: "10-B (2025-2026)",
+      QarzOylarSoni: 1,
+      QarzOylar: "2026-03",
+      JamiQarzSom: 300000,
+    },
+  ]);
+});

@@ -188,6 +188,19 @@ async function exportPayrollRunCsv(req, res) {
   res.send(result.csv);
 }
 
+async function exportPayrollRunExcel(req, res) {
+  const result = await payrollService.exportPayrollRunExcel({
+    runId: req.params.runId,
+    query: req.query,
+  });
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
+  res.setHeader("Content-Disposition", `attachment; filename="${result.fileName}"`);
+  res.send(result.buffer);
+}
+
 async function addPayrollAdjustment(req, res) {
   const result = await payrollService.addPayrollAdjustment({
     runId: req.params.runId,
@@ -273,6 +286,7 @@ module.exports = {
   listPayrollRuns,
   getPayrollRunDetail,
   exportPayrollRunCsv,
+  exportPayrollRunExcel,
   addPayrollAdjustment,
   deletePayrollAdjustment,
   approvePayrollRun,

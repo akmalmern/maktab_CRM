@@ -49,6 +49,18 @@ async function ensureMainOrganization(tx) {
 async function saveTeacherDarsDavomatiByUserId({ userId, darsId, body }) {
   const { sana: sanaStr, davomatlar } = body;
   const { sana } = parseSanaOrToday(sanaStr);
+  const seenStudentIds = new Set();
+  for (const row of davomatlar || []) {
+    if (!row?.studentId) continue;
+    if (seenStudentIds.has(row.studentId)) {
+      throw new ApiError(
+        400,
+        "DAVOMAT_DUPLICATE_STUDENT",
+        "Bir student uchun bir darsda faqat bitta davomat yozuvi yuborilishi kerak",
+      );
+    }
+    seenStudentIds.add(row.studentId);
+  }
   const todayStr = localTodayIsoDate();
   if (sanaStr > todayStr) {
     throw new ApiError(
@@ -119,6 +131,7 @@ async function saveTeacherDarsDavomatiByUserId({ userId, darsId, body }) {
   const studentIds = [...new Set(davomatlar.map((item) => item.studentId))];
 
   const txResult = await prisma.$transaction(async (tx) => {
+    const org = await ensureMainOrganization(tx);
     const [existingDavomatlar, existingBaholar] = await Promise.all([
       tx.davomat.findMany({
         where: {
@@ -239,7 +252,6 @@ async function saveTeacherDarsDavomatiByUserId({ userId, darsId, body }) {
       );
     }
 
-    const org = await ensureMainOrganization(tx);
     const existingLesson = await tx.realLesson.findFirst({
       where: {
         organizationId: org.id,
@@ -267,12 +279,53 @@ async function saveTeacherDarsDavomatiByUserId({ userId, darsId, body }) {
           status: "DONE",
         },
       });
-      return { realLessonId: createdLesson.id };
+      await tx.auditLog.create({
+        data: {
+          organizationId: org.id,
+          actorUserId: userId,
+          action: "ATTENDANCE_SAVE",
+          entityType: "ATTENDANCE_SESSION",
+          entityId: `${darsId}:${sana.toISOString().slice(0, 10)}`,
+          after: {
+            darsId,
+            sana: sana.toISOString().slice(0, 10),
+            studentCount: davomatlar.length,
+            createdDavomatCount: davomatCreates.length,
+            updatedDavomatCount: davomatUpdateOps.length,
+            createdBahoCount: bahoCreates.length,
+            updatedBahoCount: bahoUpdateOps.length,
+            deletedBahoCount: bahoDeleteIds.length,
+            realLessonId: createdLesson.id,
+          },
+        },
+      });
+      return { realLessonId: createdLesson.id, organizationId: org.id };
     }
 
     // Agar dars payrollga tushib bo'lsa real lesson qatnashuvida rewrite qilinmaydi.
     if (existingLesson.payrollLines.length) {
-      return { realLessonId: existingLesson.id };
+      await tx.auditLog.create({
+        data: {
+          organizationId: org.id,
+          actorUserId: userId,
+          action: "ATTENDANCE_SAVE",
+          entityType: "ATTENDANCE_SESSION",
+          entityId: `${darsId}:${sana.toISOString().slice(0, 10)}`,
+          after: {
+            darsId,
+            sana: sana.toISOString().slice(0, 10),
+            studentCount: davomatlar.length,
+            createdDavomatCount: davomatCreates.length,
+            updatedDavomatCount: davomatUpdateOps.length,
+            createdBahoCount: bahoCreates.length,
+            updatedBahoCount: bahoUpdateOps.length,
+            deletedBahoCount: bahoDeleteIds.length,
+            realLessonId: existingLesson.id,
+            payrollLockedLesson: true,
+          },
+        },
+      });
+      return { realLessonId: existingLesson.id, organizationId: org.id };
     }
 
     const updatedLesson = await tx.realLesson.update({
@@ -288,7 +341,27 @@ async function saveTeacherDarsDavomatiByUserId({ userId, darsId, body }) {
       },
       select: { id: true },
     });
-    return { realLessonId: updatedLesson.id };
+    await tx.auditLog.create({
+      data: {
+        organizationId: org.id,
+        actorUserId: userId,
+        action: "ATTENDANCE_SAVE",
+        entityType: "ATTENDANCE_SESSION",
+        entityId: `${darsId}:${sana.toISOString().slice(0, 10)}`,
+        after: {
+          darsId,
+          sana: sana.toISOString().slice(0, 10),
+          studentCount: davomatlar.length,
+          createdDavomatCount: davomatCreates.length,
+          updatedDavomatCount: davomatUpdateOps.length,
+          createdBahoCount: bahoCreates.length,
+          updatedBahoCount: bahoUpdateOps.length,
+          deletedBahoCount: bahoDeleteIds.length,
+          realLessonId: updatedLesson.id,
+        },
+      },
+    });
+    return { realLessonId: updatedLesson.id, organizationId: org.id };
   });
 
   let payrollAutoRun = { refreshed: false, skipped: false, reason: null };

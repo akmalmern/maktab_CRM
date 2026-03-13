@@ -1,0 +1,79 @@
+name: maktab-crm
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: maktab-crm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-maktab_crm}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-maktab_crm}
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+      target: dev
+    container_name: maktab-crm-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-maktab_crm}?schema=public
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-docker-local-access-secret-123456}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-docker-local-refresh-secret-123456}
+      ACCESS_EXPIRES: ${ACCESS_EXPIRES:-15m}
+      REFRESH_EXPIRES: ${REFRESH_EXPIRES:-7d}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      TRUST_PROXY: ${TRUST_PROXY:-0}
+      ENABLE_AUTO_CLASS_PROMOTION: ${ENABLE_AUTO_CLASS_PROMOTION:-false}
+      ENABLE_AUTO_PAYROLL: ${ENABLE_AUTO_PAYROLL:-false}
+      ENABLE_AUTO_FINANCE: ${ENABLE_AUTO_FINANCE:-false}
+      ENABLE_REFRESH_SESSION_CLEANUP: ${ENABLE_REFRESH_SESSION_CLEANUP:-true}
+      MANAGER_SCOPE_ENFORCED: ${MANAGER_SCOPE_ENFORCED:-true}
+    command: sh -c "npx prisma migrate deploy && npm run dev"
+    ports:
+      - "${BACKEND_PORT:-5000}:5000"
+    volumes:
+      - ./backend:/app
+      - backend_node_modules:/app/node_modules
+      - ./uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    container_name: maktab-crm-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-}
+      VITE_PROXY_TARGET: ${VITE_PROXY_TARGET:-http://backend:5000}
+      CHOKIDAR_USEPOLLING: ${CHOKIDAR_USEPOLLING:-true}
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+
+volumes:
+  postgres_data:
+  backend_node_modules:
+  frontend_node_modules:

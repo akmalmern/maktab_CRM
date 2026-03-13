@@ -15,7 +15,6 @@ export default function FinancePaymentsList({
   exporting,
   onExportDebtors,
   onOpenPayroll,
-  isClassroomSelected,
   openPaymentModal,
   MiniStatCard,
   MonthChips,
@@ -100,15 +99,9 @@ export default function FinancePaymentsList({
         </div>
       </div>
 
-      {!isClassroomSelected && (
-        <StateView
-          type="empty"
-          description={t("Pastdagi jadvalni ko'rish uchun sinfni tanlang. Yuqoridagi umumiy statistika ko'rinishda qoladi.")}
-        />
-      )}
-      {isClassroomSelected && studentsState.loading && <StateView type="loading" />}
-      {isClassroomSelected && studentsState.error && <StateView type="error" description={studentsState.error} />}
-      {isClassroomSelected && !studentsState.loading && !studentsState.error && (
+      {studentsState.loading && <StateView type="loading" />}
+      {studentsState.error && <StateView type="error" description={studentsState.error} />}
+      {!studentsState.loading && !studentsState.error && (
         <>
           <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1 lg:hidden">
             {students.map((row) => (
@@ -208,7 +201,7 @@ export default function FinancePaymentsList({
         </>
       )}
 
-      {isClassroomSelected && (
+      {!studentsState.loading && !studentsState.error && (
         <div className="mt-3 flex justify-end gap-2">
           <Button
             size="sm"

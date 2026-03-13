@@ -19,7 +19,7 @@
 //       return new ApiError(
 //         409,
 //         "FOREIGN_KEY_CONSTRAINT",
-//         "Bog‘langan ma’lumot xatoligi",
+//         "Bog'langan ma'lumot xatoligi",
 //       );
 //     return new ApiError(400, "PRISMA_ERROR", "Database xatoligi", {
 //       prismaCode: err.code,
@@ -33,7 +33,7 @@
 //       ? target.join(",")
 //       : String(target || "");
 
-//     // ✅ Student duplicate
+//     // Student duplicate
 //     if (
 //       targetStr.includes("firstName") &&
 //       targetStr.includes("lastName") &&
@@ -42,7 +42,7 @@
 //       return new ApiError(
 //         409,
 //         "STUDENT_ALREADY_EXISTS",
-//         "Bu user allaqachon qo‘shilgan",
+//         "Bu user allaqachon qo'shilgan",
 //       );
 //     }
 
@@ -58,7 +58,7 @@
 //     return new ApiError(
 //       400,
 //       "PRISMA_VALIDATION",
-//       "So‘rov parametrlari noto‘g‘ri",
+//       "So'rov parametrlari noto'g'ri",
 //     );
 //   }
 
@@ -76,7 +76,7 @@ function normalizeTarget(target) {
 }
 
 function mapPrismaError(err) {
-  // ✅ Prisma known request errors (unique, fk, not found, etc.)
+  // Prisma known request errors (unique, fk, not found, etc.)
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     // P2002: Unique constraint failed
     if (err.code === "P2002") {
@@ -84,7 +84,7 @@ function mapPrismaError(err) {
       const targetStr = normalizeTarget(target);
       const targetLower = targetStr.toLowerCase();
 
-      // ✅ Student duplicate (firstName+lastName+birthDate unique)
+      // Student duplicate (firstName+lastName+birthDate unique)
       if (
         targetStr.includes("firstName") &&
         targetStr.includes("lastName") &&
@@ -93,19 +93,19 @@ function mapPrismaError(err) {
         return new ApiError(
           409,
           "STUDENT_ALREADY_EXISTS",
-          "Bu student allaqachon qo‘shilgan",
+          "Bu student allaqachon qo'shilgan",
           { target },
         );
       }
 
-      // ✅ Username duplicate
+      // Username duplicate
       if (targetStr.includes("username")) {
         return new ApiError(409, "USERNAME_TAKEN", "Bu username band", {
           target,
         });
       }
 
-      // ✅ Phone duplicate
+      // Phone duplicate
       if (targetStr.includes("phone")) {
         return new ApiError(
           409,
@@ -197,7 +197,7 @@ function mapPrismaError(err) {
       return new ApiError(
         409,
         "FOREIGN_KEY_CONSTRAINT",
-        "Bog‘langan ma’lumot xatoligi",
+        "Bog'langan ma'lumot xatoligi",
         { field: err.meta?.field_name },
       );
     }
@@ -208,12 +208,12 @@ function mapPrismaError(err) {
     });
   }
 
-  // ✅ Prisma validation errors (wrong query shape)
+  // Prisma validation errors (wrong query shape)
   if (err instanceof Prisma.PrismaClientValidationError) {
     return new ApiError(
       400,
       "PRISMA_VALIDATION",
-      "So‘rov parametrlari noto‘g‘ri",
+      "So'rov parametrlari noto'g'ri",
     );
   }
 
@@ -221,3 +221,4 @@ function mapPrismaError(err) {
 }
 
 module.exports = { mapPrismaError };
+

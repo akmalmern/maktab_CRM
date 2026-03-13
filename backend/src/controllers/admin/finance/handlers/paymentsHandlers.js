@@ -1,8 +1,9 @@
-const orchestrator = require("../orchestrators/financeOrchestrator");
+const queryHandlers = require("./queryHandlers");
+const commandHandlers = require("./commandHandlers");
 
 module.exports = {
-  previewStudentPayment: orchestrator.previewStudentPayment,
-  createStudentPayment: orchestrator.createStudentPayment,
-  revertPayment: orchestrator.revertPayment,
-  partialRevertPayment: orchestrator.partialRevertPayment,
+  previewStudentPayment: queryHandlers.previewStudentPayment,
+  createStudentPayment: commandHandlers.createStudentPayment,
+  revertPayment: commandHandlers.revertPayment,
+  partialRevertPayment: commandHandlers.partialRevertPayment,
 };

@@ -1,6 +1,6 @@
-const orchestrator = require("../orchestrators/financeOrchestrator");
+const commandHandlers = require("./commandHandlers");
 
 module.exports = {
-  createStudentImtiyoz: orchestrator.createStudentImtiyoz,
-  deactivateStudentImtiyoz: orchestrator.deactivateStudentImtiyoz,
+  createStudentImtiyoz: commandHandlers.createStudentImtiyoz,
+  deactivateStudentImtiyoz: commandHandlers.deactivateStudentImtiyoz,
 };

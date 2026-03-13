@@ -20,6 +20,17 @@ export const subjectsApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: [{ type: 'Subject', id: 'LIST' }],
     }),
+    updateSubject: builder.mutation({
+      query: ({ subjectId, payload }) => ({
+        path: `/api/admin/subjects/${subjectId}`,
+        method: 'PATCH',
+        body: payload,
+      }),
+      invalidatesTags: (result, error, { subjectId }) => [
+        { type: 'Subject', id: subjectId },
+        { type: 'Subject', id: 'LIST' },
+      ],
+    }),
     deleteSubject: builder.mutation({
       query: (subjectId) => ({
         path: `/api/admin/subjects/${subjectId}`,
@@ -36,6 +47,6 @@ export const subjectsApi = baseApi.injectEndpoints({
 export const {
   useGetSubjectsQuery,
   useCreateSubjectMutation,
+  useUpdateSubjectMutation,
   useDeleteSubjectMutation,
 } = subjectsApi;
-

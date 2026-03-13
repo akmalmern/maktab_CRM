@@ -1,0 +1,107 @@
+name: maktab-crm-prod
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: maktab-crm-prod-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-maktab_crm}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-maktab_crm}
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend-migrate:
+    build:
+      context: ./backend
+      target: migrate
+    container_name: maktab-crm-prod-migrate
+    profiles:
+      - ops
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-maktab_crm}?schema=public
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+      target: production
+    container_name: maktab-crm-prod-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-5000}:5000"
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-maktab_crm}?schema=public
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      ACCESS_EXPIRES: ${ACCESS_EXPIRES:-15m}
+      REFRESH_EXPIRES: ${REFRESH_EXPIRES:-7d}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      RATE_LIMIT_STORE: ${RATE_LIMIT_STORE:-db}
+      LOGIN_RATE_LIMIT_WINDOW_MINUTES: ${LOGIN_RATE_LIMIT_WINDOW_MINUTES:-10}
+      LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-12}
+      REFRESH_RATE_LIMIT_WINDOW_MINUTES: ${REFRESH_RATE_LIMIT_WINDOW_MINUTES:-10}
+      REFRESH_RATE_LIMIT_MAX: ${REFRESH_RATE_LIMIT_MAX:-40}
+      RATE_LIMIT_DB_CLEANUP_EVERY: ${RATE_LIMIT_DB_CLEANUP_EVERY:-100}
+      RATE_LIMIT_DB_RETENTION_HOURS: ${RATE_LIMIT_DB_RETENTION_HOURS:-24}
+      MONITORING_TOKEN: ${MONITORING_TOKEN:-}
+      ENABLE_AUTO_CLASS_PROMOTION: ${ENABLE_AUTO_CLASS_PROMOTION:-false}
+      ENABLE_AUTO_PAYROLL: ${ENABLE_AUTO_PAYROLL:-false}
+      ENABLE_AUTO_FINANCE: ${ENABLE_AUTO_FINANCE:-false}
+      ENABLE_REFRESH_SESSION_CLEANUP: ${ENABLE_REFRESH_SESSION_CLEANUP:-true}
+      MANAGER_SCOPE_ENFORCED: ${MANAGER_SCOPE_ENFORCED:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      HTTP_ACCESS_LOGS: ${HTTP_ACCESS_LOGS:-true}
+      SLOW_REQUEST_WARN_MS: ${SLOW_REQUEST_WARN_MS:-1500}
+    volumes:
+      - uploads_prod_data:/app/uploads
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:5000/health').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    build:
+      context: ./frontend
+      target: production
+    container_name: maktab-crm-prod-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O /dev/null http://127.0.0.1/ || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_prod_data:
+  uploads_prod_data:

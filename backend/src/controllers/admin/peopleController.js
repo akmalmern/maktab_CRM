@@ -16,6 +16,9 @@ const {
   buildImtiyozMonthMap,
   buildDebtInfo,
 } = require("../../services/financeDebtService");
+const {
+  syncStudentsMajburiyatByMainSettings,
+} = require("../../services/financeMajburiyatService");
 
 const MAIN_ORG_KEY = "MAIN";
 const MAIN_ORG_NAME = "Asosiy tashkilot";
@@ -402,6 +405,12 @@ async function createStudent(req, res) {
 
     await tx.enrollment.create({
       data: { studentId: student.id, classroomId },
+    });
+
+    await syncStudentsMajburiyatByMainSettings({
+      prismaClient: tx,
+      studentIds: [student.id],
+      futureMonths: 3,
     });
 
     return { student, username: finalUsername, plainPassword };
@@ -850,6 +859,11 @@ async function restoreStudent(req, res) {
           await tx.enrollment.update({
             where: { id: latestEnrollment.id },
             data: { isActive: true, endDate: null },
+          });
+          await syncStudentsMajburiyatByMainSettings({
+            prismaClient: tx,
+            studentIds: [student.id],
+            futureMonths: 3,
           });
           enrollmentRestored = true;
         }

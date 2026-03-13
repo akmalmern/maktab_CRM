@@ -111,6 +111,7 @@ export const peopleApi = baseApi.injectEndpoints({
 
 export const {
   useGetTeachersQuery,
+  useLazyGetTeachersQuery,
   useGetStudentsQuery,
   useDeleteTeacherMutation,
   useRestoreTeacherMutation,

@@ -41,8 +41,8 @@ export default function CreatePersonPanel({
     parentPhone: '',
   });
 
-  const selectedSubjectId = teacherForm.subjectId || subjects[0]?.id || '';
-  const selectedClassroomId = studentForm.classroomId || classrooms[0]?.id || '';
+  const selectedSubjectId = teacherForm.subjectId || '';
+  const selectedClassroomId = studentForm.classroomId || '';
   const effectiveCreateTab = mode === 'both' ? createTab : mode;
 
   async function handleTeacherSubmit(event) {
@@ -145,7 +145,7 @@ export default function CreatePersonPanel({
                 value={selectedSubjectId}
                 onChange={(event) => setTeacherForm((prev) => ({ ...prev, subjectId: event.target.value }))}
               >
-                {!subjects.length && <option value="">{t("Avval fan qo'shing")}</option>}
+                <option value="">{subjects.length ? t('Tanlang') : t("Avval fan qo'shing")}</option>
                 {subjects.map((subject) => (
                   <option key={subject.id} value={subject.id}>
                     {t(subject.name, { defaultValue: subject.name })}
@@ -163,7 +163,7 @@ export default function CreatePersonPanel({
                 <Button
                   type="submit"
                   variant="success"
-                  disabled={loading || !subjects.length}
+                  disabled={loading || !subjects.length || !selectedSubjectId}
                   className="w-full"
                 >
                   {loading ? t('Saqlanmoqda...') : t('Teacher yaratish')}
@@ -216,7 +216,7 @@ export default function CreatePersonPanel({
                 value={selectedClassroomId}
                 onChange={(event) => setStudentForm((prev) => ({ ...prev, classroomId: event.target.value }))}
               >
-                {!classrooms.length && <option value="">{t("Avval sinf qo'shing")}</option>}
+                <option value="">{classrooms.length ? t('Tanlang') : t("Avval sinf qo'shing")}</option>
                 {classrooms.map((classroom) => (
                   <option key={classroom.id} value={classroom.id}>
                     {classroom.name} ({classroom.academicYear})
@@ -252,7 +252,7 @@ export default function CreatePersonPanel({
                 <Button
                   type="submit"
                   variant="success"
-                  disabled={loading || !classrooms.length}
+                  disabled={loading || !classrooms.length || !selectedClassroomId}
                   className="w-full"
                 >
                   {loading ? t('Saqlanmoqda...') : t('Student yaratish')}

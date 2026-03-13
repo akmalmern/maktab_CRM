@@ -1,12 +1,29 @@
 const { ApiError } = require("../../utils/apiError");
 const { env } = require("../../config/env");
+const {
+  tryAcquireDistributedLock,
+  releaseDistributedLock,
+} = require("../automationLockService");
+const { logger } = require("../../utils/logger");
 const payrollService = require("./payrollService");
 
 let running = false;
+const payrollAutomationLogger = logger.child({ component: "payroll_automation" });
 
 async function runAutoPayrollTick() {
   if (running) {
-    console.log("[AUTO_PAYROLL] skipped: previous tick still running");
+    payrollAutomationLogger.info("auto_payroll_skipped", {
+      reason: "already_running",
+    });
+    return;
+  }
+  const lockKey = "auto_payroll_tick";
+  const lockAcquired = await tryAcquireDistributedLock({ key: lockKey });
+  if (!lockAcquired) {
+    payrollAutomationLogger.info("auto_payroll_skipped", {
+      reason: "distributed_lock_held",
+      lockKey,
+    });
     return;
   }
   running = true;
@@ -27,18 +44,25 @@ async function runAutoPayrollTick() {
       .map((step) => step.step)
       .join(",");
 
-    console.log(
-      `[AUTO_PAYROLL] period=${result.periodMonth} completedSteps=${completedSteps || "none"} blockers=${result.healthAfter?.summary?.blockerCount || 0}`,
-    );
+    payrollAutomationLogger.info("auto_payroll_completed", {
+      periodMonth: result.periodMonth,
+      completedSteps: completedSteps || "none",
+      blockerCount: Number(result.healthAfter?.summary?.blockerCount || 0),
+    });
   } catch (error) {
     if (error instanceof ApiError && error.code === "PAYROLL_AUTOMATION_BLOCKED") {
       const blockerCount = Number(error.details?.health?.summary?.blockerCount || 0);
-      console.warn(`[AUTO_PAYROLL] blocked: blockers=${blockerCount}`);
+      payrollAutomationLogger.warn("auto_payroll_blocked", {
+        blockerCount,
+      });
       return;
     }
-    console.error("[AUTO_PAYROLL] error:", error?.message || error);
+    payrollAutomationLogger.error("auto_payroll_failed", {
+      error,
+    });
   } finally {
     running = false;
+    await releaseDistributedLock({ key: lockKey });
   }
 }
 

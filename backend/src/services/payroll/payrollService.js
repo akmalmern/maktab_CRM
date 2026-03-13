@@ -5,6 +5,21 @@ const {
   localDayStartUtc,
   utcDateToTashkentIsoDate,
 } = require("../../utils/tashkentTime");
+const {
+  executeRecalculatePayrollRunAggregates,
+} = require("./useCases/recalculatePayrollRunAggregates");
+const { executeApprovePayrollRun } = require("./useCases/approvePayrollRun");
+const { executePayPayrollRun } = require("./useCases/payPayrollRun");
+const { executePayPayrollItem } = require("./useCases/payPayrollItem");
+const { executeReversePayrollRun } = require("./useCases/reversePayrollRun");
+const { executeRunPayrollAutomation } = require("./useCases/runPayrollAutomation");
+const {
+  getActiveRunForPeriod: getActiveRunForPeriodRepo,
+  lockPayrollPeriodScope: lockPayrollPeriodScopeRepo,
+  getPayrollRunOrThrow: getPayrollRunOrThrowRepo,
+  lockPayrollRunRow: lockPayrollRunRowRepo,
+  lockPayrollItemRow: lockPayrollItemRowRepo,
+} = require("./repositories/payrollRunRepository");
 
 const MAIN_ORG_KEY = "MAIN";
 const MAIN_ORG_NAME = "Asosiy tashkilot";
@@ -459,6 +474,77 @@ function computeDurationMinutes(startAt, endAt, providedDuration) {
   return mins;
 }
 
+async function tryRefreshDraftPayrollForLesson({
+  lessonId,
+  actorUserId,
+  req,
+}) {
+  try {
+    const result = await refreshDraftPayrollForLesson({
+      lessonId,
+      actorUserId,
+      req,
+    });
+    return {
+      lessonId,
+      refreshed: true,
+      skipped: false,
+      reason: null,
+      runId: result?.runId || null,
+    };
+  } catch (error) {
+    if (
+      error instanceof ApiError &&
+      (error.code === "PAYROLL_RUN_LOCKED" ||
+        error.code === "PAYROLL_RATE_NOT_FOUND" ||
+        error.code === "REAL_LESSON_NOT_FOUND")
+    ) {
+      return {
+        lessonId,
+        refreshed: false,
+        skipped: true,
+        reason: error.code,
+      };
+    }
+    console.error("[PAYROLL_REAL_LESSON_REFRESH]", {
+      lessonId,
+      code: error?.code || null,
+      message: error?.message || "unknown",
+    });
+    return {
+      lessonId,
+      refreshed: false,
+      skipped: true,
+      reason: error?.code || "UNKNOWN_ERROR",
+    };
+  }
+}
+
+async function refreshDraftPayrollForLessonsSafe({
+  lessonIds = [],
+  actorUserId,
+  req,
+}) {
+  const uniqueLessonIds = [...new Set((lessonIds || []).filter(Boolean))];
+  const results = [];
+  for (const lessonId of uniqueLessonIds) {
+    // Scope lock xavfsizligi uchun refreshni ketma-ket ishlatamiz.
+    results.push(await tryRefreshDraftPayrollForLesson({ lessonId, actorUserId, req }));
+  }
+  const skippedByReason = {};
+  for (const row of results) {
+    if (!row.skipped || !row.reason) continue;
+    skippedByReason[row.reason] = Number(skippedByReason[row.reason] || 0) + 1;
+  }
+  return {
+    attemptedCount: uniqueLessonIds.length,
+    refreshedCount: results.filter((row) => row.refreshed).length,
+    skippedCount: results.filter((row) => row.skipped).length,
+    skippedByReason,
+    details: results.slice(0, 50),
+  };
+}
+
 async function listRealLessons({ query }) {
   const page = Number(query.page || 1);
   const limit = Math.min(Number(query.limit || 20), 200);
@@ -503,7 +589,7 @@ async function listRealLessons({ query }) {
 }
 
 async function createRealLesson({ body, actorUserId, req }) {
-  return prisma.$transaction(async (tx) => {
+  const txResult = await prisma.$transaction(async (tx) => {
     const org = await ensureMainOrganization(tx);
     await Promise.all([
       assertTeacherExists(tx, body.teacherId),
@@ -511,6 +597,13 @@ async function createRealLesson({ body, actorUserId, req }) {
       assertClassroomExists(tx, body.classroomId),
       body.replacedByTeacherId ? assertTeacherExists(tx, body.replacedByTeacherId) : Promise.resolve(null),
     ]);
+    if (body.status === "REPLACED" && body.replacedByTeacherId === body.teacherId) {
+      throw new ApiError(
+        400,
+        "REAL_LESSON_SELF_REPLACEMENT_INVALID",
+        "Asosiy va o'rinbosar o'qituvchi bir xil bo'lishi mumkin emas",
+      );
+    }
     const darsJadvali = body.darsJadvaliId ? await assertDarsJadvaliExists(tx, body.darsJadvaliId) : null;
     if (darsJadvali) {
       if (
@@ -538,6 +631,24 @@ async function createRealLesson({ body, actorUserId, req }) {
           { realLessonId: duplicateBySchedule.id },
         );
       }
+    }
+    const duplicateByDimensions = await tx.realLesson.findFirst({
+      where: {
+        organizationId: org.id,
+        teacherId: body.teacherId,
+        subjectId: body.subjectId,
+        classroomId: body.classroomId,
+        startAt: body.startAt,
+      },
+      select: { id: true },
+    });
+    if (duplicateByDimensions) {
+      throw new ApiError(
+        409,
+        "REAL_LESSON_DUPLICATE",
+        "Bu o'qituvchi/fan/sinf uchun shu vaqtga RealLesson allaqachon mavjud",
+        { realLessonId: duplicateByDimensions.id },
+      );
     }
     const durationMinutes = computeDurationMinutes(body.startAt, body.endAt, body.durationMinutes);
     const lesson = await tx.realLesson.create({
@@ -574,15 +685,22 @@ async function createRealLesson({ body, actorUserId, req }) {
     });
     return { lesson };
   });
+  const payrollAutoRun = await refreshDraftPayrollForLessonsSafe({
+    lessonIds: [txResult.lesson?.id],
+    actorUserId,
+    req,
+  });
+  return { ...txResult, payrollAutoRun };
 }
 
 async function updateRealLessonStatus({ lessonId, body, actorUserId, req }) {
-  return prisma.$transaction(async (tx) => {
+  const txResult = await prisma.$transaction(async (tx) => {
     const org = await ensureMainOrganization(tx);
     const before = await tx.realLesson.findFirst({
       where: { id: lessonId, organizationId: org.id },
       select: {
         id: true,
+        teacherId: true,
         status: true,
         note: true,
         replacedByTeacherId: true,
@@ -594,6 +712,17 @@ async function updateRealLessonStatus({ lessonId, body, actorUserId, req }) {
       throw new ApiError(409, "REAL_LESSON_LOCKED_BY_PAYROLL", "Dars payrollga tushgan. Statusni o'zgartirib bo'lmaydi");
     }
     if (body.replacedByTeacherId) await assertTeacherExists(tx, body.replacedByTeacherId);
+    if (
+      body.status === "REPLACED" &&
+      body.replacedByTeacherId &&
+      body.replacedByTeacherId === before.teacherId
+    ) {
+      throw new ApiError(
+        400,
+        "REAL_LESSON_SELF_REPLACEMENT_INVALID",
+        "Asosiy va o'rinbosar o'qituvchi bir xil bo'lishi mumkin emas",
+      );
+    }
 
     const lesson = await tx.realLesson.update({
       where: { id: lessonId },
@@ -615,10 +744,16 @@ async function updateRealLessonStatus({ lessonId, body, actorUserId, req }) {
     });
     return { lesson };
   });
+  const payrollAutoRun = await refreshDraftPayrollForLessonsSafe({
+    lessonIds: [txResult.lesson?.id],
+    actorUserId,
+    req,
+  });
+  return { ...txResult, payrollAutoRun };
 }
 
 async function bulkUpdateRealLessonStatus({ body, actorUserId, req }) {
-  return prisma.$transaction(async (tx) => {
+  const txResult = await prisma.$transaction(async (tx) => {
     const org = await ensureMainOrganization(tx);
     const lessonIds = [...new Set((body.lessonIds || []).filter(Boolean))];
     if (!lessonIds.length) {
@@ -633,6 +768,7 @@ async function bulkUpdateRealLessonStatus({ body, actorUserId, req }) {
       where: { organizationId: org.id, id: { in: lessonIds } },
       select: {
         id: true,
+        teacherId: true,
         status: true,
         note: true,
         replacedByTeacherId: true,
@@ -655,6 +791,18 @@ async function bulkUpdateRealLessonStatus({ body, actorUserId, req }) {
           lessonId,
           code: "REAL_LESSON_LOCKED_BY_PAYROLL",
           reason: "Dars payrollga tushgan. Statusni o'zgartirib bo'lmaydi",
+        });
+        continue;
+      }
+      if (
+        body.status === "REPLACED" &&
+        body.replacedByTeacherId &&
+        body.replacedByTeacherId === before.teacherId
+      ) {
+        skipped.push({
+          lessonId,
+          code: "REAL_LESSON_SELF_REPLACEMENT_INVALID",
+          reason: "Asosiy va o'rinbosar o'qituvchi bir xil bo'lishi mumkin emas",
         });
         continue;
       }
@@ -711,6 +859,12 @@ async function bulkUpdateRealLessonStatus({ body, actorUserId, req }) {
       skipped,
     };
   });
+  const payrollAutoRun = await refreshDraftPayrollForLessonsSafe({
+    lessonIds: txResult.updatedLessonIds,
+    actorUserId,
+    req,
+  });
+  return { ...txResult, payrollAutoRun };
 }
 
 async function listTeacherRates({ query }) {
@@ -1388,7 +1542,10 @@ async function createAdvancePayment({ body, actorUserId, req }) {
           },
         },
       });
-      await recalculatePayrollRunAggregates(tx, { payrollRunId: run.id });
+      await recalculatePayrollRunAggregates(tx, {
+        payrollRunId: run.id,
+        payrollItemId: item.id,
+      });
       await tx.payrollRun.update({
         where: { id: run.id },
         data: {
@@ -1437,7 +1594,7 @@ async function deleteAdvancePayment({ advanceId, actorUserId, req }) {
       where: { id: advanceId, organizationId: org.id },
       include: {
         payrollLines: {
-          select: { id: true, payrollRunId: true },
+          select: { id: true, payrollRunId: true, payrollItemId: true },
         },
       },
     });
@@ -1472,7 +1629,24 @@ async function deleteAdvancePayment({ advanceId, actorUserId, req }) {
     }
 
     for (const runId of affectedRunIds) {
-      await recalculatePayrollRunAggregates(tx, { payrollRunId: runId });
+      const itemIds = [
+        ...new Set(
+          advance.payrollLines
+            .filter((line) => line.payrollRunId === runId)
+            .map((line) => line.payrollItemId)
+            .filter(Boolean),
+        ),
+      ];
+      if (itemIds.length) {
+        for (const itemId of itemIds) {
+          await recalculatePayrollRunAggregates(tx, {
+            payrollRunId: runId,
+            payrollItemId: itemId,
+          });
+        }
+      } else {
+        await recalculatePayrollRunAggregates(tx, { payrollRunId: runId });
+      }
       await tx.payrollRun.update({
         where: { id: runId },
         data: {
@@ -1784,148 +1958,53 @@ function buildItemSummaryFromLines(lines) {
   };
 }
 
-async function recalculatePayrollRunAggregates(tx, { payrollRunId }) {
-  const run = await tx.payrollRun.findUnique({
-    where: { id: payrollRunId },
-    select: { id: true, organizationId: true },
-  });
-  if (!run) throw new ApiError(404, "PAYROLL_RUN_NOT_FOUND", "Payroll run topilmadi");
+function buildPayrollUseCaseDeps() {
+  return {
+    prisma,
+    ApiError,
+    DECIMAL_ZERO,
+    money,
+    decimal,
+    cleanOptional,
+    buildItemSummaryFromLines,
+    clampPaidAmountToPayable,
+    getPayrollItemPaymentStatus,
+    ensureMainOrganization,
+    getActiveRunForPeriod,
+    getPayrollRunOrThrow,
+    lockPayrollRunRow,
+    lockPayrollItemRow,
+    assertRunStatus,
+    createAuditLog,
+    createPayrollCashEntry,
+    normalizeRequestedPeriodMonth,
+    getPayrollAutomationHealth,
+    generatePayrollRun,
+    approvePayrollRun,
+    payPayrollRun,
+  };
+}
 
-  const items = await tx.payrollItem.findMany({
-    where: { payrollRunId },
-    select: { id: true, teacherId: true, employeeId: true, paidAmount: true },
-  });
-  const lines = await tx.payrollLine.findMany({
-    where: { payrollRunId },
-    include: {
-      employee: {
-        select: {
-          firstName: true,
-          lastName: true,
-          user: { select: { username: true } },
-        },
-      },
-      teacher: {
-        select: {
-          firstName: true,
-          lastName: true,
-          user: { select: { username: true } },
-        },
-      },
-    },
-  });
-
-  const itemById = new Map(items.map((i) => [i.id, i]));
-  const linesByItem = new Map();
-  for (const line of lines) {
-    if (!linesByItem.has(line.payrollItemId)) linesByItem.set(line.payrollItemId, []);
-    linesByItem.get(line.payrollItemId).push(line);
-  }
-
-  let runGross = DECIMAL_ZERO;
-  let runAdjustments = DECIMAL_ZERO;
-  let runPayable = DECIMAL_ZERO;
-  let teacherCount = 0;
-  let sourceLessonsCount = 0;
-
-  for (const [itemId, teacherLines] of linesByItem.entries()) {
-    teacherCount += 1;
-    const item = itemById.get(itemId);
-    if (!item) throw new ApiError(500, "PAYROLL_ITEM_MISSING", "Payroll item topilmadi (data integrity)");
-    const summary = buildItemSummaryFromLines(teacherLines);
-    const personSnap = teacherLines[0]?.employee || teacherLines[0]?.teacher || null;
-    const usernameSnap =
-      teacherLines[0]?.employee?.user?.username ||
-      teacherLines[0]?.teacher?.user?.username ||
-      null;
-    sourceLessonsCount += summary.lessonLineCount;
-    runGross = runGross.plus(summary.grossAmount);
-    runAdjustments = runAdjustments.plus(summary.adjustmentAmount);
-    runPayable = runPayable.plus(summary.payableAmount);
-    const normalizedPaidAmount = clampPaidAmountToPayable(item.paidAmount, summary.payableAmount);
-    const paymentStatus = getPayrollItemPaymentStatus({
-      paidAmount: normalizedPaidAmount,
-      payableAmount: summary.payableAmount,
-    });
-
-    await tx.payrollItem.update({
-      where: { id: item.id },
-      data: {
-        totalMinutes: summary.totalMinutes,
-        totalHours: summary.totalHours,
-        grossAmount: summary.grossAmount,
-        bonusAmount: summary.bonusAmount,
-        penaltyAmount: summary.penaltyAmount,
-        manualAmount: summary.manualAmount,
-        fixedSalaryAmount: summary.fixedSalaryAmount,
-        advanceDeductionAmount: summary.advanceDeductionAmount,
-        adjustmentAmount: summary.adjustmentAmount,
-        payableAmount: summary.payableAmount,
-        paidAmount: normalizedPaidAmount,
-        paymentStatus,
-        lessonLineCount: summary.lessonLineCount,
-        lineCount: summary.lineCount,
-        teacherFirstNameSnapshot: personSnap?.firstName || null,
-        teacherLastNameSnapshot: personSnap?.lastName || null,
-        teacherUsernameSnapshot: usernameSnap,
-        summarySnapshot: {
-          totalMinutes: summary.totalMinutes,
-          totalHours: String(summary.totalHours),
-          grossAmount: String(summary.grossAmount),
-          bonusAmount: String(summary.bonusAmount),
-          penaltyAmount: String(summary.penaltyAmount),
-          manualAmount: String(summary.manualAmount),
-          fixedSalaryAmount: String(summary.fixedSalaryAmount),
-          advanceDeductionAmount: String(summary.advanceDeductionAmount),
-          adjustmentAmount: String(summary.adjustmentAmount),
-          payableAmount: String(summary.payableAmount),
-          paidAmount: String(normalizedPaidAmount),
-          paymentStatus,
-          lessonLineCount: summary.lessonLineCount,
-          lineCount: summary.lineCount,
-        },
-      },
-    });
-  }
-
-  const itemIdsWithLines = [...linesByItem.keys()];
-  await tx.payrollItem.deleteMany({
-    where: {
-      payrollRunId,
-      ...(itemIdsWithLines.length ? { id: { notIn: itemIdsWithLines } } : {}),
-    },
-  });
-
-  await tx.payrollRun.update({
-    where: { id: payrollRunId },
-    data: {
-      sourceLessonsCount,
-      teacherCount,
-      grossAmount: money(runGross),
-      adjustmentAmount: money(runAdjustments),
-      payableAmount: money(runPayable),
-    },
+async function recalculatePayrollRunAggregates(tx, { payrollRunId, payrollItemId = null }) {
+  return executeRecalculatePayrollRunAggregates({
+    deps: buildPayrollUseCaseDeps(),
+    tx,
+    payrollRunId,
+    payrollItemId,
   });
 }
 
 async function getActiveRunForPeriod(tx, { organizationId, periodMonth }) {
-  const runs = await tx.payrollRun.findMany({
-    where: {
-      organizationId,
-      periodMonth,
-      status: { in: ACTIVE_PAYROLL_STATUSES },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 2,
+  return getActiveRunForPeriodRepo(tx, {
+    organizationId,
+    periodMonth,
+    activeStatuses: ACTIVE_PAYROLL_STATUSES,
+    ApiError,
   });
-  if (runs.length > 1) {
-    throw new ApiError(
-      409,
-      "PAYROLL_RUN_PERIOD_CONFLICT",
-      "Bir oy uchun bir nechta aktiv payroll run topildi. Data integrity tekshiring",
-    );
-  }
-  return runs[0] || null;
+}
+
+async function lockPayrollPeriodScope(tx, { organizationId, periodMonth }) {
+  return lockPayrollPeriodScopeRepo(tx, { organizationId, periodMonth });
 }
 
 function decimalToNumber(value) {
@@ -2426,8 +2505,7 @@ async function refreshDraftPayrollForLesson({ lessonId, actorUserId, req }) {
     const { periodStart, periodEnd } = monthKeyToUtcRange(periodMonth);
     const lessonEligible = lesson.status === "DONE" || lesson.status === "REPLACED";
 
-    // Org-level lock to avoid duplicate run/line writes in parallel refresh calls.
-    await tx.$executeRaw`SELECT id FROM "Organization" WHERE id = ${org.id} FOR UPDATE`;
+    await lockPayrollPeriodScope(tx, { organizationId: org.id, periodMonth });
 
     let run = await getActiveRunForPeriod(tx, { organizationId: org.id, periodMonth });
     if (run && run.status !== "DRAFT") {
@@ -2479,7 +2557,7 @@ async function refreshDraftPayrollForLesson({ lessonId, actorUserId, req }) {
 
     const existingLine = await tx.payrollLine.findFirst({
       where: { payrollRunId: run.id, realLessonId: lesson.id },
-      select: { id: true },
+      select: { id: true, payrollItemId: true },
     });
 
     let linePayload = null;
@@ -2569,7 +2647,19 @@ async function refreshDraftPayrollForLesson({ lessonId, actorUserId, req }) {
       await tx.payrollLine.create({ data: linePayload });
     }
 
-    await recalculatePayrollRunAggregates(tx, { payrollRunId: run.id });
+    const affectedItemIds = new Set();
+    if (existingLine?.payrollItemId) affectedItemIds.add(existingLine.payrollItemId);
+    if (linePayload?.payrollItemId) affectedItemIds.add(linePayload.payrollItemId);
+    if (affectedItemIds.size) {
+      for (const itemId of affectedItemIds) {
+        await recalculatePayrollRunAggregates(tx, {
+          payrollRunId: run.id,
+          payrollItemId: itemId,
+        });
+      }
+    } else {
+      await recalculatePayrollRunAggregates(tx, { payrollRunId: run.id });
+    }
 
     const beforeGeneratedAt = run.generatedAt;
     const now = new Date();
@@ -2623,8 +2713,7 @@ async function generatePayrollRun({ body, actorUserId, req }) {
     const org = await ensureMainOrganization(tx);
     const { periodMonth, periodStart, periodEnd } = monthKeyToUtcRange(body.periodMonth);
 
-    // Parallel generate chaqiriqlarida bitta oyga duplicate run ochilib ketmasligi uchun org-level lock.
-    await tx.$executeRaw`SELECT id FROM "Organization" WHERE id = ${org.id} FOR UPDATE`;
+    await lockPayrollPeriodScope(tx, { organizationId: org.id, periodMonth });
 
     let run = await getActiveRunForPeriod(tx, { organizationId: org.id, periodMonth });
     if (run && run.status !== "DRAFT") {
@@ -2833,6 +2922,7 @@ async function generatePayrollRun({ body, actorUserId, req }) {
       },
     });
 
+    const fixedSalaryLineRows = [];
     for (const employee of fixedSalaryEmployees) {
       const teacherId = employee.teacher?.id || null;
       let item = itemByEmployeeCache.get(employee.id) || (teacherId ? itemByTeacherCache.get(teacherId) : null);
@@ -2856,20 +2946,21 @@ async function generatePayrollRun({ body, actorUserId, req }) {
         setItemCache(item);
       }
 
-      await tx.payrollLine.create({
-        data: {
-          organizationId: org.id,
-          payrollRunId: run.id,
-          payrollItemId: item.id,
-          employeeId: employee.id,
-          teacherId,
-          type: "FIXED_SALARY",
-          amount: money(employee.fixedSalaryAmount),
-          description: "Oylik oklad",
-          createdByUserId: actorUserId || null,
-          meta: { source: "EMPLOYEE_FIXED_SALARY" },
-        },
+      fixedSalaryLineRows.push({
+        organizationId: org.id,
+        payrollRunId: run.id,
+        payrollItemId: item.id,
+        employeeId: employee.id,
+        teacherId,
+        type: "FIXED_SALARY",
+        amount: money(employee.fixedSalaryAmount),
+        description: "Oylik oklad",
+        createdByUserId: actorUserId || null,
+        meta: { source: "EMPLOYEE_FIXED_SALARY" },
       });
+    }
+    if (fixedSalaryLineRows.length) {
+      await tx.payrollLine.createMany({ data: fixedSalaryLineRows });
     }
 
     const advances = await tx.advancePayment.findMany({
@@ -2888,6 +2979,7 @@ async function generatePayrollRun({ body, actorUserId, req }) {
       orderBy: [{ paidAt: "asc" }, { createdAt: "asc" }],
     });
 
+    const advanceLineRows = [];
     for (const advance of advances) {
       const teacherId = advance.teacherId || null;
       let item = itemByEmployeeCache.get(advance.employeeId) || (teacherId ? itemByTeacherCache.get(teacherId) : null);
@@ -2911,29 +3003,32 @@ async function generatePayrollRun({ body, actorUserId, req }) {
         setItemCache(item);
       }
 
-      await tx.payrollLine.create({
-        data: {
-          organizationId: org.id,
-          payrollRunId: run.id,
-          payrollItemId: item.id,
-          employeeId: advance.employeeId,
-          teacherId,
-          type: "ADVANCE_DEDUCTION",
+      advanceLineRows.push({
+        organizationId: org.id,
+        payrollRunId: run.id,
+        payrollItemId: item.id,
+        employeeId: advance.employeeId,
+        teacherId,
+        type: "ADVANCE_DEDUCTION",
+        advancePaymentId: advance.id,
+        amount: money(advance.amount).neg(),
+        description: cleanOptional(advance.note) || "Avans ushlanmasi",
+        createdByUserId: actorUserId || null,
+        meta: {
+          source: "ADVANCE_PAYMENT",
           advancePaymentId: advance.id,
-          amount: money(advance.amount).neg(),
-          description: cleanOptional(advance.note) || "Avans ushlanmasi",
-          createdByUserId: actorUserId || null,
-          meta: {
-            source: "ADVANCE_PAYMENT",
-            advancePaymentId: advance.id,
-            periodMonth,
-            paidAt: advance.paidAt,
-          },
+          periodMonth,
+          paidAt: advance.paidAt,
         },
       });
     }
+    if (advanceLineRows.length) {
+      await tx.payrollLine.createMany({ data: advanceLineRows });
+    }
 
-    await recalculatePayrollRunAggregates(tx, { payrollRunId: run.id });
+    await recalculatePayrollRunAggregates(tx, {
+      payrollRunId: run.id,
+    });
 
     const beforeGeneratedAt = run.generatedAt;
     const now = new Date();
@@ -3032,31 +3127,15 @@ async function listPayrollRuns({ query }) {
 }
 
 async function getPayrollRunOrThrow(tx, { runId, organizationId }) {
-  const run = await tx.payrollRun.findFirst({
-    where: { id: runId, organizationId },
-  });
-  if (!run) throw new ApiError(404, "PAYROLL_RUN_NOT_FOUND", "Payroll run topilmadi");
-  return run;
+  return getPayrollRunOrThrowRepo(tx, { runId, organizationId, ApiError });
 }
 
 async function lockPayrollRunRow(tx, { runId, organizationId }) {
-  await tx.$executeRaw`
-    SELECT id
-    FROM "PayrollRun"
-    WHERE id = ${runId} AND "organizationId" = ${organizationId}
-    FOR UPDATE
-  `;
+  return lockPayrollRunRowRepo(tx, { runId, organizationId });
 }
 
 async function lockPayrollItemRow(tx, { itemId, runId, organizationId }) {
-  await tx.$executeRaw`
-    SELECT id
-    FROM "PayrollItem"
-    WHERE id = ${itemId}
-      AND "payrollRunId" = ${runId}
-      AND "organizationId" = ${organizationId}
-    FOR UPDATE
-  `;
+  return lockPayrollItemRowRepo(tx, { itemId, runId, organizationId });
 }
 
 function assertRunStatus(run, allowed) {
@@ -3139,7 +3218,7 @@ async function getPayrollRunDetail({ runId, query }) {
         payrollRunId: run.id,
         type: "LESSON",
       },
-      by: ["payrollItemId", "subjectId", "ratePerHour"],
+      by: ["payrollItemId", "subjectId", "ratePerHour", "rateSource"],
       _sum: {
         minutes: true,
         amount: true,
@@ -3164,6 +3243,7 @@ async function getPayrollRunDetail({ runId, query }) {
         subjectId: group.subjectId || null,
         subjectName,
         ratePerHour: group.ratePerHour,
+        rateSource: group.rateSource || null,
         lessonMinutes: minutes,
         lessonHours: money(decimal(minutes).div(60)),
         amount: money(group._sum.amount || 0),
@@ -3203,183 +3283,259 @@ async function getPayrollRunDetail({ runId, query }) {
   });
 }
 
+async function buildPayrollRunExportDataTx(tx, { runId, query }) {
+  const org = await ensureMainOrganization(tx);
+  const run = await tx.payrollRun.findFirst({
+    where: { id: runId, organizationId: org.id },
+    include: {
+      items: {
+        orderBy: [{ payableAmount: "desc" }, { teacherLastNameSnapshot: "asc" }],
+        include: {
+          employee: {
+            select: {
+              id: true,
+              kind: true,
+              firstName: true,
+              lastName: true,
+              user: { select: { username: true } },
+            },
+          },
+          teacher: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              user: { select: { username: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!run) throw new ApiError(404, "PAYROLL_RUN_NOT_FOUND", "Payroll run topilmadi");
+
+  const linesWhere = { payrollRunId: run.id };
+  if (query?.teacherId) linesWhere.teacherId = query.teacherId;
+  if (query?.employeeId) linesWhere.employeeId = query.employeeId;
+  if (query?.type) linesWhere.type = query.type;
+
+  const lines = await tx.payrollLine.findMany({
+    where: linesWhere,
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    include: {
+      employee: {
+        select: {
+          id: true,
+          kind: true,
+          firstName: true,
+          lastName: true,
+          user: { select: { username: true } },
+        },
+      },
+      teacher: { select: { id: true, firstName: true, lastName: true, user: { select: { username: true } } } },
+      subject: { select: { id: true, name: true } },
+      classroom: { select: { id: true, name: true, academicYear: true } },
+      realLesson: { select: { id: true, startAt: true, endAt: true, durationMinutes: true, status: true } },
+    },
+  });
+
+  const itemById = new Map((run.items || []).map((item) => [item.id, item]));
+
+  const csvRows = [
+    [
+      "rowKind",
+      "payrollRunId",
+      "periodMonth",
+      "runStatus",
+      "teacherId",
+      "teacherName",
+      "teacherUsername",
+      "itemTotalMinutes",
+      "itemGrossAmount",
+      "itemAdjustmentAmount",
+      "itemPayableAmount",
+      "itemPaidAmount",
+      "itemPaymentStatus",
+      "lineId",
+      "lineType",
+      "lessonId",
+      "lessonStartAt",
+      "lessonEndAt",
+      "lessonStatus",
+      "subject",
+      "classroom",
+      "minutes",
+      "ratePerHour",
+      "amount",
+      "description",
+      "createdAt",
+    ],
+  ];
+  const itemRows = [];
+  const lineRows = [];
+
+  for (const item of run.items || []) {
+    const teacherName =
+      (item.employee && `${item.employee.firstName || ""} ${item.employee.lastName || ""}`.trim()) ||
+      (item.teacher && `${item.teacher.firstName || ""} ${item.teacher.lastName || ""}`.trim()) ||
+      `${item.teacherFirstNameSnapshot || ""} ${item.teacherLastNameSnapshot || ""}`.trim() ||
+      item.teacherId ||
+      item.employeeId ||
+      "";
+    const teacherUsername =
+      item.employee?.user?.username || item.teacher?.user?.username || item.teacherUsernameSnapshot || "";
+
+    csvRows.push([
+      "ITEM",
+      run.id,
+      run.periodMonth,
+      run.status,
+      item.teacherId || item.employeeId || "",
+      teacherName,
+      teacherUsername,
+      item.totalMinutes ?? 0,
+      String(item.grossAmount ?? 0),
+      String(item.adjustmentAmount ?? 0),
+      String(item.payableAmount ?? 0),
+      String(item.paidAmount ?? 0),
+      item.paymentStatus || "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+    ]);
+
+    itemRows.push({
+      "Payroll run ID": run.id,
+      Oy: run.periodMonth,
+      Holat: run.status,
+      "O'qituvchi ID": item.teacherId || item.employeeId || "",
+      "O'qituvchi": teacherName,
+      Username: teacherUsername ? `@${teacherUsername}` : "",
+      "Jami daqiqa": Number(item.totalMinutes || 0),
+      Brutto: Number(item.grossAmount || 0),
+      Tuzatish: Number(item.adjustmentAmount || 0),
+      "To'lanadi": Number(item.payableAmount || 0),
+      "To'langan": Number(item.paidAmount || 0),
+      "To'lov holati": item.paymentStatus || "",
+    });
+  }
+
+  for (const line of lines) {
+    const item = itemById.get(line.payrollItemId);
+    const teacherName =
+      (line.employee && `${line.employee.firstName || ""} ${line.employee.lastName || ""}`.trim()) ||
+      (line.teacher && `${line.teacher.firstName || ""} ${line.teacher.lastName || ""}`.trim()) ||
+      `${item?.teacherFirstNameSnapshot || ""} ${item?.teacherLastNameSnapshot || ""}`.trim() ||
+      line.teacherId ||
+      line.employeeId ||
+      "";
+    const teacherUsername =
+      line.employee?.user?.username ||
+      line.teacher?.user?.username ||
+      item?.teacherUsernameSnapshot ||
+      "";
+
+    csvRows.push([
+      "LINE",
+      run.id,
+      run.periodMonth,
+      run.status,
+      line.teacherId || line.employeeId || "",
+      teacherName,
+      teacherUsername,
+      item?.totalMinutes ?? "",
+      item ? String(item.grossAmount ?? 0) : "",
+      item ? String(item.adjustmentAmount ?? 0) : "",
+      item ? String(item.payableAmount ?? 0) : "",
+      item ? String(item.paidAmount ?? 0) : "",
+      item?.paymentStatus || "",
+      line.id,
+      line.type,
+      line.realLessonId || "",
+      toIsoOrEmpty(line.realLesson?.startAt || line.lessonStartAt),
+      toIsoOrEmpty(line.realLesson?.endAt),
+      line.realLesson?.status || "",
+      line.subject?.name || "",
+      line.classroom ? `${line.classroom.name} (${line.classroom.academicYear})` : "",
+      line.minutes ?? "",
+      line.ratePerHour != null ? String(line.ratePerHour) : "",
+      String(line.amount ?? 0),
+      line.description || "",
+      toIsoOrEmpty(line.createdAt),
+    ]);
+
+    lineRows.push({
+      "Line ID": line.id,
+      "Payroll run ID": run.id,
+      Oy: run.periodMonth,
+      Holat: run.status,
+      Tip: line.type,
+      "O'qituvchi ID": line.teacherId || line.employeeId || "",
+      "O'qituvchi": teacherName,
+      Username: teacherUsername ? `@${teacherUsername}` : "",
+      Fan: line.subject?.name || "",
+      Sinf: line.classroom ? `${line.classroom.name} (${line.classroom.academicYear})` : "",
+      "Daqiqa": Number(line.minutes || 0),
+      "Soat narxi": line.ratePerHour != null ? Number(line.ratePerHour) : null,
+      Summa: Number(line.amount || 0),
+      "Dars boshlanishi": toIsoOrEmpty(line.realLesson?.startAt || line.lessonStartAt),
+      "Dars tugashi": toIsoOrEmpty(line.realLesson?.endAt),
+      "Dars holati": line.realLesson?.status || "",
+      Izoh: line.description || "",
+      "Yaratilgan vaqt": toIsoOrEmpty(line.createdAt),
+    });
+  }
+
+  return { run, csvRows, itemRows, lineRows };
+}
+
 async function exportPayrollRunCsv({ runId, query }) {
   return prisma.$transaction(async (tx) => {
-    const org = await ensureMainOrganization(tx);
-    const run = await tx.payrollRun.findFirst({
-      where: { id: runId, organizationId: org.id },
-      include: {
-        items: {
-          orderBy: [{ payableAmount: "desc" }, { teacherLastNameSnapshot: "asc" }],
-          include: {
-            employee: {
-              select: {
-                id: true,
-                kind: true,
-                firstName: true,
-                lastName: true,
-                user: { select: { username: true } },
-              },
-            },
-            teacher: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                user: { select: { username: true } },
-              },
-            },
-          },
-        },
-      },
-    });
-    if (!run) throw new ApiError(404, "PAYROLL_RUN_NOT_FOUND", "Payroll run topilmadi");
-
-    const linesWhere = { payrollRunId: run.id };
-    if (query?.teacherId) linesWhere.teacherId = query.teacherId;
-    if (query?.employeeId) linesWhere.employeeId = query.employeeId;
-    if (query?.type) linesWhere.type = query.type;
-
-    const lines = await tx.payrollLine.findMany({
-      where: linesWhere,
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      include: {
-        employee: {
-          select: {
-            id: true,
-            kind: true,
-            firstName: true,
-            lastName: true,
-            user: { select: { username: true } },
-          },
-        },
-        teacher: { select: { id: true, firstName: true, lastName: true, user: { select: { username: true } } } },
-        subject: { select: { id: true, name: true } },
-        classroom: { select: { id: true, name: true, academicYear: true } },
-        realLesson: { select: { id: true, startAt: true, endAt: true, durationMinutes: true, status: true } },
-      },
-    });
-
-    const itemById = new Map((run.items || []).map((item) => [item.id, item]));
-
-    const rows = [
-      [
-        "rowKind",
-        "payrollRunId",
-        "periodMonth",
-        "runStatus",
-        "teacherId",
-        "teacherName",
-        "teacherUsername",
-        "itemTotalMinutes",
-        "itemGrossAmount",
-        "itemAdjustmentAmount",
-        "itemPayableAmount",
-        "itemPaidAmount",
-        "itemPaymentStatus",
-        "lineId",
-        "lineType",
-        "lessonId",
-        "lessonStartAt",
-        "lessonEndAt",
-        "lessonStatus",
-        "subject",
-        "classroom",
-        "minutes",
-        "ratePerHour",
-        "amount",
-        "description",
-        "createdAt",
-      ],
-    ];
-
-    for (const item of run.items || []) {
-      const teacherName =
-        (item.employee && `${item.employee.firstName || ""} ${item.employee.lastName || ""}`.trim()) ||
-        (item.teacher && `${item.teacher.firstName || ""} ${item.teacher.lastName || ""}`.trim()) ||
-        `${item.teacherFirstNameSnapshot || ""} ${item.teacherLastNameSnapshot || ""}`.trim() ||
-        item.teacherId ||
-        item.employeeId ||
-        "";
-      const teacherUsername =
-        item.employee?.user?.username || item.teacher?.user?.username || item.teacherUsernameSnapshot || "";
-      rows.push([
-        "ITEM",
-        run.id,
-        run.periodMonth,
-        run.status,
-        item.teacherId || item.employeeId || "",
-        teacherName,
-        teacherUsername,
-        item.totalMinutes ?? 0,
-        String(item.grossAmount ?? 0),
-        String(item.adjustmentAmount ?? 0),
-        String(item.payableAmount ?? 0),
-        String(item.paidAmount ?? 0),
-        item.paymentStatus || "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-      ]);
-    }
-
-    for (const line of lines) {
-      const item = itemById.get(line.payrollItemId);
-      const teacherName =
-        (line.employee && `${line.employee.firstName || ""} ${line.employee.lastName || ""}`.trim()) ||
-        (line.teacher && `${line.teacher.firstName || ""} ${line.teacher.lastName || ""}`.trim()) ||
-        `${item?.teacherFirstNameSnapshot || ""} ${item?.teacherLastNameSnapshot || ""}`.trim() ||
-        line.teacherId ||
-        line.employeeId ||
-        "";
-      const teacherUsername =
-        line.employee?.user?.username ||
-        line.teacher?.user?.username ||
-        item?.teacherUsernameSnapshot ||
-        "";
-      rows.push([
-        "LINE",
-        run.id,
-        run.periodMonth,
-        run.status,
-        line.teacherId || line.employeeId || "",
-        teacherName,
-        teacherUsername,
-        item?.totalMinutes ?? "",
-        item ? String(item.grossAmount ?? 0) : "",
-        item ? String(item.adjustmentAmount ?? 0) : "",
-        item ? String(item.payableAmount ?? 0) : "",
-        item ? String(item.paidAmount ?? 0) : "",
-        item?.paymentStatus || "",
-        line.id,
-        line.type,
-        line.realLessonId || "",
-        toIsoOrEmpty(line.realLesson?.startAt || line.lessonStartAt),
-        toIsoOrEmpty(line.realLesson?.endAt),
-        line.realLesson?.status || "",
-        line.subject?.name || "",
-        line.classroom ? `${line.classroom.name} (${line.classroom.academicYear})` : "",
-        line.minutes ?? "",
-        line.ratePerHour != null ? String(line.ratePerHour) : "",
-        String(line.amount ?? 0),
-        line.description || "",
-        toIsoOrEmpty(line.createdAt),
-      ]);
-    }
-
-    const csvBody = "\uFEFF" + buildCsv(rows);
+    const { run, csvRows } = await buildPayrollRunExportDataTx(tx, { runId, query });
+    const csvBody = "\uFEFFsep=,\r\n" + buildCsv(csvRows);
     const fileName = `payroll-${run.periodMonth}-${run.id}.csv`;
     return { fileName, csv: csvBody };
+  });
+}
+
+async function exportPayrollRunExcel({ runId, query }) {
+  let XLSX;
+  try {
+    XLSX = require("xlsx");
+  } catch {
+    throw new ApiError(
+      500,
+      "XLSX_NOT_INSTALLED",
+      "Excel export uchun 'xlsx' paketi o'rnatilmagan",
+    );
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const { run, itemRows, lineRows } = await buildPayrollRunExportDataTx(tx, { runId, query });
+    const workbook = XLSX.utils.book_new();
+    const itemSheet = XLSX.utils.json_to_sheet(itemRows);
+    XLSX.utils.book_append_sheet(workbook, itemSheet, "Oylik");
+    if (lineRows.length) {
+      const linesSheet = XLSX.utils.json_to_sheet(lineRows);
+      XLSX.utils.book_append_sheet(workbook, linesSheet, "Tafsilot");
+    }
+
+    const buffer = XLSX.write(workbook, {
+      type: "buffer",
+      bookType: "xlsx",
+    });
+    const fileName = `payroll-${run.periodMonth}-${run.id}.xlsx`;
+    return { fileName, buffer };
   });
 }
 
@@ -3449,7 +3605,10 @@ async function addPayrollAdjustment({ runId, body, actorUserId, req }) {
       },
     });
 
-    await recalculatePayrollRunAggregates(tx, { payrollRunId: run.id });
+    await recalculatePayrollRunAggregates(tx, {
+      payrollRunId: run.id,
+      payrollItemId: item.id,
+    });
 
     await createAuditLog(tx, {
       organizationId: org.id,
@@ -3480,7 +3639,15 @@ async function deletePayrollAdjustment({ runId, lineId, actorUserId, req }) {
 
     const line = await tx.payrollLine.findFirst({
       where: { id: lineId, payrollRunId: run.id, organizationId: org.id },
-      select: { id: true, type: true, amount: true, description: true, teacherId: true, employeeId: true },
+      select: {
+        id: true,
+        payrollItemId: true,
+        type: true,
+        amount: true,
+        description: true,
+        teacherId: true,
+        employeeId: true,
+      },
     });
     if (!line) throw new ApiError(404, "PAYROLL_LINE_NOT_FOUND", "Payroll line topilmadi");
     if (!MANUAL_ADJUSTMENT_TYPES.has(line.type)) {
@@ -3488,7 +3655,10 @@ async function deletePayrollAdjustment({ runId, lineId, actorUserId, req }) {
     }
 
     await tx.payrollLine.delete({ where: { id: line.id } });
-    await recalculatePayrollRunAggregates(tx, { payrollRunId: run.id });
+    await recalculatePayrollRunAggregates(tx, {
+      payrollRunId: run.id,
+      payrollItemId: line.payrollItemId || null,
+    });
 
     await createAuditLog(tx, {
       organizationId: org.id,
@@ -3512,424 +3682,42 @@ async function deletePayrollAdjustment({ runId, lineId, actorUserId, req }) {
 }
 
 async function approvePayrollRun({ runId, actorUserId, req }) {
-  return prisma.$transaction(async (tx) => {
-    const org = await ensureMainOrganization(tx);
-    const run = await getPayrollRunOrThrow(tx, { runId, organizationId: org.id });
-    assertRunStatus(run, ["DRAFT"]);
-    const lineCount = await tx.payrollLine.count({ where: { payrollRunId: run.id } });
-    if (!lineCount) throw new ApiError(409, "PAYROLL_EMPTY", "Bo'sh payroll run ni tasdiqlab bo'lmaydi");
-    const updated = await tx.payrollRun.update({
-      where: { id: run.id },
-      data: { status: "APPROVED", approvedAt: new Date(), approvedByUserId: actorUserId },
-    });
-    await createAuditLog(tx, {
-      organizationId: org.id,
-      actorUserId,
-      action: "PAYROLL_RUN_APPROVE",
-      entityType: "PAYROLL_RUN",
-      entityId: run.id,
-      payrollRunId: run.id,
-      before: { status: run.status },
-      after: { status: updated.status, approvedAt: updated.approvedAt },
-      req,
-    });
-    return { run: updated };
+  return executeApprovePayrollRun({
+    deps: buildPayrollUseCaseDeps(),
+    runId,
+    actorUserId,
+    req,
   });
 }
 
 async function payPayrollRun({ runId, body, actorUserId, req }) {
-  return prisma.$transaction(async (tx) => {
-    const org = await ensureMainOrganization(tx);
-    await lockPayrollRunRow(tx, { runId, organizationId: org.id });
-    const run = await getPayrollRunOrThrow(tx, { runId, organizationId: org.id });
-    assertRunStatus(run, ["APPROVED"]);
-    const paidAt = body.paidAt || new Date();
-
-    const runItems = await tx.payrollItem.findMany({
-      where: { payrollRunId: run.id, organizationId: org.id },
-      select: {
-        id: true,
-        employeeId: true,
-        teacherId: true,
-        payableAmount: true,
-        paidAmount: true,
-      },
-    });
-
-    let itemPaymentsCreated = 0;
-    let paidTotal = DECIMAL_ZERO;
-    for (const item of runItems) {
-      const payable = money(item.payableAmount);
-      const normalizedPaid = clampPaidAmountToPayable(item.paidAmount, payable);
-      const remaining = money(payable.minus(normalizedPaid));
-      const nextPaidAmount = clampPaidAmountToPayable(payable, payable);
-      const paymentStatus = getPayrollItemPaymentStatus({
-        paidAmount: nextPaidAmount,
-        payableAmount: payable,
-      });
-
-      await tx.payrollItem.update({
-        where: { id: item.id },
-        data: {
-          paidAmount: nextPaidAmount,
-          paymentStatus,
-        },
-      });
-
-      if (remaining.gt(DECIMAL_ZERO)) {
-        const payment = await tx.payrollItemPayment.create({
-          data: {
-            organizationId: org.id,
-            payrollRunId: run.id,
-            payrollItemId: item.id,
-            employeeId: item.employeeId,
-            teacherId: item.teacherId,
-            amount: remaining,
-            paymentMethod: body.paymentMethod,
-            paidAt,
-            externalRef: cleanOptional(body.externalRef) || null,
-            note: cleanOptional(body.note) || null,
-            createdByUserId: actorUserId || null,
-          },
-        });
-        await createPayrollCashEntry(tx, {
-          organizationId: org.id,
-          payrollRunId: run.id,
-          payrollItemId: item.id,
-          payrollItemPaymentId: payment.id,
-          amount: remaining.neg(),
-          paymentMethod: body.paymentMethod,
-          occurredAt: paidAt,
-          externalRef: body.externalRef,
-          note: body.note,
-          createdByUserId: actorUserId || null,
-          meta: {
-            source: "PAYROLL_RUN_PAY",
-            payrollRunId: run.id,
-            payrollItemId: item.id,
-          },
-        });
-        itemPaymentsCreated += 1;
-        paidTotal = paidTotal.plus(remaining);
-      }
-    }
-
-    const updated = await tx.payrollRun.update({
-      where: { id: run.id },
-      data: {
-        status: "PAID",
-        paymentMethod: body.paymentMethod,
-        paidAt,
-        paidByUserId: actorUserId,
-        externalRef: cleanOptional(body.externalRef) || null,
-        paymentNote: cleanOptional(body.note) || null,
-      },
-    });
-    await createAuditLog(tx, {
-      organizationId: org.id,
-      actorUserId,
-      action: "PAYROLL_RUN_PAY",
-      entityType: "PAYROLL_RUN",
-      entityId: run.id,
-      payrollRunId: run.id,
-      before: { status: run.status },
-      after: {
-        status: updated.status,
-        paidAt: updated.paidAt,
-        paymentMethod: updated.paymentMethod,
-        externalRef: updated.externalRef,
-        itemPaymentsCreated,
-        paidTotal: String(money(paidTotal)),
-      },
-      req,
-    });
-    return { run: updated, itemPaymentsCreated, paidTotal: money(paidTotal) };
+  return executePayPayrollRun({
+    deps: buildPayrollUseCaseDeps(),
+    runId,
+    body,
+    actorUserId,
+    req,
   });
 }
 
 async function payPayrollItem({ runId, itemId, body, actorUserId, req }) {
-  return prisma.$transaction(async (tx) => {
-    const org = await ensureMainOrganization(tx);
-    await lockPayrollRunRow(tx, { runId, organizationId: org.id });
-    const run = await getPayrollRunOrThrow(tx, { runId, organizationId: org.id });
-    assertRunStatus(run, ["APPROVED"]);
-    await lockPayrollItemRow(tx, { itemId, runId: run.id, organizationId: org.id });
-
-    const item = await tx.payrollItem.findFirst({
-      where: { id: itemId, payrollRunId: run.id, organizationId: org.id },
-      select: {
-        id: true,
-        employeeId: true,
-        teacherId: true,
-        payableAmount: true,
-        paidAmount: true,
-        paymentStatus: true,
-      },
-    });
-    if (!item) throw new ApiError(404, "PAYROLL_ITEM_NOT_FOUND", "Payroll item topilmadi");
-
-    const payable = money(item.payableAmount);
-    if (payable.lte(DECIMAL_ZERO)) {
-      throw new ApiError(409, "PAYROLL_ITEM_NOT_PAYABLE", "Bu item bo'yicha to'lanadigan summa yo'q");
-    }
-    const currentPaidAmount = clampPaidAmountToPayable(item.paidAmount, payable);
-    const remaining = money(payable.minus(currentPaidAmount));
-    if (remaining.lte(DECIMAL_ZERO)) {
-      throw new ApiError(409, "PAYROLL_ITEM_ALREADY_PAID", "Bu item allaqachon to'langan");
-    }
-
-    const paymentAmount = body.amount === undefined ? remaining : money(body.amount);
-    if (paymentAmount.lte(DECIMAL_ZERO)) {
-      throw new ApiError(400, "PAYROLL_ITEM_PAY_INVALID_AMOUNT", "To'lov summasi 0 dan katta bo'lishi kerak");
-    }
-    if (paymentAmount.gt(remaining)) {
-      throw new ApiError(
-        409,
-        "PAYROLL_ITEM_PAY_AMOUNT_EXCEEDED",
-        "To'lov summasi qolgan summadan oshmasligi kerak",
-        { remaining: String(remaining), attemptedAmount: String(paymentAmount) },
-      );
-    }
-
-    const paidAt = body.paidAt || new Date();
-    const nextPaidAmount = money(currentPaidAmount.plus(paymentAmount));
-    const paymentStatus = getPayrollItemPaymentStatus({
-      paidAmount: nextPaidAmount,
-      payableAmount: payable,
-    });
-
-    const updatedItem = await tx.payrollItem.update({
-      where: { id: item.id },
-      data: {
-        paidAmount: nextPaidAmount,
-        paymentStatus,
-      },
-    });
-
-    const payment = await tx.payrollItemPayment.create({
-      data: {
-        organizationId: org.id,
-        payrollRunId: run.id,
-        payrollItemId: item.id,
-        employeeId: item.employeeId,
-        teacherId: item.teacherId,
-        amount: paymentAmount,
-        paymentMethod: body.paymentMethod,
-        paidAt,
-        externalRef: cleanOptional(body.externalRef) || null,
-        note: cleanOptional(body.note) || null,
-        createdByUserId: actorUserId || null,
-      },
-    });
-
-    await createPayrollCashEntry(tx, {
-      organizationId: org.id,
-      payrollRunId: run.id,
-      payrollItemId: item.id,
-      payrollItemPaymentId: payment.id,
-      amount: paymentAmount.neg(),
-      paymentMethod: body.paymentMethod,
-      occurredAt: paidAt,
-      externalRef: body.externalRef,
-      note: body.note,
-      createdByUserId: actorUserId || null,
-      meta: {
-        source: "PAYROLL_ITEM_PAY",
-        payrollRunId: run.id,
-        payrollItemId: item.id,
-      },
-    });
-
-    const runItemsAfterPayment = await tx.payrollItem.findMany({
-      where: {
-        payrollRunId: run.id,
-        organizationId: org.id,
-      },
-      select: {
-        payableAmount: true,
-        paidAmount: true,
-      },
-    });
-    const pendingItems = runItemsAfterPayment.filter((row) => (
-      getPayrollItemPaymentStatus({
-        paidAmount: row.paidAmount,
-        payableAmount: row.payableAmount,
-      }) !== "PAID"
-    )).length;
-
-    let updatedRun = run;
-    if (pendingItems === 0) {
-      updatedRun = await tx.payrollRun.update({
-        where: { id: run.id },
-        data: {
-          status: "PAID",
-          paidAt,
-          paidByUserId: actorUserId || null,
-          paymentNote: cleanOptional(body.note) || run.paymentNote || null,
-        },
-      });
-      await createAuditLog(tx, {
-        organizationId: org.id,
-        actorUserId,
-        action: "PAYROLL_RUN_PAY_AUTO_COMPLETE",
-        entityType: "PAYROLL_RUN",
-        entityId: run.id,
-        payrollRunId: run.id,
-        before: { status: run.status },
-        after: { status: updatedRun.status, paidAt: updatedRun.paidAt },
-        req,
-      });
-    }
-
-    await createAuditLog(tx, {
-      organizationId: org.id,
-      actorUserId,
-      action: "PAYROLL_ITEM_PAY",
-      entityType: "PAYROLL_ITEM",
-      entityId: item.id,
-      payrollRunId: run.id,
-      before: {
-        paidAmount: String(currentPaidAmount),
-        paymentStatus: item.paymentStatus,
-      },
-      after: {
-        paymentId: payment.id,
-        amount: String(payment.amount),
-        paidAmount: String(updatedItem.paidAmount),
-        paymentStatus: updatedItem.paymentStatus,
-        paymentMethod: payment.paymentMethod,
-      },
-      req,
-    });
-
-    return {
-      run: updatedRun,
-      item: updatedItem,
-      payment,
-      remainingAmount: money(payable.minus(nextPaidAmount)),
-      autoCompletedRun: pendingItems === 0,
-    };
+  return executePayPayrollItem({
+    deps: buildPayrollUseCaseDeps(),
+    runId,
+    itemId,
+    body,
+    actorUserId,
+    req,
   });
 }
 
 async function reversePayrollRun({ runId, body, actorUserId, req }) {
-  return prisma.$transaction(async (tx) => {
-    const org = await ensureMainOrganization(tx);
-    await lockPayrollRunRow(tx, { runId, organizationId: org.id });
-    const run = await getPayrollRunOrThrow(tx, { runId, organizationId: org.id });
-    assertRunStatus(run, ["APPROVED", "PAID"]);
-    const reversedAt = new Date();
-
-    // Item/payment update paytda parallel yozuvlarning oldini olish uchun item satrlarini lock qilamiz.
-    await tx.$executeRaw`
-      SELECT id
-      FROM "PayrollItem"
-      WHERE "payrollRunId" = ${run.id}
-        AND "organizationId" = ${org.id}
-      FOR UPDATE
-    `;
-
-    const runPayments = await tx.payrollItemPayment.findMany({
-      where: { payrollRunId: run.id, organizationId: org.id },
-      orderBy: [{ paidAt: "asc" }, { createdAt: "asc" }],
-      select: {
-        id: true,
-        payrollItemId: true,
-        employeeId: true,
-        teacherId: true,
-        amount: true,
-        paymentMethod: true,
-        externalRef: true,
-      },
-    });
-    let reversedPaymentCount = 0;
-    let reversedTotal = DECIMAL_ZERO;
-    for (const payment of runPayments) {
-      const paymentAmount = money(payment.amount);
-      if (paymentAmount.lte(DECIMAL_ZERO)) continue;
-
-      const reversePayment = await tx.payrollItemPayment.create({
-        data: {
-          organizationId: org.id,
-          payrollRunId: run.id,
-          payrollItemId: payment.payrollItemId,
-          employeeId: payment.employeeId,
-          teacherId: payment.teacherId,
-          amount: paymentAmount.neg(),
-          paymentMethod: payment.paymentMethod,
-          paidAt: reversedAt,
-          externalRef: null,
-          note: `REVERSE: ${body.reason}`,
-          createdByUserId: actorUserId || null,
-        },
-      });
-      await createPayrollCashEntry(tx, {
-        organizationId: org.id,
-        payrollRunId: run.id,
-        payrollItemId: payment.payrollItemId,
-        payrollItemPaymentId: reversePayment.id,
-        amount: paymentAmount,
-        paymentMethod: payment.paymentMethod,
-        entryType: "PAYROLL_REVERSAL",
-        occurredAt: reversedAt,
-        note: body.reason,
-        createdByUserId: actorUserId || null,
-        meta: {
-          source: "PAYROLL_RUN_REVERSE",
-          reversedPaymentId: payment.id,
-          payrollRunId: run.id,
-          payrollItemId: payment.payrollItemId,
-        },
-      });
-      reversedPaymentCount += 1;
-      reversedTotal = reversedTotal.plus(paymentAmount);
-    }
-
-    const runItems = await tx.payrollItem.findMany({
-      where: { payrollRunId: run.id, organizationId: org.id },
-      select: { id: true, payableAmount: true },
-    });
-    for (const item of runItems) {
-      await tx.payrollItem.update({
-        where: { id: item.id },
-        data: {
-          paidAmount: DECIMAL_ZERO,
-          paymentStatus: getPayrollItemPaymentStatus({
-            paidAmount: DECIMAL_ZERO,
-            payableAmount: item.payableAmount,
-          }),
-        },
-      });
-    }
-
-    const updated = await tx.payrollRun.update({
-      where: { id: run.id },
-      data: {
-        status: "REVERSED",
-        reversedAt,
-        reversedByUserId: actorUserId,
-        reverseReason: body.reason,
-      },
-    });
-    await createAuditLog(tx, {
-      organizationId: org.id,
-      actorUserId,
-      action: "PAYROLL_RUN_REVERSE",
-      entityType: "PAYROLL_RUN",
-      entityId: run.id,
-      payrollRunId: run.id,
-      before: { status: run.status, paidAt: run.paidAt, paymentMethod: run.paymentMethod },
-      after: {
-        status: updated.status,
-        reversedAt: updated.reversedAt,
-        reverseReason: updated.reverseReason,
-        reversedPaymentCount,
-        reversedTotal: String(money(reversedTotal)),
-      },
-      reason: body.reason,
-      req,
-    });
-    return { run: updated, reversedPaymentCount, reversedTotal: money(reversedTotal) };
+  return executeReversePayrollRun({
+    deps: buildPayrollUseCaseDeps(),
+    runId,
+    body,
+    actorUserId,
+    req,
   });
 }
 
@@ -4119,202 +3907,12 @@ async function getPayrollMonthlyReport({ query }) {
 }
 
 async function runPayrollAutomation({ body, actorUserId, req }) {
-  const periodMonth = normalizeRequestedPeriodMonth(body.periodMonth);
-  const dryRun = body.dryRun === true;
-  const autoApprove = body.autoApprove !== false;
-  const autoPay = body.autoPay === true;
-  const force = body.force === true;
-
-  const healthBefore = await getPayrollAutomationHealth({
-    query: {
-      periodMonth,
-      includeDetails: true,
-    },
+  return executeRunPayrollAutomation({
+    deps: buildPayrollUseCaseDeps(),
+    body,
+    actorUserId,
+    req,
   });
-
-  if (dryRun) {
-    return {
-      periodMonth,
-      dryRun: true,
-      steps: [],
-      healthBefore,
-      healthAfter: healthBefore,
-      run: healthBefore.currentRun || null,
-    };
-  }
-
-  if (!force && healthBefore.summary.blockerCount > 0) {
-    throw new ApiError(
-      409,
-      "PAYROLL_AUTOMATION_BLOCKED",
-      "Payroll avtomatlashtirishdan oldin blocker xatolarni bartaraf qiling",
-      { health: healthBefore },
-    );
-  }
-
-  const steps = [];
-  let run = healthBefore.currentRun || null;
-
-  if (body.generate !== false) {
-    if (run?.status && run.status !== "DRAFT") {
-      steps.push({
-        step: "GENERATE",
-        status: "SKIPPED",
-        runId: run.id,
-        reason: `run_status=${run.status}`,
-      });
-    } else {
-      const generation = await generatePayrollRun({
-        body: { periodMonth },
-        actorUserId,
-        req,
-      });
-      run = generation.run || run;
-      steps.push({
-        step: "GENERATE",
-        status: "DONE",
-        runId: run?.id || null,
-        lessonCount: generation?.generation?.lessonsProcessed || 0,
-      });
-    }
-  } else {
-    steps.push({
-      step: "GENERATE",
-      status: "SKIPPED",
-      reason: "generate=false",
-      runId: run?.id || null,
-    });
-  }
-
-  if (!run?.id) {
-    run = await prisma.$transaction(async (tx) => {
-      const org = await ensureMainOrganization(tx);
-      return getActiveRunForPeriod(tx, { organizationId: org.id, periodMonth });
-    });
-  }
-
-  if (autoApprove) {
-    if (!run?.id) {
-      throw new ApiError(409, "PAYROLL_RUN_NOT_FOUND", "Approve qilish uchun payroll run topilmadi");
-    }
-    if (run.status === "DRAFT") {
-      const approved = await approvePayrollRun({
-        runId: run.id,
-        actorUserId,
-        req,
-      });
-      run = approved.run;
-      steps.push({
-        step: "APPROVE",
-        status: "DONE",
-        runId: run.id,
-      });
-    } else {
-      steps.push({
-        step: "APPROVE",
-        status: "SKIPPED",
-        runId: run.id,
-        reason: `run_status=${run.status}`,
-      });
-    }
-  } else {
-    steps.push({
-      step: "APPROVE",
-      status: "SKIPPED",
-      runId: run?.id || null,
-      reason: "autoApprove=false",
-    });
-  }
-
-  if (autoPay) {
-    if (!run?.id) {
-      throw new ApiError(409, "PAYROLL_RUN_NOT_FOUND", "Pay qilish uchun payroll run topilmadi");
-    }
-    if (run.status === "APPROVED") {
-      const paid = await payPayrollRun({
-        runId: run.id,
-        body: {
-          paymentMethod: body.paymentMethod || "BANK",
-          ...(body.paidAt ? { paidAt: body.paidAt } : {}),
-          ...(body.externalRef ? { externalRef: body.externalRef } : {}),
-          ...(body.note ? { note: body.note } : {}),
-        },
-        actorUserId,
-        req,
-      });
-      run = paid.run;
-      steps.push({
-        step: "PAY",
-        status: "DONE",
-        runId: run.id,
-        paidTotal: paid.paidTotal,
-        itemPaymentsCreated: paid.itemPaymentsCreated,
-      });
-    } else {
-      steps.push({
-        step: "PAY",
-        status: "SKIPPED",
-        runId: run.id,
-        reason: `run_status=${run.status}`,
-      });
-    }
-  } else {
-    steps.push({
-      step: "PAY",
-      status: "SKIPPED",
-      runId: run?.id || null,
-      reason: "autoPay=false",
-    });
-  }
-
-  const healthAfter = await getPayrollAutomationHealth({
-    query: {
-      periodMonth,
-      includeDetails: false,
-    },
-  });
-
-  let runSnapshot = null;
-  if (run?.id) {
-    runSnapshot = await prisma.$transaction(async (tx) => {
-      const org = await ensureMainOrganization(tx);
-      return tx.payrollRun.findFirst({
-        where: { id: run.id, organizationId: org.id },
-        include: {
-          items: {
-            orderBy: [{ payableAmount: "desc" }, { teacherLastNameSnapshot: "asc" }],
-            include: {
-              employee: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  user: { select: { username: true } },
-                },
-              },
-              teacher: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  user: { select: { username: true } },
-                },
-              },
-            },
-          },
-        },
-      });
-    });
-  }
-
-  return {
-    periodMonth,
-    dryRun: false,
-    steps,
-    healthBefore,
-    healthAfter,
-    run: runSnapshot,
-  };
 }
 
 async function findTeacherByUserId(tx, userId) {
@@ -4460,6 +4058,7 @@ module.exports = {
   listPayrollRuns,
   getPayrollRunDetail,
   exportPayrollRunCsv,
+  exportPayrollRunExcel,
   addPayrollAdjustment,
   deletePayrollAdjustment,
   approvePayrollRun,

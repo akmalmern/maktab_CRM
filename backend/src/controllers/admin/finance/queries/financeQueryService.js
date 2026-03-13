@@ -1,7 +1,8 @@
-const orchestrator = require("../orchestrators/financeOrchestrator");
+const financeQueryOrchestrator = require("../orchestrators/financeQueryOrchestrator");
 
 module.exports = {
-  getOrCreateSettings: orchestrator.getOrCreateSettings,
-  fetchFinancePageRows: orchestrator.fetchFinancePageRows,
-  fetchAllFinanceRows: orchestrator.fetchAllFinanceRows,
+  getOrCreateSettings: financeQueryOrchestrator.getOrCreateSettings,
+  fetchFinancePageRows: financeQueryOrchestrator.fetchFinancePageRows,
+  processFinanceRowsInBatches: financeQueryOrchestrator.processFinanceRowsInBatches,
+  fetchAllFinanceRows: financeQueryOrchestrator.fetchAllFinanceRows,
 };

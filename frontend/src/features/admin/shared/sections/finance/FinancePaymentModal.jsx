@@ -1,4 +1,7 @@
 import { Badge, Button, Card, Modal, StateView } from '../../../../../components/ui';
+import FinanceLedgerTimelineCard from './FinanceLedgerTimelineCard';
+import ImtiyozFormCard from './FinanceImtiyozFormCard';
+import PaymentFormCard from './FinancePaymentFormCard';
 
 export default function FinancePaymentModal({
   t,
@@ -14,9 +17,6 @@ export default function FinancePaymentModal({
   onRollbackTarif,
   settingsMeta,
   onRevertPayment,
-  PaymentFormCard,
-  ImtiyozFormCard,
-  FinanceLedgerTimelineCard,
   paymentForm,
   setPaymentForm,
   handleCreatePayment,
@@ -31,10 +31,8 @@ export default function FinancePaymentModal({
   MonthChips,
   formatMonthKey,
   sumFormat,
+  locale,
 }) {
-  void PaymentFormCard;
-  void ImtiyozFormCard;
-  void FinanceLedgerTimelineCard;
   void MonthChips;
   return (
     <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={t("Student to'lovini belgilash")} maxWidth="max-w-3xl">
@@ -123,7 +121,7 @@ export default function FinancePaymentModal({
                               {sumFormat(tarif.oylikSumma)} / {sumFormat(tarif.yillikSumma)} {t("so'm")}
                             </p>
                             <p className="text-xs text-slate-600">
-                              {tarif.boshlanishSana ? new Date(tarif.boshlanishSana).toLocaleDateString('uz-UZ') : '-'} | {tarif.holat}
+                              {tarif.boshlanishSana ? new Date(tarif.boshlanishSana).toLocaleDateString(locale || 'uz-UZ') : '-'} | {tarif.holat === 'AKTIV' ? t('Aktiv') : tarif.holat === 'BEKOR_QILINGAN' ? t('Bekor qilingan') : tarif.holat}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
@@ -138,7 +136,7 @@ export default function FinancePaymentModal({
                               disabled={isRollbackDisabled}
                               onClick={() => onRollbackTarif?.(tarif.id)}
                             >
-                              {t('Rollback')}
+                              {t("Orqaga qaytarish")}
                             </Button>
                           </div>
                         </div>

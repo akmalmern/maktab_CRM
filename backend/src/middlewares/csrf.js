@@ -1,4 +1,5 @@
 const { ApiError } = require("../utils/apiError");
+const { queueAuthEvent } = require("../services/security/securityEventService");
 
 function readHeaderCsrf(req) {
   const direct = req.headers["x-csrf-token"];
@@ -18,6 +19,14 @@ function requireCsrfToken(req, _res, next) {
   const headerToken = readHeaderCsrf(req);
 
   if (!cookieToken || !headerToken || cookieToken !== headerToken) {
+    queueAuthEvent({
+      action: "AUTH_CSRF_CHECK",
+      outcome: "FAILURE",
+      actorUserId: req.user?.sub || null,
+      req,
+      persist: true,
+      reason: "CSRF_TOKEN_INVALID",
+    });
     return next(
       new ApiError(403, "CSRF_TOKEN_INVALID", "CSRF token noto'g'ri yoki topilmadi"),
     );

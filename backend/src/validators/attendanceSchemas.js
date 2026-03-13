@@ -63,6 +63,20 @@ const davomatSaqlashSchema = z
       .min(1, "Kamida bitta davomat yozuvi kerak"),
   })
   .superRefine((data, ctx) => {
+    const seenStudentIds = new Set();
+    data.davomatlar.forEach((row, index) => {
+      if (!row?.studentId) return;
+      if (seenStudentIds.has(row.studentId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["davomatlar", index, "studentId"],
+          message: "Bir student uchun bir darsda faqat bitta davomat yozuvi yuborilishi kerak",
+        });
+        return;
+      }
+      seenStudentIds.add(row.studentId);
+    });
+
     data.davomatlar.forEach((row, index) => {
       const hasAnyBahoField =
         row.bahoBall !== undefined ||
@@ -113,6 +127,9 @@ const adminHisobotQuerySchema = z.object({
   periodType: periodTypeEnum.optional(),
   classroomId: z.string().cuid("classroomId noto'g'ri").optional(),
   studentId: z.string().cuid("studentId noto'g'ri").optional(),
+  holat: davomatHolatiEnum.optional(),
+  page: pageSchema,
+  limit: limitSchema,
 });
 
 module.exports = {

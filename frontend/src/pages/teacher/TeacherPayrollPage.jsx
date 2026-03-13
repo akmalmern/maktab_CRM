@@ -50,6 +50,14 @@ function getPayrollStatusLabel(value, t) {
   return labels[value] || value || '-';
 }
 
+function getRateSourceLabel(value, t) {
+  const labels = {
+    TEACHER_RATE: t("O'qituvchi stavkasi"),
+    SUBJECT_DEFAULT_RATE: t('Fan stavkasi'),
+  };
+  return labels[value] || value || '-';
+}
+
 function StatusPill({ value }) {
   const { t } = useTranslation();
   const map = {
@@ -145,6 +153,11 @@ export default function TeacherPayrollPage() {
       },
       { key: 'minutes', header: t('Daqiqa'), render: (row) => row.minutes ?? '-' },
       { key: 'ratePerHour', header: t('Soat narxi'), render: (row) => (row.ratePerHour ? formatMoney(row.ratePerHour) : '-') },
+      {
+        key: 'rateSource',
+        header: t('Stavka manbasi'),
+        render: (row) => (row.type === 'LESSON' ? getRateSourceLabel(row.rateSource, t) : '-'),
+      },
       { key: 'amount', header: t('Summa'), render: (row) => formatMoney(row.amount) },
       { key: 'description', header: t('Izoh'), render: (row) => row.description || '-' },
     ],

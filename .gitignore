@@ -1,0 +1,6 @@
+.env
+.env.*
+!.env.example
+!.env.docker.example
+!.env.docker.prod.example
+

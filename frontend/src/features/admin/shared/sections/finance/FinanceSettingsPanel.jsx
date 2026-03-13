@@ -67,7 +67,7 @@ export default function FinanceSettingsPanel({
               placeholder={t('Yillik summa avtomatik chiqadi')}
             />
             <p className="mt-1 text-xs text-slate-500">
-              {t('Formula')}: {t('Oylik summa').toLowerCase()} Г— {settingsValidation.computed.tolovOylarSoni} {t('oy')}
+              {t('Formula')}: {t('Oylik summa').toLowerCase()} x {settingsValidation.computed.tolovOylarSoni} {t('oy')}
             </p>
             {settingsValidation.errors.yillikSumma && (
               <p className="mt-1 text-xs text-rose-600">{settingsValidation.errors.yillikSumma}</p>

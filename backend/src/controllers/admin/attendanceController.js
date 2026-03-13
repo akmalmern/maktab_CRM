@@ -1,78 +1,39 @@
-const prisma = require("../../prisma");
 const { ApiError } = require("../../utils/apiError");
 const {
   getAdminAttendanceReportCore,
   getAdminAttendanceReportData,
 } = require("../../services/attendance/attendanceService");
 const { toIsoDate } = require("../../services/attendance/attendanceScope");
-
-function createSimplePdf(textLines) {
-  const lines = textLines.slice(0, 44);
-  const escapePdfText = (input) =>
-    String(input)
-      .replace(/\\/g, "\\\\")
-      .replace(/\(/g, "\\(")
-      .replace(/\)/g, "\\)");
-
-  const contentLines = ["BT", "/F1 11 Tf", "36 806 Td"];
-  lines.forEach((line, idx) => {
-    if (idx === 0) {
-      contentLines.push(`(${escapePdfText(line)}) Tj`);
-      return;
-    }
-    contentLines.push("0 -16 Td");
-    contentLines.push(`(${escapePdfText(line)}) Tj`);
-  });
-  contentLines.push("ET");
-  const contentStream = contentLines.join("\n");
-  const contentLength = Buffer.byteLength(contentStream, "utf8");
-
-  const objects = [
-    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
-    "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
-    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
-    "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
-    `5 0 obj\n<< /Length ${contentLength} >>\nstream\n${contentStream}\nendstream\nendobj\n`,
-  ];
-
-  let pdf = "%PDF-1.4\n";
-  const offsets = [0];
-  for (const obj of objects) {
-    offsets.push(Buffer.byteLength(pdf, "utf8"));
-    pdf += obj;
-  }
-
-  const xrefOffset = Buffer.byteLength(pdf, "utf8");
-  pdf += `xref\n0 ${objects.length + 1}\n`;
-  pdf += "0000000000 65535 f \n";
-  for (let i = 1; i <= objects.length; i += 1) {
-    pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
-  }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-
-  return Buffer.from(pdf, "utf8");
-}
+const { createPdfBuffer } = require("./finance/shared/pdf");
 
 async function getAttendanceReport(req, res) {
   res.json(await getAdminAttendanceReportData(req.query));
 }
 
 async function exportAttendanceReportPdf(req, res) {
-  const { selectedRange, selectedRecords, tarix } = await getAdminAttendanceReportCore(
-    req.query,
-  );
+  const {
+    selectedRange,
+    selectedRecordsCount,
+    tarix,
+    foizlar,
+    expected,
+  } = await getAdminAttendanceReportCore(req.query, { includeAllHistory: true });
 
   const lines = [
     "Maktab CRM - Davomat Hisoboti",
     `Period: ${selectedRange.type}`,
     `Oraliq: ${toIsoDate(selectedRange.from)} - ${toIsoDate(new Date(selectedRange.to.getTime() - 1))}`,
-    `Jami yozuvlar: ${selectedRecords.length}`,
+    `Jami yozuvlar: ${selectedRecordsCount}`,
     `Jami dars sessiyalari: ${tarix.length}`,
+    `Davomat foizi (belgilangan): ${foizlar?.tanlanganPeriod || 0}%`,
+    `Davomat foizi (reja asosida): ${foizlar?.tanlanganPeriodByExpected || 0}%`,
+    `Coverage (belgilangan/reja): ${foizlar?.coverage || 0}%`,
+    `Belgilanmagan yozuvlar: ${expected?.unmarkedRecords || 0}`,
     "",
-    "Tarixdan namunaviy sessiyalar (max 12):",
+    "Tarixdan namunaviy sessiyalar (max 40):",
     ...(tarix.length
       ? tarix
-          .slice(0, 12)
+          .slice(0, 40)
           .map(
             (row, idx) =>
               `${idx + 1}. ${row.sana} | ${row.sinf} | ${row.fan} | K:${row.holatlar.KELDI || 0} Sabs:${
@@ -82,7 +43,7 @@ async function exportAttendanceReportPdf(req, res) {
       : ["- Sessiya topilmadi"]),
   ];
 
-  const pdfBuffer = createSimplePdf(lines);
+  const pdfBuffer = await createPdfBuffer(lines);
   const fileName = `davomat-hisobot-${selectedRange.type.toLowerCase()}-${toIsoDate(selectedRange.from)}.pdf`;
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
@@ -101,9 +62,14 @@ async function exportAttendanceReportXlsx(req, res) {
     );
   }
 
-  const { selectedRange, selectedRecords, tarix } = await getAdminAttendanceReportCore(
-    req.query,
-  );
+  const {
+    selectedRange,
+    selectedRecordsCount,
+    tarix,
+    foizlar,
+    expected,
+    risk,
+  } = await getAdminAttendanceReportCore(req.query, { includeAllHistory: true });
 
   const tarixRows = tarix.map((row) => ({
     Sana: row.sana,
@@ -124,8 +90,33 @@ async function exportAttendanceReportXlsx(req, res) {
       Kalit: "Tugash",
       Qiymat: toIsoDate(new Date(selectedRange.to.getTime() - 1)),
     },
-    { Kalit: "Jami yozuvlar", Qiymat: selectedRecords.length },
+    { Kalit: "Jami yozuvlar", Qiymat: selectedRecordsCount },
     { Kalit: "Jami sessiyalar", Qiymat: tarix.length },
+    { Kalit: "Davomat foizi (belgilangan)", Qiymat: `${foizlar?.tanlanganPeriod || 0}%` },
+    { Kalit: "Davomat foizi (reja asosida)", Qiymat: `${foizlar?.tanlanganPeriodByExpected || 0}%` },
+    { Kalit: "Coverage", Qiymat: `${foizlar?.coverage || 0}%` },
+    { Kalit: "Rejadagi yozuvlar", Qiymat: expected?.records || 0 },
+    { Kalit: "Belgilanmagan yozuvlar", Qiymat: expected?.unmarkedRecords || 0 },
+  ];
+  const riskRows = [
+    ...(risk?.topSababsizStudents || []).map((row) => ({
+      Turi: "Student",
+      Nomi: row.fullName,
+      Username: row.username || "",
+      Soni: row.count,
+    })),
+    ...(risk?.topSababsizTeachers || []).map((row) => ({
+      Turi: "Teacher",
+      Nomi: row.fullName,
+      Username: row.username || "",
+      Soni: row.count,
+    })),
+    ...(risk?.topSababsizClassrooms || []).map((row) => ({
+      Turi: "Classroom",
+      Nomi: row.classroom,
+      Username: "",
+      Soni: row.count,
+    })),
   ];
 
   const workbook = XLSX.utils.book_new();
@@ -138,6 +129,11 @@ async function exportAttendanceReportXlsx(req, res) {
     workbook,
     XLSX.utils.json_to_sheet(tarixRows),
     "DavomatTarixi",
+  );
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.json_to_sheet(riskRows.length ? riskRows : [{ Turi: "-", Nomi: "-", Username: "", Soni: 0 }]),
+    "RiskTop",
   );
 
   const fileBuffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });

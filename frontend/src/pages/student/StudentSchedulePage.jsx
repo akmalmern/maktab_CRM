@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { Button, Card, Select, StateView } from '../../components/ui';
+import { formatScheduleSlotLabel } from '../../lib/scheduleSlotLabel';
 import { useLazyGetStudentScheduleQuery } from '../../services/api/studentApi';
 
 const HAFTA_KUNLARI = ['DUSHANBA', 'SESHANBA', 'CHORSHANBA', 'PAYSHANBA', 'JUMA', 'SHANBA'];
@@ -29,7 +30,7 @@ function fanRangi(fanNomi) {
 }
 
 export default function StudentSchedulePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [oquvYili, setOquvYili] = useState('');
   const [oquvYillar, setOquvYillar] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -133,7 +134,7 @@ export default function StudentSchedulePage() {
                   {vaqtlar.map((vaqt) => (
                     <tr key={vaqt.id} className="border-b border-slate-100 align-top bg-white">
                       <td className="sticky left-0 z-10 w-28 bg-white px-2 py-2 text-slate-700 shadow-[6px_0_8px_-8px_rgba(15,23,42,0.2)]">
-                        <p className="font-semibold text-slate-900">{vaqt.nomi}</p>
+                        <p className="font-semibold text-slate-900">{formatScheduleSlotLabel(vaqt.nomi, i18n.language)}</p>
                         <p className="text-[11px] text-slate-500">
                           {vaqt.boshlanishVaqti} - {vaqt.tugashVaqti}
                         </p>

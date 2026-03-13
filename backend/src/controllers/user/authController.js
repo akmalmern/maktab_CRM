@@ -8,6 +8,7 @@ const {
   issueRefreshToken,
   hashToken,
 } = require("../../utils/tokens");
+const { logAuthEvent } = require("../../services/security/securityEventService");
 
 function getCookieOptions() {
   const isProd = process.env.NODE_ENV === "production";
@@ -67,16 +68,41 @@ async function createRefreshSession({ userId, refreshToken, jti, expiresAt, req 
 async function login(req, res) {
   const { username, password } = req.body;
   if (!username || !password) {
+    await logAuthEvent({
+      action: "AUTH_LOGIN",
+      outcome: "FAILURE",
+      username: username || null,
+      req,
+      persist: false,
+      reason: "VALIDATION_ERROR",
+    });
     throw new ApiError(400, "VALIDATION_ERROR", "username/password majburiy");
   }
 
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user || !user.isActive) {
+    await logAuthEvent({
+      action: "AUTH_LOGIN",
+      outcome: "FAILURE",
+      username,
+      req,
+      persist: false,
+      reason: "INVALID_CREDENTIALS",
+    });
     throw new ApiError(401, "INVALID_CREDENTIALS", "Login yoki parol noto'g'ri");
   }
 
   const ok = await bcrypt.compare(password, user.password);
   if (!ok) {
+    await logAuthEvent({
+      action: "AUTH_LOGIN",
+      outcome: "FAILURE",
+      actorUserId: user.id,
+      username,
+      req,
+      persist: false,
+      reason: "INVALID_CREDENTIALS",
+    });
     throw new ApiError(401, "INVALID_CREDENTIALS", "Login yoki parol noto'g'ri");
   }
 
@@ -96,6 +122,15 @@ async function login(req, res) {
 
   res.cookie("refreshToken", refreshToken, getCookieOptions());
   res.cookie("csrfToken", createCsrfToken(), getCsrfCookieOptions());
+  await logAuthEvent({
+    action: "AUTH_LOGIN",
+    outcome: "SUCCESS",
+    actorUserId: user.id,
+    username,
+    req,
+    persist: true,
+    details: { role: user.role },
+  });
 
   res.json({ ok: true, accessToken, role: user.role });
 }
@@ -103,6 +138,14 @@ async function login(req, res) {
 async function refresh(req, res) {
   const token = req.cookies?.refreshToken;
   if (!token) {
+    await logAuthEvent({
+      action: "AUTH_REFRESH",
+      outcome: "FAILURE",
+      actorUserId: req.user?.sub || null,
+      req,
+      persist: true,
+      reason: "REFRESH_TOKEN_MISSING",
+    });
     throw new ApiError(401, "REFRESH_TOKEN_MISSING", "Refresh token topilmadi");
   }
 
@@ -110,18 +153,40 @@ async function refresh(req, res) {
   try {
     payload = verifyRefresh(token);
   } catch (_e) {
+    await logAuthEvent({
+      action: "AUTH_REFRESH",
+      outcome: "FAILURE",
+      req,
+      persist: true,
+      reason: "REFRESH_TOKEN_INVALID",
+    });
     throw new ApiError(401, "REFRESH_TOKEN_INVALID", "Refresh token noto'g'ri yoki eskirgan");
   }
 
   if (!payload?.sub || !payload?.jti) {
+    await logAuthEvent({
+      action: "AUTH_REFRESH",
+      outcome: "FAILURE",
+      req,
+      persist: true,
+      reason: "REFRESH_TOKEN_INVALID",
+    });
     throw new ApiError(401, "REFRESH_TOKEN_INVALID", "Refresh token noto'g'ri yoki eskirgan");
   }
 
   const user = await prisma.user.findUnique({
     where: { id: payload.sub },
-    select: { id: true, role: true, isActive: true },
+    select: { id: true, role: true, username: true, isActive: true },
   });
   if (!user || !user.isActive) {
+    await logAuthEvent({
+      action: "AUTH_REFRESH",
+      outcome: "FAILURE",
+      actorUserId: payload.sub,
+      req,
+      persist: true,
+      reason: "USER_INVALID",
+    });
     throw new ApiError(401, "USER_INVALID", "Foydalanuvchi yaroqsiz");
   }
 
@@ -140,6 +205,15 @@ async function refresh(req, res) {
   });
 
   if (!session) {
+    await logAuthEvent({
+      action: "AUTH_REFRESH",
+      outcome: "FAILURE",
+      actorUserId: user.id,
+      username: user.username || null,
+      req,
+      persist: true,
+      reason: "REFRESH_TOKEN_INVALID",
+    });
     throw new ApiError(401, "REFRESH_TOKEN_INVALID", "Refresh token noto'g'ri yoki eskirgan");
   }
 
@@ -178,6 +252,15 @@ async function refresh(req, res) {
   const accessToken = signAccessToken({ sub: user.id, role: user.role });
   res.cookie("refreshToken", nextRefreshToken, getCookieOptions());
   res.cookie("csrfToken", createCsrfToken(), getCsrfCookieOptions());
+  await logAuthEvent({
+    action: "AUTH_REFRESH",
+    outcome: "SUCCESS",
+    actorUserId: user.id,
+    username: user.username || null,
+    req,
+    persist: true,
+    details: { role: user.role },
+  });
 
   res.json({
     ok: true,
@@ -190,11 +273,13 @@ async function refresh(req, res) {
 async function logout(req, res) {
   const token = req.cookies?.refreshToken;
   const now = new Date();
+  let actorUserId = req.user?.sub || null;
 
   if (token) {
     try {
       const payload = verifyRefresh(token);
       if (payload?.sub && payload?.jti) {
+        actorUserId = payload.sub;
         await prisma.refreshSession.updateMany({
           where: {
             userId: payload.sub,
@@ -222,6 +307,14 @@ async function logout(req, res) {
   res.json({
     ok: true,
     message: typeof req.t === "function" ? req.t("messages.LOGOUT_SUCCESS") : "Logout qilindi",
+  });
+
+  await logAuthEvent({
+    action: "AUTH_LOGOUT",
+    outcome: "SUCCESS",
+    actorUserId,
+    req,
+    persist: true,
   });
 }
 

@@ -13,6 +13,7 @@ import {
   Tabs,
 } from '../../../components/ui';
 import { saveDownloadedFile } from '../../../lib/downloadUtils';
+import { formatScheduleSlotLabel } from '../../../lib/scheduleSlotLabel';
 import {
   useDeleteAdminAvatarMutation,
   useDeleteAdminDocumentMutation,
@@ -775,7 +776,7 @@ export default function PersonDetailPage() {
                     header: t('Vaqt', { defaultValue: 'Vaqt' }),
                     render: (row) =>
                       row.darsJadvali?.vaqtOraliq
-                        ? `${row.darsJadvali.vaqtOraliq.nomi} (${row.darsJadvali.vaqtOraliq.boshlanishVaqti})`
+                        ? `${formatScheduleSlotLabel(row.darsJadvali.vaqtOraliq.nomi, i18n.language)} (${row.darsJadvali.vaqtOraliq.boshlanishVaqti})`
                         : '-',
                   },
                   {

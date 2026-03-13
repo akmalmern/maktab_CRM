@@ -13,11 +13,13 @@ import {
   useUpsertAdminTeacherWorkloadPlanMutation,
   useUpdateAdminDarsJadvaliMutation,
 } from '../../../../services/api/scheduleApi';
+import PayrollRealLessonsManager from './schedule/PayrollRealLessonsManager';
 
 export default function ScheduleSection({
   classrooms,
   subjects,
   teachers,
+  teachersState,
 }) {
   const { t } = useTranslation();
   const vaqtQuery = useGetAdminVaqtOraliqlariQuery();
@@ -141,6 +143,7 @@ export default function ScheduleSection({
         classrooms={classrooms}
         subjects={subjects}
         teachers={teachers}
+        teachersState={teachersState}
         vaqtOraliqlari={vaqtOraliqlari}
         darslar={darslar}
         darslarLoading={darslarLoading}
@@ -152,6 +155,14 @@ export default function ScheduleSection({
         onMoveDars={handleMoveDars}
         onSaveTeacherWorkloadPlan={handleSaveTeacherWorkloadPlan}
         onDeleteTeacherWorkloadPlan={handleDeleteTeacherWorkloadPlan}
+      />
+
+      <PayrollRealLessonsManager
+        teachers={teachers}
+        teachersState={teachersState}
+        subjects={subjects}
+        classrooms={classrooms}
+        darslar={darslar}
       />
     </div>
   );

@@ -6,18 +6,22 @@ import {
   useCreateSubjectMutation,
   useDeleteSubjectMutation,
   useGetSubjectsQuery,
+  useUpdateSubjectMutation,
 } from '../../../services/api/subjectsApi';
 
 export default function SubjectManager() {
   const { t } = useTranslation();
   const [name, setName] = useState('');
+  const [editingId, setEditingId] = useState('');
+  const [editingName, setEditingName] = useState('');
   const { data, isLoading, isFetching, error } = useGetSubjectsQuery();
   const [createSubject, createState] = useCreateSubjectMutation();
+  const [updateSubject, updateState] = useUpdateSubjectMutation();
   const [deleteSubject, deleteState] = useDeleteSubjectMutation();
 
   const subjects = data?.subjects || [];
   const loading = isLoading || isFetching;
-  const actionLoading = createState.isLoading || deleteState.isLoading;
+  const actionLoading = createState.isLoading || updateState.isLoading || deleteState.isLoading;
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -41,23 +45,99 @@ export default function SubjectManager() {
     }
   }
 
+  function startEditing(subject) {
+    setEditingId(subject.id);
+    setEditingName(subject.name || '');
+  }
+
+  function cancelEditing() {
+    setEditingId('');
+    setEditingName('');
+  }
+
+  async function saveEditing() {
+    const safeName = String(editingName || '').trim();
+    if (!editingId || !safeName) return;
+    try {
+      await updateSubject({
+        subjectId: editingId,
+        payload: { name: safeName },
+      }).unwrap();
+      toast.success(t('Fan yangilandi'));
+      cancelEditing();
+    } catch (updateError) {
+      toast.error(updateError?.message || t('Fan yangilanmadi'));
+    }
+  }
+
   const columns = [
-    { key: 'name', header: t('Fan'), render: (subject) => subject.name },
+    {
+      key: 'name',
+      header: t('Fan'),
+      render: (subject) => (
+        editingId === subject.id ? (
+          <Input
+            type="text"
+            value={editingName}
+            onChange={(event) => setEditingName(event.target.value)}
+            placeholder={t('Yangi fan nomi')}
+          />
+        ) : (
+          subject.name
+        )
+      ),
+    },
     {
       key: 'actions',
       header: t('Amal'),
       headerClassName: 'text-right',
       cellClassName: 'text-right',
       render: (subject) => (
-        <Button
-          size="sm"
-          variant="danger"
-          className="min-w-24"
-          disabled={actionLoading}
-          onClick={() => handleDelete(subject.id)}
-        >
-          {t("O'chirish")}
-        </Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          {editingId === subject.id ? (
+            <>
+              <Button
+                size="sm"
+                variant="success"
+                className="min-w-24"
+                disabled={actionLoading || !String(editingName || '').trim()}
+                onClick={saveEditing}
+              >
+                {t('Saqlash')}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="min-w-24"
+                disabled={actionLoading}
+                onClick={cancelEditing}
+              >
+                {t('Bekor qilish')}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="min-w-24"
+                disabled={actionLoading}
+                onClick={() => startEditing(subject)}
+              >
+                {t('Tahrirlash')}
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                className="min-w-24"
+                disabled={actionLoading}
+                onClick={() => handleDelete(subject.id)}
+              >
+                {t("O'chirish")}
+              </Button>
+            </>
+          )}
+        </div>
       ),
     },
   ];

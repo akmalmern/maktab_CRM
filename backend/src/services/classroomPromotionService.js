@@ -1,6 +1,9 @@
 const prisma = require("../prisma");
 const { ApiError } = require("../utils/apiError");
 const { utcDateToTashkentIsoDate } = require("../utils/tashkentTime");
+const {
+  syncStudentsMajburiyatByMainSettings,
+} = require("./financeMajburiyatService");
 
 const SENTYABR_MONTH_INDEX = 8; // JS: 0-based
 const MAX_GRADE = 11;
@@ -249,6 +252,7 @@ async function applyAnnualPromotion({
 
   const now = new Date();
   const graduateIds = plan.graduateItems.map((item) => item.id);
+  const promotedStudentIds = new Set();
 
   await prisma.$transaction(async (tx) => {
     for (const item of plan.promoteItems) {
@@ -339,6 +343,7 @@ async function applyAnnualPromotion({
           })),
           skipDuplicates: true,
         });
+        for (const studentId of studentIds) promotedStudentIds.add(studentId);
       }
 
       await tx.classroom.update({
@@ -387,6 +392,13 @@ async function applyAnnualPromotion({
       });
     }
   });
+
+  if (promotedStudentIds.size) {
+    await syncStudentsMajburiyatByMainSettings({
+      studentIds: [...promotedStudentIds],
+      futureMonths: 3,
+    });
+  }
 
   return {
     ok: true,

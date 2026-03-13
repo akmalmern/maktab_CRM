@@ -6,6 +6,9 @@ const {
   applyAnnualPromotion,
   getCurrentAcademicYear,
 } = require("../../services/classroomPromotionService");
+const {
+  syncStudentsMajburiyatByMainSettings,
+} = require("../../services/financeMajburiyatService");
 
 function getNextAcademicYear(currentAcademicYear) {
   const match = String(currentAcademicYear || "").match(/^(\d{4})-(\d{4})$/);
@@ -387,6 +390,14 @@ async function promoteClassroom(req, res) {
       })),
       skipDuplicates: true,
     });
+
+    if (created.count > 0) {
+      await syncStudentsMajburiyatByMainSettings({
+        prismaClient: tx,
+        studentIds: uniqueStudents,
+        futureMonths: 3,
+      });
+    }
 
     return { movedCount: created.count };
   });

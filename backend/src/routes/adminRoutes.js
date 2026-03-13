@@ -146,6 +146,13 @@ router.post(
   validateBody(createSubjectSchema),
   asyncHandler(subjects.createSubject),
 );
+router.patch(
+  "/subjects/:id",
+  requireAuth,
+  requireRole("ADMIN"),
+  validate({ params: SubjectIdParamSchema, body: createSubjectSchema }),
+  asyncHandler(subjects.updateSubject),
+);
 router.get(
   "/classrooms",
   requireAuth,
@@ -637,6 +644,13 @@ router.get(
   requireRole("ADMIN", "MANAGER"),
   validate({ params: payrollRunIdParamSchema, query: payrollRunLinesQuerySchema.partial() }),
   asyncHandler(payroll.exportPayrollRunCsv),
+);
+router.get(
+  "/moliya/oylik/runs/:runId/export/xlsx",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER"),
+  validate({ params: payrollRunIdParamSchema, query: payrollRunLinesQuerySchema.partial() }),
+  asyncHandler(payroll.exportPayrollRunExcel),
 );
 router.post(
   "/moliya/oylik/runs/:runId/adjustments",

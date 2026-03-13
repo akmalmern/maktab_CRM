@@ -1,6 +1,6 @@
-const orchestrator = require("./financeOrchestrator");
+const financeQueryOrchestrator = require("./financeQueryOrchestrator");
 
 module.exports = {
-  fetchFinanceSummary: orchestrator.fetchFinanceSummary,
-  buildFinanceSettingsPayload: orchestrator.buildFinanceSettingsPayload,
+  fetchFinanceSummary: financeQueryOrchestrator.fetchFinanceSummary,
+  buildFinanceSettingsPayload: financeQueryOrchestrator.buildFinanceSettingsPayload,
 };
