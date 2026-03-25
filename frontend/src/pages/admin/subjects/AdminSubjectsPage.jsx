@@ -1,5 +1,5 @@
-import AdminWorkspace from '../../../features/admin/shared/AdminWorkspace';
+import { AdminSubjectsWorkspace } from '../../../features/admin/subjects';
 
 export default function AdminSubjectsPage() {
-  return <AdminWorkspace section="subjects" />;
+  return <AdminSubjectsWorkspace />;
 }

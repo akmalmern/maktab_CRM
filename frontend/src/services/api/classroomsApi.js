@@ -8,7 +8,6 @@ export const classroomsApi = baseApi.injectEndpoints({
         const rows = result?.classrooms || [];
         return [
           { type: 'Classroom', id: 'LIST' },
-          { type: 'Classroom', id: 'META_LIST' },
           ...rows.map((row) => ({ type: 'Classroom', id: row.id })),
         ];
       },
@@ -28,6 +27,7 @@ export const classroomsApi = baseApi.injectEndpoints({
       }),
       providesTags: (result, error, arg) => [
         { type: 'ClassroomStudentList', id: `${arg?.classroomId || 'unknown'}:${arg?.page || 1}:${arg?.search || ''}` },
+        ...(result?.students || []).map((student) => ({ type: 'Student', id: student.id })),
       ],
     }),
     createClassroom: builder.mutation({
@@ -39,10 +39,24 @@ export const classroomsApi = baseApi.injectEndpoints({
       invalidatesTags: [
         { type: 'Classroom', id: 'LIST' },
         { type: 'Classroom', id: 'META' },
-        { type: 'Classroom', id: 'META_LIST' },
       ],
     }),
-    previewAnnualClassPromotion: builder.mutation({
+    removeStudentFromClassroom: builder.mutation({
+      query: ({ classroomId, studentId }) => ({
+        path: `/api/admin/classrooms/${classroomId}/students/${studentId}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: (result, error, arg) => [
+        { type: 'Classroom', id: 'LIST' },
+        { type: 'Classroom', id: arg?.classroomId },
+        { type: 'Classroom', id: 'META' },
+        'ClassroomStudentList',
+        { type: 'Student', id: arg?.studentId },
+        { type: 'Student', id: 'LIST' },
+        { type: 'PersonDetail', id: `student:${arg?.studentId}` },
+      ],
+    }),
+    previewAnnualClassPromotion: builder.query({
       query: () => ({
         path: '/api/admin/classrooms/yillik-otkazish/preview',
       }),
@@ -56,7 +70,8 @@ export const classroomsApi = baseApi.injectEndpoints({
       invalidatesTags: [
         { type: 'Classroom', id: 'LIST' },
         { type: 'Classroom', id: 'META' },
-        { type: 'Classroom', id: 'META_LIST' },
+        { type: 'Student', id: 'LIST' },
+        'ClassroomStudentList',
       ],
     }),
     previewPromoteClassroom: builder.mutation({
@@ -75,7 +90,8 @@ export const classroomsApi = baseApi.injectEndpoints({
       invalidatesTags: [
         { type: 'Classroom', id: 'LIST' },
         { type: 'Classroom', id: 'META' },
-        { type: 'Classroom', id: 'META_LIST' },
+        { type: 'Student', id: 'LIST' },
+        'ClassroomStudentList',
       ],
     }),
   }),
@@ -84,9 +100,12 @@ export const classroomsApi = baseApi.injectEndpoints({
 export const {
   useGetClassroomsQuery,
   useGetClassroomsMetaQuery,
+  useGetClassroomStudentsQuery,
   useLazyGetClassroomStudentsQuery,
   useCreateClassroomMutation,
-  usePreviewAnnualClassPromotionMutation,
+  useRemoveStudentFromClassroomMutation,
+  usePreviewAnnualClassPromotionQuery,
+  useLazyPreviewAnnualClassPromotionQuery,
   useRunAnnualClassPromotionMutation,
   usePreviewPromoteClassroomMutation,
   usePromoteClassroomMutation,

@@ -1,5 +1,5 @@
-import AdminWorkspace from '../../../features/admin/shared/AdminWorkspace';
+import { AdminClassroomsWorkspace } from '../../../features/admin/classrooms';
 
 export default function AdminClassroomsPage() {
-  return <AdminWorkspace section="classrooms" />;
+  return <AdminClassroomsWorkspace />;
 }

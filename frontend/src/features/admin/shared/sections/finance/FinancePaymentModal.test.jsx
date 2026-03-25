@@ -118,4 +118,32 @@ describe('FinancePaymentModal', () => {
     expect(rollbackButtons[0]).toBeDisabled();
     expect(rollbackButtons[1]).not.toBeDisabled();
   });
+
+  it('renders transaction history table in history tab when transactions exist', () => {
+    render(
+      <FinancePaymentModal
+        {...createBaseProps({
+          paymentModalTab: 'history',
+          detailState: {
+            loading: false,
+            error: null,
+            transactions: [
+              {
+                id: 'tx-1',
+                turi: 'OYLIK',
+                holat: 'YAKUNLANGAN',
+                summa: 300000,
+                tolovSana: '2026-03-10T00:00:00.000Z',
+                qoplanganOylarFormatted: ['2026-03'],
+              },
+            ],
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getAllByText("To'lov tranzaksiyalari").length).toBeGreaterThan(0);
+    expect(screen.getByText('YAKUNLANGAN')).toBeInTheDocument();
+    expect(screen.getAllByText('2026-03').length).toBeGreaterThan(0);
+  });
 });

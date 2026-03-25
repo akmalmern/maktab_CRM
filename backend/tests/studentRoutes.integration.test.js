@@ -238,7 +238,6 @@ test(
                 darsJadvaliId: "dars1",
                 sana: new Date("2026-02-20T00:00:00.000Z"),
                 holat: "KELDI",
-                izoh: "",
                 darsJadvali: {
                   fan: { name: "Algebra" },
                   sinf: { name: "10-A", academicYear: "2025-2026" },
@@ -298,7 +297,6 @@ test(
                 turi: "JORIY",
                 ball: 4,
                 maxBall: 5,
-                izoh: "",
                 teacher: { firstName: "Oybek", lastName: "Raxmonov" },
                 darsJadvali: {
                   sinf: { name: "10-A", academicYear: "2025-2026" },

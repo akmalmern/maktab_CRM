@@ -10,6 +10,7 @@ export { FilterToolbarItem } from './FilterToolbar';
 export { default as Input } from './Input';
 export { default as Modal } from './Modal';
 export { default as MoneyInputUz } from './MoneyInputUz';
+export { default as PromptModal } from './PromptModal';
 export { default as Select } from './Select';
 export { default as StatusBadge } from './StatusBadge';
 export { default as StateView } from './StateView';

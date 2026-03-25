@@ -36,6 +36,9 @@ export default function ManagerHomePage() {
         <Button variant="indigo" onClick={() => navigate('/manager/qarzdorlar')}>
           {t("Qarzdorlar ro'yxati")}
         </Button>
+        <Button variant="secondary" onClick={() => navigate('/manager/sozlamalar')}>
+          {t('Sozlamalar')}
+        </Button>
       </div>
     </Card>
   );

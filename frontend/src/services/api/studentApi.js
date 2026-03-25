@@ -35,8 +35,10 @@ export const studentApi = baseApi.injectEndpoints({
 export const {
   useGetStudentProfileQuery,
   useLazyGetStudentScheduleQuery,
+  useGetStudentAttendanceQuery,
   useLazyGetStudentAttendanceQuery,
+  useGetStudentGradesQuery,
   useLazyGetStudentGradesQuery,
+  useGetStudentClassGradesQuery,
   useLazyGetStudentClassGradesQuery,
 } = studentApi;
-

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { Badge, Button, Card, DataTable, Input, StateView } from '../../../components/ui';
+import { Badge, Button, Card, ConfirmModal, DataTable, Input, StateView } from '../../../components/ui';
+import useAsyncConfirm from '../../../hooks/useAsyncConfirm';
 import {
   useCreateSubjectMutation,
   useDeleteSubjectMutation,
@@ -18,6 +19,7 @@ export default function SubjectManager() {
   const [createSubject, createState] = useCreateSubjectMutation();
   const [updateSubject, updateState] = useUpdateSubjectMutation();
   const [deleteSubject, deleteState] = useDeleteSubjectMutation();
+  const { askConfirm, confirmModalProps } = useAsyncConfirm();
 
   const subjects = data?.subjects || [];
   const loading = isLoading || isFetching;
@@ -35,7 +37,10 @@ export default function SubjectManager() {
   }
 
   async function handleDelete(id) {
-    const ok = window.confirm(t('Fanni o`chirmoqchimisiz?'));
+    const ok = await askConfirm({
+      title: t("Fanni o'chirish"),
+      message: t('Fanni o`chirmoqchimisiz?'),
+    });
     if (!ok) return;
     try {
       await deleteSubject(id).unwrap();
@@ -184,6 +189,8 @@ export default function SubjectManager() {
       ) : (
         <StateView type="empty" description={t('Fanlar mavjud emas')} />
       )}
+
+      <ConfirmModal {...confirmModalProps} loading={actionLoading} />
     </Card>
   );
 }

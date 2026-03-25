@@ -10,6 +10,7 @@ const {
 
 const DEFAULT_OYLIK_SUMMA = 300000;
 const SCHOOL_MONTH_ORDER = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
+const OPEN_DEBT_STATUSES = ["BELGILANDI", "QISMAN_TOLANGAN"];
 
 function parseIntSafe(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -82,7 +83,7 @@ function mapNoteRow(row) {
 }
 
 function isDebtHolat(value) {
-  return value === "BELGILANDI" || value === "QISMAN_TOLANGAN";
+  return OPEN_DEBT_STATUSES.includes(value);
 }
 
 async function getSettings() {
@@ -203,8 +204,8 @@ async function getDebtorsFallback({
     prisma.studentOyMajburiyat.findMany({
       where: {
         studentId: { in: studentIds },
-        holat: { in: ["BELGILANDI", "QISMAN_TOLANGAN"] },
-        netSumma: { gt: 0 },
+        holat: { in: OPEN_DEBT_STATUSES },
+        qoldiqSumma: { gt: 0 },
         OR: [
           { yil: { lt: currentYear } },
           { yil: currentYear, oy: { lte: currentMonth } },
@@ -373,10 +374,10 @@ async function getDebtors(req, res) {
       SELECT
         m."studentId",
         COUNT(*)::int AS "debtMonths",
-        COALESCE(SUM(m."netSumma"), 0)::int AS "debtSum"
+        COALESCE(SUM(m."qoldiqSumma"), 0)::int AS "debtSum"
       FROM "StudentOyMajburiyat" m
-      WHERE m.holat = 'BELGILANDI'
-        AND m."netSumma" > 0
+      WHERE m.holat IN ('BELGILANDI', 'QISMAN_TOLANGAN')
+        AND m."qoldiqSumma" > 0
         AND (m.yil < ${currentYear} OR (m.yil = ${currentYear} AND m.oy <= ${currentMonth}))
       GROUP BY m."studentId"
     ),
@@ -449,8 +450,8 @@ async function getDebtors(req, res) {
       debtMonths = await prisma.studentOyMajburiyat.findMany({
         where: {
           studentId: { in: studentIds },
-          holat: "BELGILANDI",
-          netSumma: { gt: 0 },
+          holat: { in: OPEN_DEBT_STATUSES },
+          qoldiqSumma: { gt: 0 },
           OR: [
             { yil: { lt: currentYear } },
             { yil: currentYear, oy: { lte: currentMonth } },
@@ -579,15 +580,15 @@ async function createDebtorNote(req, res) {
   const debt = await prisma.studentOyMajburiyat.aggregate({
     where: {
       studentId,
-      holat: "BELGILANDI",
-      netSumma: { gt: 0 },
+      holat: { in: OPEN_DEBT_STATUSES },
+      qoldiqSumma: { gt: 0 },
       OR: [
         { yil: { lt: currentYear } },
         { yil: currentYear, oy: { lte: currentMonth } },
       ],
     },
     _count: { _all: true },
-    _sum: { netSumma: true },
+    _sum: { qoldiqSumma: true },
   });
 
   if (Number(debt?._count?._all || 0) < 1) {
@@ -621,7 +622,7 @@ async function createDebtorNote(req, res) {
     note: mapNoteRow(created),
     debt: {
       qarzOylarSoni: Number(debt?._count?._all || 0),
-      jamiQarzSumma: Number(debt?._sum?.netSumma || 0),
+      jamiQarzSumma: Number(debt?._sum?.qoldiqSumma || 0),
     },
   });
 }

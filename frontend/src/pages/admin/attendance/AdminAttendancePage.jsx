@@ -1,5 +1,5 @@
-import AdminWorkspace from '../../../features/admin/shared/AdminWorkspace';
+import { AdminAttendanceWorkspace } from '../../../features/admin/attendance';
 
 export default function AdminAttendancePage() {
-  return <AdminWorkspace section="attendance" />;
+  return <AdminAttendanceWorkspace />;
 }

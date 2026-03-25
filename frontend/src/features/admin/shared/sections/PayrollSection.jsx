@@ -1,39 +1,23 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { toast } from 'react-toastify';
 import { useAppSelector } from '../../../../app/hooks';
 import AutoTranslate from '../../../../components/AutoTranslate';
 import {
   Card,
+  ConfirmModal,
   Tabs,
 } from '../../../../components/ui';
-import { getErrorMessage } from '../../../../lib/apiClient';
-import { saveDownloadedFile } from '../../../../lib/downloadUtils';
+import useAsyncConfirm from '../../../../hooks/useAsyncConfirm';
 import { useLazyGetTeachersQuery } from '../../../../services/api/peopleApi';
 import { useGetSubjectsQuery } from '../../../../services/api/subjectsApi';
 import {
-  useAddPayrollAdjustmentMutation,
-  useApprovePayrollRunMutation,
-  useCreatePayrollSubjectRateMutation,
-  useCreatePayrollTeacherRateMutation,
-  useDeletePayrollSubjectRateMutation,
-  useDeletePayrollTeacherRateMutation,
-  useExportPayrollRunExcelMutation,
   useGetPayrollAutomationHealthQuery,
   useGetPayrollEmployeesQuery,
   useGetPayrollMonthlyReportQuery,
-  useGeneratePayrollRunMutation,
   useGetPayrollRunDetailQuery,
   useGetPayrollRunsQuery,
   useLazyGetPayrollSubjectRatesQuery,
   useLazyGetPayrollTeacherRatesQuery,
-  usePayPayrollItemMutation,
-  usePayPayrollRunMutation,
-  useReversePayrollRunMutation,
-  useRunPayrollAutomationMutation,
-  useUpdatePayrollEmployeeConfigMutation,
-  useUpdatePayrollSubjectRateMutation,
-  useUpdatePayrollTeacherRateMutation,
 } from '../../../../services/api/payrollApi';
 import {
   PayrollConfigPanel,
@@ -59,10 +43,7 @@ import {
   DEFAULT_EMPLOYEE_CONFIG_FILTERS,
   DEFAULT_LINE_FILTERS,
   DEFAULT_RUN_FILTERS,
-  RATES_PAGE_LIMIT,
   buildOwnerKey,
-  createRatesDataset,
-  formatEmployeeConfigName,
   formatMoneyRaw,
   formatOwnerName,
   getCurrentMonthKey,
@@ -72,12 +53,16 @@ import {
   toDateInput,
 } from './payroll/payrollSectionModel';
 import { usePayrollRunItems } from './payroll/usePayrollRunItems';
+import { usePayrollRatesDatasets } from './payroll/usePayrollRatesDatasets';
+import useScheduleTeachersDirectory from '../useScheduleTeachersDirectory';
+import usePayrollSectionController from './payroll/usePayrollSectionController';
 
 
 export default function PayrollSection() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const formatMoney = useCallback((value) => formatMoneyRaw(value, locale), [locale]);
+  const { askConfirm, confirmModalProps } = useAsyncConfirm();
   const role = useAppSelector((state) => state.auth.role);
   const isManagerView = role === 'MANAGER';
   const isAdminView = role === 'ADMIN';
@@ -160,85 +145,21 @@ export default function PayrollSection() {
   });
   const [rateCreateDrawer, setRateCreateDrawer] = useState({ open: false, kind: 'teacher' });
   const [adjustmentDrawerOpen, setAdjustmentDrawerOpen] = useState(false);
-  const [teacherRatesDataset, setTeacherRatesDataset] = useState(createRatesDataset);
-  const [subjectRatesDataset, setSubjectRatesDataset] = useState(createRatesDataset);
   const [loadPayrollTeacherRates] = useLazyGetPayrollTeacherRatesQuery();
   const [loadPayrollSubjectRates] = useLazyGetPayrollSubjectRatesQuery();
   const [loadTeachersPage] = useLazyGetTeachersQuery();
-  const [teacherDirectory, setTeacherDirectory] = useState({
-    items: [],
-    total: 0,
-    loading: false,
-    partial: false,
-    error: null,
+  const teacherDirectory = useScheduleTeachersDirectory({
+    enabled: !isManagerView,
+    fetchTeachersPage: loadTeachersPage,
+    baseQuery: {
+      filter: 'all',
+      sort: 'name:asc',
+      status: 'active',
+    },
   });
   const subjectsQuery = useGetSubjectsQuery(undefined, { skip: isManagerView });
   const teachers = useMemo(() => teacherDirectory.items || [], [teacherDirectory.items]);
   const subjects = useMemo(() => subjectsQuery.data?.subjects || [], [subjectsQuery.data?.subjects]);
-
-  useEffect(() => {
-    if (isManagerView) {
-      setTeacherDirectory({
-        items: [],
-        total: 0,
-        loading: false,
-        partial: false,
-        error: null,
-      });
-      return;
-    }
-
-    let cancelled = false;
-    async function loadAllTeachers() {
-      setTeacherDirectory((prev) => ({
-        ...prev,
-        loading: true,
-        error: null,
-      }));
-
-      const accumulated = [];
-      let total = 0;
-      let page = 1;
-      const limit = 100;
-
-      try {
-        while (true) {
-          const response = await loadTeachersPage(
-            { page, limit, filter: 'all', sort: 'name:asc', status: 'active' },
-            true,
-          ).unwrap();
-          const rows = response?.teachers || [];
-          const pages = Math.max(Number(response?.pages || 1), 1);
-          total = Number(response?.total || 0);
-          accumulated.push(...rows);
-          if (!rows.length || accumulated.length >= total || page >= pages) break;
-          page += 1;
-        }
-        if (cancelled) return;
-        setTeacherDirectory({
-          items: accumulated,
-          total,
-          loading: false,
-          partial: accumulated.length < total,
-          error: null,
-        });
-      } catch (error) {
-        if (cancelled) return;
-        setTeacherDirectory({
-          items: accumulated,
-          total,
-          loading: false,
-          partial: true,
-          error: getErrorMessage(error),
-        });
-      }
-    }
-
-    loadAllTeachers();
-    return () => {
-      cancelled = true;
-    };
-  }, [isManagerView, loadTeachersPage]);
 
   const payrollRunsQuery = useGetPayrollRunsQuery({
     page: runFilters.page,
@@ -298,148 +219,85 @@ export default function PayrollSection() {
     { skip: isManagerView || tab !== 'settings' || settingsTab !== 'config' },
   );
 
-  const [generatePayrollRun, generatePayrollRunState] = useGeneratePayrollRunMutation();
-  const [runPayrollAutomation, runPayrollAutomationState] = useRunPayrollAutomationMutation();
-  const [createPayrollTeacherRate, createTeacherRateState] = useCreatePayrollTeacherRateMutation();
-  const [updatePayrollTeacherRate, updateTeacherRateState] = useUpdatePayrollTeacherRateMutation();
-  const [deletePayrollTeacherRate, deleteTeacherRateState] = useDeletePayrollTeacherRateMutation();
-  const [createPayrollSubjectRate, createSubjectRateState] = useCreatePayrollSubjectRateMutation();
-  const [updatePayrollSubjectRate, updateSubjectRateState] = useUpdatePayrollSubjectRateMutation();
-  const [deletePayrollSubjectRate, deleteSubjectRateState] = useDeletePayrollSubjectRateMutation();
-  const [addPayrollAdjustment, addAdjustmentState] = useAddPayrollAdjustmentMutation();
-  const [updatePayrollEmployeeConfig, updatePayrollEmployeeConfigState] = useUpdatePayrollEmployeeConfigMutation();
-  const [approvePayrollRun, approvePayrollRunState] = useApprovePayrollRunMutation();
-  const [payPayrollRun, payPayrollRunState] = usePayPayrollRunMutation();
-  const [payPayrollItem, payPayrollItemState] = usePayPayrollItemMutation();
-  const [reversePayrollRun, reversePayrollRunState] = useReversePayrollRunMutation();
-  const [exportPayrollRunExcel, exportPayrollRunExcelState] = useExportPayrollRunExcelMutation();
-  const shouldLoadRatesPanel = !isManagerView && tab === 'settings' && settingsTab === 'rates';
-
-  const mergeRatesPage = useCallback((prev, response, targetPage) => {
-    const incoming = response?.rates || [];
-    const total = Number(response?.total || 0);
-    const pages = Math.max(Number(response?.pages || 1), 1);
-    const nextRates = targetPage <= 1
-      ? incoming
-      : [
-          ...prev.rates,
-          ...incoming.filter((row) => !prev.rates.some((existing) => existing.id === row.id)),
-        ];
-    return {
-      rates: nextRates,
-      page: targetPage,
-      pages,
-      total,
-      loading: false,
-      error: null,
-      partial: nextRates.length < total,
-    };
-  }, []);
-
-  const loadTeacherRatesPage = useCallback(async (targetPage) => {
-    setTeacherRatesDataset((prev) => ({
-      ...prev,
-      loading: true,
-      error: null,
-    }));
-    try {
-      const response = await loadPayrollTeacherRates(
-        { page: targetPage, limit: RATES_PAGE_LIMIT },
-        true,
-      ).unwrap();
-      setTeacherRatesDataset((prev) => mergeRatesPage(prev, response, targetPage));
-    } catch (error) {
-      setTeacherRatesDataset((prev) => ({
-        ...prev,
-        loading: false,
-        error: getErrorMessage(error),
-        partial: true,
-      }));
-    }
-  }, [loadPayrollTeacherRates, mergeRatesPage]);
-
-  const loadSubjectRatesPage = useCallback(async (targetPage) => {
-    setSubjectRatesDataset((prev) => ({
-      ...prev,
-      loading: true,
-      error: null,
-    }));
-    try {
-      const response = await loadPayrollSubjectRates(
-        { page: targetPage, limit: RATES_PAGE_LIMIT },
-        true,
-      ).unwrap();
-      setSubjectRatesDataset((prev) => mergeRatesPage(prev, response, targetPage));
-    } catch (error) {
-      setSubjectRatesDataset((prev) => ({
-        ...prev,
-        loading: false,
-        error: getErrorMessage(error),
-        partial: true,
-      }));
-    }
-  }, [loadPayrollSubjectRates, mergeRatesPage]);
-
-  const loadMoreTeacherRates = useCallback(() => {
-    if (teacherRatesDataset.loading) return;
-    if (!teacherRatesDataset.pages || teacherRatesDataset.page >= teacherRatesDataset.pages) return;
-    loadTeacherRatesPage(teacherRatesDataset.page + 1);
-  }, [teacherRatesDataset.loading, teacherRatesDataset.page, teacherRatesDataset.pages, loadTeacherRatesPage]);
-
-  const loadMoreSubjectRates = useCallback(() => {
-    if (subjectRatesDataset.loading) return;
-    if (!subjectRatesDataset.pages || subjectRatesDataset.page >= subjectRatesDataset.pages) return;
-    loadSubjectRatesPage(subjectRatesDataset.page + 1);
-  }, [subjectRatesDataset.loading, subjectRatesDataset.page, subjectRatesDataset.pages, loadSubjectRatesPage]);
-
-  useEffect(() => {
-    if (!shouldLoadRatesPanel) return;
-    loadTeacherRatesPage(1);
-    loadSubjectRatesPage(1);
-  }, [
-    shouldLoadRatesPanel,
-    loadTeacherRatesPage,
-    loadSubjectRatesPage,
-    createTeacherRateState.isSuccess,
-    updateTeacherRateState.isSuccess,
-    deleteTeacherRateState.isSuccess,
-    createSubjectRateState.isSuccess,
-    updateSubjectRateState.isSuccess,
-    deleteSubjectRateState.isSuccess,
-  ]);
-
-  const payrollTeacherRatesQuery = {
-    data: {
-      rates: teacherRatesDataset.rates,
-      page: teacherRatesDataset.page,
-      pages: teacherRatesDataset.pages,
-      total: teacherRatesDataset.total,
-      limit: RATES_PAGE_LIMIT,
-    },
-    isLoading: teacherRatesDataset.loading && teacherRatesDataset.page <= 1,
-    isFetching: teacherRatesDataset.loading,
-    error: teacherRatesDataset.error ? { message: teacherRatesDataset.error } : null,
-    partial: teacherRatesDataset.partial,
-    hasMore: teacherRatesDataset.page < teacherRatesDataset.pages,
-    loadingMore: teacherRatesDataset.loading && teacherRatesDataset.page > 0,
-  };
-  const payrollSubjectRatesQuery = {
-    data: {
-      rates: subjectRatesDataset.rates,
-      page: subjectRatesDataset.page,
-      pages: subjectRatesDataset.pages,
-      total: subjectRatesDataset.total,
-      limit: RATES_PAGE_LIMIT,
-    },
-    isLoading: subjectRatesDataset.loading && subjectRatesDataset.page <= 1,
-    isFetching: subjectRatesDataset.loading,
-    error: subjectRatesDataset.error ? { message: subjectRatesDataset.error } : null,
-    partial: subjectRatesDataset.partial,
-    hasMore: subjectRatesDataset.page < subjectRatesDataset.pages,
-    loadingMore: subjectRatesDataset.loading && subjectRatesDataset.page > 0,
-  };
-
   const selectedRun = payrollRunDetailQuery.data?.run || null;
+  const {
+    busy,
+    ratesReloadKey,
+    handleGenerateRun,
+    handleCreateTeacherRate,
+    handleDeleteTeacherRate,
+    handleCreateSubjectRate,
+    handleDeleteSubjectRate,
+    openRateCreateDrawer,
+    closeRateCreateDrawer,
+    openTeacherRateEditModal,
+    openSubjectRateEditModal,
+    closeRateEditModal,
+    handleSubmitRateEdit,
+    handleAddAdjustment,
+    handleApproveRun,
+    handlePayRun,
+    openPayItemModal,
+    closePayItemModal,
+    handlePayItem,
+    openEmployeeConfigModal,
+    closeEmployeeConfigModal,
+    handleSaveEmployeeConfig,
+    handleReverseRun,
+    handleExportRunExcel,
+    handleRunAutomation,
+    handleRefreshRunsDashboard,
+    handleSelectRunId,
+  } = usePayrollSectionController({
+    t,
+    askConfirm,
+    periodMonth,
+    setRunFilters,
+    setSelectedRunId,
+    payrollRunsQuery,
+    payrollAutomationHealthQuery,
+    payrollMonthlyReportQuery,
+    payrollRunDetailQuery,
+    activeRunId,
+    selectedRun,
+    lineOwnerFilter,
+    lineFilters,
+    setLineFilters,
+    teacherRateForm,
+    setTeacherRateForm,
+    subjectRateForm,
+    setSubjectRateForm,
+    setRateCreateDrawer,
+    rateEditModal,
+    setRateEditModal,
+    adjustmentForm,
+    setAdjustmentForm,
+    setAdjustmentDrawerOpen,
+    payForm,
+    payItemModal,
+    setPayItemModal,
+    payItemForm,
+    setPayItemForm,
+    employeeConfigModal,
+    setEmployeeConfigModal,
+    reverseReason,
+    setReverseReason,
+    automationForm,
+  });
+
+  const shouldLoadRatesPanel = !isManagerView && tab === 'settings' && settingsTab === 'rates';
+  const {
+    payrollTeacherRatesQuery,
+    payrollSubjectRatesQuery,
+    loadMoreTeacherRates,
+    loadMoreSubjectRates,
+  } = usePayrollRatesDatasets({
+    shouldLoad: shouldLoadRatesPanel,
+    reloadKey: ratesReloadKey,
+    loadPayrollTeacherRates,
+    loadPayrollSubjectRates,
+  });
+
   const { selectedRunTeacherRows, pagedRunItems } = usePayrollRunItems({
     selectedRun,
     teachers,
@@ -455,24 +313,6 @@ export default function PayrollSection() {
   const canApproveSelectedRun = (isAdminView || isManagerView) && selectedRun?.status === 'DRAFT';
   const canPaySelectedRun = isAdminView && selectedRun?.status === 'APPROVED';
   const canReverseSelectedRun = isAdminView && (selectedRun?.status === 'APPROVED' || selectedRun?.status === 'PAID');
-
-
-  const busy =
-    generatePayrollRunState.isLoading ||
-    runPayrollAutomationState.isLoading ||
-    createTeacherRateState.isLoading ||
-    updateTeacherRateState.isLoading ||
-    deleteTeacherRateState.isLoading ||
-    createSubjectRateState.isLoading ||
-    updateSubjectRateState.isLoading ||
-    deleteSubjectRateState.isLoading ||
-    addAdjustmentState.isLoading ||
-    updatePayrollEmployeeConfigState.isLoading ||
-    approvePayrollRunState.isLoading ||
-    payPayrollRunState.isLoading ||
-    payPayrollItemState.isLoading ||
-    reversePayrollRunState.isLoading ||
-    exportPayrollRunExcelState.isLoading;
 
   const teacherOptionLabel = useCallback(
     (teacher) => `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() || teacher.user?.username || teacher.id,
@@ -524,476 +364,6 @@ export default function PayrollSection() {
     }
     return [...rowsByKey.values()];
   }, [selectedRun, teacherOwnerOptions, t]);
-
-  async function handleGenerateRun() {
-    if (!periodMonth) {
-      toast.error(t('Oy tanlang'));
-      return;
-    }
-    try {
-      const res = await generatePayrollRun({ periodMonth }).unwrap();
-      toast.success(t("Oylik hisob-kitobi yaratildi"));
-      setRunFilters((prev) => ({ ...prev, periodMonth, page: 1 }));
-      if (res?.run?.id) {
-        setSelectedRunId(res.run.id);
-      }
-    } catch (error) {
-      const payload = error?.data?.error?.meta || error?.data?.meta;
-      if (payload?.totalMissing) {
-        toast.error(
-          t("Soat narxi topilmagan darslar bor: {{count}} ta", {
-            count: payload.totalMissing,
-            defaultValue: `Soat narxi topilmagan darslar bor: ${payload.totalMissing} ta`,
-          }),
-        );
-      } else {
-        toast.error(getErrorMessage(error));
-      }
-    }
-  }
-
-  async function handleCreateTeacherRate() {
-    try {
-      await createPayrollTeacherRate({
-        teacherId: teacherRateForm.teacherId,
-        subjectId: teacherRateForm.subjectId,
-        ratePerHour: Number(teacherRateForm.ratePerHour),
-        effectiveFrom: teacherRateForm.effectiveFrom,
-        ...(teacherRateForm.effectiveTo ? { effectiveTo: teacherRateForm.effectiveTo } : {}),
-        ...(teacherRateForm.note ? { note: teacherRateForm.note } : {}),
-      }).unwrap();
-      toast.success(t("O'qituvchi stavkasi saqlandi"));
-      setTeacherRateForm((prev) => ({ ...prev, ratePerHour: '', note: '' }));
-      setRateCreateDrawer((prev) => ({ ...prev, open: false }));
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    }
-  }
-
-  const handleDeleteTeacherRate = useCallback(async (rateId) => {
-    const ok = window.confirm(t("O'qituvchi stavkasini o'chirmoqchimisiz?"));
-    if (!ok) return;
-    try {
-      await deletePayrollTeacherRate(rateId).unwrap();
-      toast.success(t("O'qituvchi stavkasi o'chirildi"));
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    }
-  }, [deletePayrollTeacherRate, t]);
-
-  async function handleCreateSubjectRate() {
-    try {
-      await createPayrollSubjectRate({
-        subjectId: subjectRateForm.subjectId,
-        ratePerHour: Number(subjectRateForm.ratePerHour),
-        effectiveFrom: subjectRateForm.effectiveFrom,
-        ...(subjectRateForm.effectiveTo ? { effectiveTo: subjectRateForm.effectiveTo } : {}),
-        ...(subjectRateForm.note ? { note: subjectRateForm.note } : {}),
-      }).unwrap();
-      toast.success(t("Fan bo'yicha standart stavka saqlandi"));
-      setSubjectRateForm((prev) => ({ ...prev, ratePerHour: '', note: '' }));
-      setRateCreateDrawer((prev) => ({ ...prev, open: false }));
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    }
-  }
-
-  const handleDeleteSubjectRate = useCallback(async (rateId) => {
-    const ok = window.confirm(t("Fan bo'yicha standart stavkani o'chirmoqchimisiz?"));
-    if (!ok) return;
-    try {
-      await deletePayrollSubjectRate(rateId).unwrap();
-      toast.success(t("Fan bo'yicha standart stavka o'chirildi"));
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    }
-  }, [deletePayrollSubjectRate, t]);
-
-  function openRateCreateDrawer(kind) {
-    setRateCreateDrawer({ open: true, kind });
-  }
-
-  function closeRateCreateDrawer() {
-    setRateCreateDrawer((prev) => ({ ...prev, open: false }));
-  }
-
-  const openTeacherRateEditModal = useCallback((row) => {
-    setRateEditModal({
-      open: true,
-      kind: 'teacher',
-      rateId: row.id,
-      teacherId: row.teacherId || '',
-      subjectId: row.subjectId || '',
-      ratePerHour: String(row.ratePerHour ?? ''),
-      effectiveFrom: toDateInput(row.effectiveFrom),
-      effectiveTo: toDateInput(row.effectiveTo),
-      note: row.note || '',
-    });
-  }, []);
-
-  const openSubjectRateEditModal = useCallback((row) => {
-    setRateEditModal({
-      open: true,
-      kind: 'subject',
-      rateId: row.id,
-      teacherId: '',
-      subjectId: row.subjectId || '',
-      ratePerHour: String(row.ratePerHour ?? ''),
-      effectiveFrom: toDateInput(row.effectiveFrom),
-      effectiveTo: toDateInput(row.effectiveTo),
-      note: row.note || '',
-    });
-  }, []);
-
-  function closeRateEditModal() {
-    setRateEditModal((prev) => ({ ...prev, open: false }));
-  }
-
-  async function handleSubmitRateEdit() {
-    if (!rateEditModal.rateId || !rateEditModal.subjectId || !rateEditModal.ratePerHour || !rateEditModal.effectiveFrom) {
-      toast.error(t("Majburiy maydonlarni to'ldiring"));
-      return;
-    }
-
-    try {
-      const payload = {
-        subjectId: rateEditModal.subjectId,
-        ratePerHour: Number(rateEditModal.ratePerHour),
-        effectiveFrom: rateEditModal.effectiveFrom,
-        ...(rateEditModal.effectiveTo ? { effectiveTo: rateEditModal.effectiveTo } : { effectiveTo: null }),
-        ...(rateEditModal.note ? { note: rateEditModal.note } : { note: '' }),
-      };
-
-      if (rateEditModal.kind === 'teacher') {
-        if (!rateEditModal.teacherId) {
-          toast.error(t("O'qituvchi tanlang"));
-          return;
-        }
-        await updatePayrollTeacherRate({
-          rateId: rateEditModal.rateId,
-          payload: { ...payload, teacherId: rateEditModal.teacherId },
-        }).unwrap();
-        toast.success(t("O'qituvchi stavkasi yangilandi"));
-      } else {
-        await updatePayrollSubjectRate({
-          rateId: rateEditModal.rateId,
-          payload,
-        }).unwrap();
-        toast.success(t("Fan stavkasi yangilandi"));
-      }
-
-      closeRateEditModal();
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    }
-  }
-
-  async function handleAddAdjustment() {
-    if (!activeRunId) {
-      toast.error(t("Hisob-kitobni tanlang"));
-      return;
-    }
-    const ownerFilter = parseOwnerKey(adjustmentForm.ownerKey);
-    if (!ownerFilter.teacherId && !ownerFilter.employeeId) {
-      toast.error(t("Xodim yoki o'qituvchi tanlang"));
-      return;
-    }
-    try {
-      await addPayrollAdjustment({
-        runId: activeRunId,
-        payload: {
-          ...ownerFilter,
-          type: adjustmentForm.type,
-          amount: Number(adjustmentForm.amount),
-          description: adjustmentForm.description,
-        },
-      }).unwrap();
-      toast.success(t("Tuzatma qo'shildi"));
-      setAdjustmentForm((prev) => ({ ...prev, amount: '', description: '' }));
-      setAdjustmentDrawerOpen(false);
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    }
-  }
-
-  const handleApproveRun = useCallback(async () => {
-    if (!activeRunId) return;
-    const ok = window.confirm(t("Hisob-kitobni tasdiqlaysizmi?"));
-    if (!ok) return;
-    try {
-      await approvePayrollRun(activeRunId).unwrap();
-      toast.success(t("Hisob-kitob tasdiqlandi"));
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    }
-  }, [activeRunId, approvePayrollRun, t]);
-
-  const handlePayRun = useCallback(async () => {
-    if (!activeRunId) return;
-    try {
-      await payPayrollRun({
-        runId: activeRunId,
-        payload: {
-          paymentMethod: payForm.paymentMethod,
-          ...(payForm.paidAt ? { paidAt: payForm.paidAt } : {}),
-          ...(payForm.externalRef ? { externalRef: payForm.externalRef } : {}),
-          ...(payForm.note ? { note: payForm.note } : {}),
-        },
-      }).unwrap();
-      toast.success(t("Hisob-kitob to'landi (to'langan holat)"));
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    }
-  }, [activeRunId, payPayrollRun, payForm, t]);
-
-  const openPayItemModal = useCallback((row) => {
-    const snapshotName = `${row.teacherFirstNameSnapshot || ''} ${row.teacherLastNameSnapshot || ''}`.trim();
-    const ownerLabel = formatOwnerName({
-      teacher: row.teacher,
-      employee: row.employee,
-      fallbackName: snapshotName,
-      fallbackId: row.teacherId || row.employeeId || '',
-    });
-    const payableAmount = Math.max(0, Number(row.payableAmount || 0));
-    const paidAmount = Number(row.paidAmount || 0);
-    const remaining = Math.max(0, payableAmount - paidAmount);
-    setPayItemModal({
-      open: true,
-      itemId: row.id,
-      ownerLabel,
-      payableAmount,
-      paidAmount,
-    });
-    setPayItemForm((prev) => ({
-      ...prev,
-      amount: remaining > 0 ? String(remaining) : '',
-    }));
-  }, []);
-
-  const closePayItemModal = useCallback(() => {
-    setPayItemModal({
-      open: false,
-      itemId: '',
-      ownerLabel: '',
-      payableAmount: 0,
-      paidAmount: 0,
-    });
-    setPayItemForm({
-      amount: '',
-      paymentMethod: 'BANK',
-      paidAt: '',
-      externalRef: '',
-      note: '',
-    });
-  }, []);
-
-  async function handlePayItem() {
-    if (!activeRunId || !payItemModal.itemId) return;
-    if (!payItemForm.amount) {
-      toast.error(t("To'lov summasini kiriting"));
-      return;
-    }
-    try {
-      await payPayrollItem({
-        runId: activeRunId,
-        itemId: payItemModal.itemId,
-        payload: {
-          amount: Number(payItemForm.amount),
-          paymentMethod: payItemForm.paymentMethod,
-          ...(payItemForm.paidAt ? { paidAt: payItemForm.paidAt } : {}),
-          ...(payItemForm.externalRef ? { externalRef: payItemForm.externalRef } : {}),
-          ...(payItemForm.note ? { note: payItemForm.note } : {}),
-        },
-      }).unwrap();
-      toast.success(t("Xodim bo'yicha to'lov qayd etildi"));
-      closePayItemModal();
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    }
-  }
-
-  const openEmployeeConfigModal = useCallback((row) => {
-    const fixedSalary = row?.fixedSalaryAmount == null ? '' : String(Number(row.fixedSalaryAmount || 0));
-    setEmployeeConfigModal({
-      open: true,
-      employeeId: row.id,
-      displayName: formatEmployeeConfigName(row),
-      payrollMode: row.payrollMode || 'LESSON_BASED',
-      fixedSalaryAmount: fixedSalary,
-      isPayrollEligible: Boolean(row.isPayrollEligible),
-      employmentStatus: row.employmentStatus || 'ACTIVE',
-      note: row.note || '',
-    });
-  }, []);
-
-  const closeEmployeeConfigModal = useCallback(() => {
-    setEmployeeConfigModal({
-      open: false,
-      employeeId: '',
-      displayName: '',
-      payrollMode: 'LESSON_BASED',
-      fixedSalaryAmount: '',
-      isPayrollEligible: true,
-      employmentStatus: 'ACTIVE',
-      note: '',
-    });
-  }, []);
-
-  async function handleSaveEmployeeConfig() {
-    if (!employeeConfigModal.employeeId) return;
-
-    const hasFixedSalaryValue = String(employeeConfigModal.fixedSalaryAmount || '').trim() !== '';
-    const fixedSalaryAmount = hasFixedSalaryValue ? Number(employeeConfigModal.fixedSalaryAmount) : null;
-    if (hasFixedSalaryValue && (!Number.isFinite(fixedSalaryAmount) || fixedSalaryAmount < 0)) {
-      toast.error(t("Oklad summasi noto'g'ri"));
-      return;
-    }
-    if (
-      ['FIXED', 'MIXED'].includes(employeeConfigModal.payrollMode)
-      && (!Number.isFinite(fixedSalaryAmount) || fixedSalaryAmount <= 0)
-    ) {
-      toast.error(t("FIXED/MIXED rejimda oklad summasi musbat bo'lishi shart"));
-      return;
-    }
-
-    try {
-      await updatePayrollEmployeeConfig({
-        employeeId: employeeConfigModal.employeeId,
-        payload: {
-          payrollMode: employeeConfigModal.payrollMode,
-          fixedSalaryAmount,
-          ...(employeeConfigModal.payrollMode !== 'MANUAL_ONLY'
-            ? { isPayrollEligible: Boolean(employeeConfigModal.isPayrollEligible) }
-            : {}),
-          note: employeeConfigModal.note || '',
-        },
-      }).unwrap();
-      toast.success(t("Oylik konfiguratsiyasi saqlandi"));
-      closeEmployeeConfigModal();
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    }
-  }
-
-  async function handleReverseRun() {
-    if (!activeRunId) return;
-    try {
-      await reversePayrollRun({
-        runId: activeRunId,
-        payload: { reason: reverseReason },
-      }).unwrap();
-      toast.success(t("Hisob-kitob bekor qilindi"));
-      setReverseReason('');
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    }
-  }
-
-  async function handleExportRunExcel() {
-    if (!activeRunId) {
-      toast.error(t("Hisob-kitobni tanlang"));
-      return;
-    }
-    try {
-      const result = await exportPayrollRunExcel({
-        runId: activeRunId,
-        params: {
-          ...(lineOwnerFilter.teacherId ? { teacherId: lineOwnerFilter.teacherId } : {}),
-          ...(lineOwnerFilter.employeeId ? { employeeId: lineOwnerFilter.employeeId } : {}),
-          ...(lineFilters.type ? { type: lineFilters.type } : {}),
-        },
-      }).unwrap();
-      const fallbackName = `payroll-${selectedRun?.periodMonth || 'run'}.xlsx`;
-      saveDownloadedFile({ blob: result.blob, fileName: result.fileName, fallbackName });
-      toast.success(t('{{format}} fayl yuklab olindi', { format: 'Excel' }));
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    }
-  }
-
-  function buildAutomationPayload({ dryRun = false } = {}) {
-    const payload = {
-      periodMonth,
-      generate: true,
-      autoApprove: true,
-      autoPay: false,
-      force: Boolean(automationForm.force),
-      dryRun,
-    };
-
-    if (automationForm.mode === 'GENERATE_ONLY') {
-      payload.autoApprove = false;
-      payload.autoPay = false;
-      return payload;
-    }
-    if (automationForm.mode === 'FULL_PAY') {
-      payload.autoApprove = true;
-      payload.autoPay = true;
-      payload.paymentMethod = automationForm.paymentMethod || 'BANK';
-      return payload;
-    }
-
-    return payload;
-  }
-
-  async function handleRunAutomation({ dryRun = false } = {}) {
-    if (!periodMonth) {
-      toast.error(t('Oy tanlang'));
-      return;
-    }
-
-    try {
-      const result = await runPayrollAutomation(buildAutomationPayload({ dryRun })).unwrap();
-      const doneSteps = (result?.steps || [])
-        .filter((step) => step.status === 'DONE')
-        .map((step) => step.step)
-        .join(' -> ');
-      if (dryRun) {
-        toast.success(
-          doneSteps
-            ? t("Sinov rejimi yakunlandi: {{steps}}", { steps: doneSteps })
-            : t("Sinov rejimi yakunlandi"),
-        );
-      } else {
-        toast.success(
-          doneSteps
-            ? t("Avto jarayon yakunlandi: {{steps}}", { steps: doneSteps })
-            : t("Avto jarayon yakunlandi"),
-        );
-      }
-      setRunFilters((prev) => ({ ...prev, periodMonth, page: 1 }));
-      if (result?.run?.id) {
-        setSelectedRunId(result.run.id);
-      }
-      payrollRunsQuery.refetch();
-      payrollAutomationHealthQuery.refetch();
-      payrollMonthlyReportQuery.refetch();
-    } catch (error) {
-      const blockerCount = Number(error?.data?.error?.meta?.health?.summary?.blockerCount || 0);
-      if (error?.data?.error?.code === 'PAYROLL_AUTOMATION_BLOCKED' && blockerCount > 0) {
-        toast.error(
-          t("Avto jarayon to'xtadi. To'siqlar soni: {{count}}", { count: blockerCount }),
-        );
-      } else {
-        toast.error(getErrorMessage(error));
-      }
-    }
-  }
-
-  const handleRefreshRunsDashboard = useCallback(() => {
-    payrollRunsQuery.refetch();
-    payrollAutomationHealthQuery.refetch();
-    payrollMonthlyReportQuery.refetch();
-    if (activeRunId) {
-      payrollRunDetailQuery.refetch();
-    }
-  }, [
-    activeRunId,
-    payrollAutomationHealthQuery,
-    payrollMonthlyReportQuery,
-    payrollRunDetailQuery,
-    payrollRunsQuery,
-  ]);
   const runItemsColumns = useMemo(
     () => createRunItemsColumns({
       t,
@@ -1092,10 +462,6 @@ export default function PayrollSection() {
   const monthlyReportSummary = monthlyReport?.summary || null;
   const selectedRunTeacherCount = selectedRunTeacherRows.length;
 
-  useEffect(() => {
-    setLineFilters((prev) => ({ ...prev, page: 1 }));
-  }, [activeRunId]);
-
   const payrollTabs = isManagerView
     ? [{ value: 'runs', label: t("Oylik hisob-kitoblari") }]
     : [
@@ -1132,7 +498,7 @@ export default function PayrollSection() {
           setRunFilters={setRunFilters}
           runs={runs}
           activeRunId={activeRunId}
-          setSelectedRunId={setSelectedRunId}
+          setSelectedRunId={handleSelectRunId}
           selectedRun={selectedRun}
           runsState={runsState}
           runDetailLoading={runDetailLoading}
@@ -1269,6 +635,8 @@ export default function PayrollSection() {
           subjects={subjects}
           onSave={handleSubmitRateEdit}
         />
+
+        <ConfirmModal {...confirmModalProps} loading={busy} />
       </div>
     </AutoTranslate>
   );

@@ -73,6 +73,9 @@ function loadEnv() {
     if (!hasCors) {
       throw new Error("Production holatda CORS_ORIGINS majburiy");
     }
+    if (env.ALLOW_LEGACY_PLAIN_CREDENTIAL_RESPONSE) {
+      throw new Error("Production holatda ALLOW_LEGACY_PLAIN_CREDENTIAL_RESPONSE yoqilmasligi kerak");
+    }
   }
 
   cachedEnv = env;

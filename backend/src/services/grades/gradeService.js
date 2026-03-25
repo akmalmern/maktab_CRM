@@ -63,7 +63,6 @@ function mapCommonGradeRow(row) {
     turi: row.turi,
     ball: row.ball,
     maxBall: row.maxBall,
-    izoh: row.izoh || "",
   };
 }
 

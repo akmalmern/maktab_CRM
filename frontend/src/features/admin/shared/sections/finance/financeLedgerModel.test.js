@@ -37,4 +37,27 @@ describe('financeLedgerModel', () => {
     expect(result[1].kind).toBe('PAYMENT');
     expect(result[2].kind).toBe('IMTIYOZ');
   });
+
+  it('manager-style oylarSnapshot qiymatini oy labelga aylantiradi', () => {
+    const result = buildFinanceLedgerItems({
+      transactions: [],
+      imtiyozlar: [
+        {
+          id: 'im-2',
+          turi: 'SUMMA',
+          qiymat: 50000,
+          isActive: false,
+          createdAt: '2026-03-09T00:00:00.000Z',
+          bekorQilinganAt: '2026-03-12T00:00:00.000Z',
+          oylarSnapshot: [{ yil: 2026, oy: 3 }],
+        },
+      ],
+      t,
+      locale: 'uz-UZ',
+    });
+
+    expect(result).toHaveLength(2);
+    expect(result[0].kind).toBe('IMTIYOZ_REVERT');
+    expect(result[1].months[0]).toContain('2026');
+  });
 });

@@ -52,11 +52,9 @@ const davomatSaqlashSchema = z
           .object({
             studentId: z.string().cuid("studentId noto'g'ri"),
             holat: davomatHolatiEnum,
-            izoh: z.string().trim().max(300, "izoh juda uzun").optional(),
             bahoBall: z.number().int().min(0).max(100).nullable().optional(),
             bahoMaxBall: z.number().int().min(1).max(100).nullable().optional(),
             bahoTuri: bahoTuriEnum.optional(),
-            bahoIzoh: z.string().trim().max(300, "baho izohi juda uzun").optional(),
           })
           .strict(),
       )
@@ -81,8 +79,7 @@ const davomatSaqlashSchema = z
       const hasAnyBahoField =
         row.bahoBall !== undefined ||
         row.bahoMaxBall !== undefined ||
-        row.bahoTuri !== undefined ||
-        row.bahoIzoh !== undefined;
+        row.bahoTuri !== undefined;
 
       if (!hasAnyBahoField) return;
 

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildRatesDatasetQuery,
   buildOwnerKey,
   buildSelectedRunTeacherRows,
+  createRatesDataset,
+  mergeRatesDatasetPage,
   paginateRows,
   parseOwnerKey,
 } from './payrollSectionModel';
@@ -46,5 +49,49 @@ describe('payrollSectionModel', () => {
     expect(page.total).toBe(45);
     expect(page.rows).toHaveLength(10);
     expect(page.rows[0].id).toBe(21);
+  });
+
+  it('merges rates dataset page without duplicates when loading next pages', () => {
+    const initial = createRatesDataset();
+    const first = mergeRatesDatasetPage(
+      initial,
+      {
+        rates: [{ id: 'r1' }, { id: 'r2' }],
+        total: 3,
+        pages: 2,
+      },
+      1,
+    );
+    const second = mergeRatesDatasetPage(
+      first,
+      {
+        rates: [{ id: 'r2' }, { id: 'r3' }],
+        total: 3,
+        pages: 2,
+      },
+      2,
+    );
+
+    expect(second.rates.map((row) => row.id)).toEqual(['r1', 'r2', 'r3']);
+    expect(second.page).toBe(2);
+    expect(second.partial).toBe(false);
+  });
+
+  it('builds rates query view from dataset', () => {
+    const dataset = {
+      rates: [{ id: 'r1' }],
+      page: 1,
+      pages: 2,
+      total: 3,
+      loading: false,
+      error: null,
+      partial: true,
+    };
+
+    const query = buildRatesDatasetQuery(dataset);
+    expect(query.data.rates).toHaveLength(1);
+    expect(query.hasMore).toBe(true);
+    expect(query.partial).toBe(true);
+    expect(query.error).toBeNull();
   });
 });

@@ -1,24 +1,7 @@
+import { FinanceMonthChips } from '../../../../shared/finance/components/FinanceMonthChips';
+
 export function MonthChips({ months = [], maxVisible = 3 }) {
-  if (!months.length) return <span className="text-slate-400">-</span>;
-  const visible = months.slice(0, maxVisible);
-  const hiddenCount = Math.max(0, months.length - maxVisible);
-  return (
-    <div className="flex flex-wrap gap-1">
-      {visible.map((item) => (
-        <span
-          key={item}
-          className="rounded-full border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm"
-        >
-          {item}
-        </span>
-      ))}
-      {hiddenCount > 0 && (
-        <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
-          +{hiddenCount}
-        </span>
-      )}
-    </div>
-  );
+  return <FinanceMonthChips months={months} maxVisible={maxVisible} tone="neutral" />;
 }
 
 export function FieldLabel({ children }) {

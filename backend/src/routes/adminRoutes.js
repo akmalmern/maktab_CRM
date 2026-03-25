@@ -1,30 +1,37 @@
 const router = require("express").Router();
 const { asyncHandler } = require("../middlewares/asyncHandler");
 const { requireAuth, requireRole } = require("../middlewares/auth");
+const {
+  adminExportRateLimit,
+  adminFinanceCommandRateLimit,
+  adminHeavyQueryRateLimit,
+} = require("../middlewares/rateLimit");
 const { validate, validateBody } = require("../middlewares/validate");
 const { z } = require("zod");
+const {
+  uploadAvatar,
+  verifyUploadedAvatarSignature,
+  handleMulterErrors,
+} = require("../middlewares/avatarUpload");
 
 const people = require("../controllers/admin/peopleController");
 const subjects = require("../controllers/admin/subjectController");
-const classrooms = require("../controllers/admin/classroomController");
 const jadval = require("../controllers/admin/jadvalController");
 const attendance = require("../controllers/admin/attendanceController");
 const grades = require("../controllers/admin/gradeController");
 const finance = require("../controllers/admin/financeController");
 const payroll = require("../controllers/admin/payrollController");
 const managerScope = require("../controllers/admin/managerScopeController");
+const { createSelfServiceHandlers } = require("../controllers/user/selfServiceController");
+const { registerAdminClassroomRoutes } = require("../modules/classrooms");
 const {
   createTeacherSchema,
   createStudentSchema,
   createSubjectSchema,
-  createClassroomSchema,
-  promoteClassroomSchema,
-  annualClassPromotionSchema,
 } = require("../validators/adminCreateSchemas");
 const {
   listTeachersQuerySchema,
   listStudentsQuerySchema,
-  listClassroomStudentsQuerySchema,
 } = require("../validators/adminListSchemas");
 const {
   createVaqtOraliqSchema,
@@ -90,7 +97,10 @@ const {
   reversePayrollRunSchema,
 } = require("../validators/payrollSchemas");
 const SubjectIdParamSchema = z.object({ id: z.string().cuid() });
-const ClassroomIdParamSchema = z.object({ id: z.string().cuid() });
+const {
+  selfProfileUpdateSchema,
+  selfPasswordChangeSchema,
+} = require("../validators/selfProfileSchemas");
 const restorePersonBodySchema = z
   .object({
     newUsername: z.string().trim().min(1).max(100).optional(),
@@ -103,6 +113,43 @@ const restorePersonBodySchema = z
       .optional(),
   })
   .strict();
+const adminProfilePaths = ["/profil", "/profile"];
+const adminProfilePasswordPaths = ["/profil/password", "/profile/password"];
+const adminProfileAvatarPaths = ["/profil/avatar", "/profile/avatar"];
+const selfService = createSelfServiceHandlers("ADMIN");
+
+router.patch(
+  adminProfilePaths,
+  requireAuth,
+  requireRole("ADMIN"),
+  validateBody(selfProfileUpdateSchema),
+  asyncHandler(selfService.updateProfile),
+);
+
+router.post(
+  adminProfilePasswordPaths,
+  requireAuth,
+  requireRole("ADMIN"),
+  validateBody(selfPasswordChangeSchema),
+  asyncHandler(selfService.changePassword),
+);
+
+router.post(
+  adminProfileAvatarPaths,
+  requireAuth,
+  requireRole("ADMIN"),
+  uploadAvatar.single("file"),
+  verifyUploadedAvatarSignature,
+  handleMulterErrors,
+  asyncHandler(selfService.uploadAvatar),
+);
+
+router.delete(
+  adminProfileAvatarPaths,
+  requireAuth,
+  requireRole("ADMIN"),
+  asyncHandler(selfService.deleteAvatar),
+);
 
 router.post(
   "/teachers",
@@ -153,62 +200,14 @@ router.patch(
   validate({ params: SubjectIdParamSchema, body: createSubjectSchema }),
   asyncHandler(subjects.updateSubject),
 );
-router.get(
-  "/classrooms",
+registerAdminClassroomRoutes({
+  router,
+  asyncHandler,
   requireAuth,
-  requireRole("ADMIN"),
-  asyncHandler(classrooms.getClassrooms),
-);
-router.get(
-  "/classrooms/meta",
-  requireAuth,
-  requireRole("ADMIN"),
-  asyncHandler(classrooms.getClassroomsMeta),
-);
-router.get(
-  "/classrooms/:id/students",
-  requireAuth,
-  requireRole("ADMIN"),
-  validate({
-    params: ClassroomIdParamSchema,
-    query: listClassroomStudentsQuerySchema,
-  }),
-  asyncHandler(classrooms.getClassroomStudents),
-);
-router.post(
-  "/classrooms",
-  requireAuth,
-  requireRole("ADMIN"),
-  validateBody(createClassroomSchema),
-  asyncHandler(classrooms.createClassroom),
-);
-router.post(
-  "/classrooms/:id/promote-preview",
-  requireAuth,
-  requireRole("ADMIN"),
-  validate({ params: ClassroomIdParamSchema, body: promoteClassroomSchema }),
-  asyncHandler(classrooms.previewPromoteClassroom),
-);
-router.post(
-  "/classrooms/:id/promote",
-  requireAuth,
-  requireRole("ADMIN"),
-  validate({ params: ClassroomIdParamSchema, body: promoteClassroomSchema }),
-  asyncHandler(classrooms.promoteClassroom),
-);
-router.get(
-  "/classrooms/yillik-otkazish/preview",
-  requireAuth,
-  requireRole("ADMIN"),
-  asyncHandler(classrooms.previewAnnualClassPromotion),
-);
-router.post(
-  "/classrooms/yillik-otkazish",
-  requireAuth,
-  requireRole("ADMIN"),
-  validateBody(annualClassPromotionSchema),
-  asyncHandler(classrooms.runAnnualClassPromotion),
-);
+  requireRole,
+  validate,
+  validateBody,
+});
 
 router.delete(
   "/teachers/:id",
@@ -243,14 +242,6 @@ router.delete(
   validate({ params: SubjectIdParamSchema }),
   asyncHandler(subjects.deleteSubject),
 );
-router.delete(
-  "/classrooms/:id",
-  requireAuth,
-  requireRole("ADMIN"),
-  validate({ params: ClassroomIdParamSchema }),
-  asyncHandler(classrooms.deleteClassroom),
-);
-
 // Jadval: vaqt oraliqlari
 router.get(
   "/vaqt-oraliqlari",
@@ -330,6 +321,7 @@ router.get(
   "/davomat/hisobot",
   requireAuth,
   requireRole("ADMIN"),
+  adminHeavyQueryRateLimit,
   validate({ query: adminHisobotQuerySchema }),
   asyncHandler(attendance.getAttendanceReport),
 );
@@ -337,6 +329,7 @@ router.get(
   "/davomat/hisobot/export/pdf",
   requireAuth,
   requireRole("ADMIN"),
+  adminExportRateLimit,
   validate({ query: adminHisobotQuerySchema }),
   asyncHandler(attendance.exportAttendanceReportPdf),
 );
@@ -344,6 +337,7 @@ router.get(
   "/davomat/hisobot/export/xlsx",
   requireAuth,
   requireRole("ADMIN"),
+  adminExportRateLimit,
   validate({ query: adminHisobotQuerySchema }),
   asyncHandler(attendance.exportAttendanceReportXlsx),
 );
@@ -404,6 +398,7 @@ router.get(
   "/moliya/students",
   requireAuth,
   requireRole("ADMIN"),
+  adminHeavyQueryRateLimit,
   validate({ query: financeStudentsQuerySchema }),
   asyncHandler(finance.getFinanceStudents),
 );
@@ -411,6 +406,7 @@ router.get(
   "/moliya/students/export/xlsx",
   requireAuth,
   requireRole("ADMIN"),
+  adminExportRateLimit,
   validate({ query: financeExportQuerySchema }),
   asyncHandler(finance.exportDebtorsXlsx),
 );
@@ -418,6 +414,7 @@ router.get(
   "/moliya/students/export/pdf",
   requireAuth,
   requireRole("ADMIN"),
+  adminExportRateLimit,
   validate({ query: financeExportQuerySchema }),
   asyncHandler(finance.exportDebtorsPdf),
 );
@@ -432,6 +429,7 @@ router.post(
   "/moliya/students/:studentId/tolov/preview",
   requireAuth,
   requireRole("ADMIN"),
+  adminFinanceCommandRateLimit,
   validate({ params: studentIdParamSchema, body: createPaymentSchema }),
   asyncHandler(finance.previewStudentPayment),
 );
@@ -439,6 +437,7 @@ router.post(
   "/moliya/students/:studentId/tolov",
   requireAuth,
   requireRole("ADMIN"),
+  adminFinanceCommandRateLimit,
   validate({ params: studentIdParamSchema, body: createPaymentSchema }),
   asyncHandler(finance.createStudentPayment),
 );
@@ -446,6 +445,7 @@ router.post(
   "/moliya/students/:studentId/imtiyoz",
   requireAuth,
   requireRole("ADMIN"),
+  adminFinanceCommandRateLimit,
   validate({ params: studentIdParamSchema, body: createImtiyozSchema }),
   asyncHandler(finance.createStudentImtiyoz),
 );
@@ -453,6 +453,7 @@ router.delete(
   "/moliya/imtiyoz/:imtiyozId",
   requireAuth,
   requireRole("ADMIN"),
+  adminFinanceCommandRateLimit,
   validate({ params: imtiyozIdParamSchema, body: deactivateImtiyozSchema }),
   asyncHandler(finance.deactivateStudentImtiyoz),
 );
@@ -460,6 +461,7 @@ router.delete(
   "/moliya/tolov/:tolovId",
   requireAuth,
   requireRole("ADMIN"),
+  adminFinanceCommandRateLimit,
   validate({ params: tolovIdParamSchema }),
   asyncHandler(finance.revertPayment),
 );
@@ -467,6 +469,7 @@ router.post(
   "/moliya/tolov/:tolovId/partial-revert",
   requireAuth,
   requireRole("ADMIN"),
+  adminFinanceCommandRateLimit,
   validate({ params: tolovIdParamSchema, body: partialRevertPaymentSchema }),
   asyncHandler(finance.partialRevertPayment),
 );
@@ -585,6 +588,7 @@ router.post(
   "/moliya/oylik/advances",
   requireAuth,
   requireRole("ADMIN"),
+  adminFinanceCommandRateLimit,
   validateBody(createAdvancePaymentSchema),
   asyncHandler(payroll.createAdvancePayment),
 );
@@ -592,6 +596,7 @@ router.delete(
   "/moliya/oylik/advances/:advanceId",
   requireAuth,
   requireRole("ADMIN"),
+  adminFinanceCommandRateLimit,
   validate({ params: advancePaymentIdParamSchema }),
   asyncHandler(payroll.deleteAdvancePayment),
 );
@@ -600,6 +605,7 @@ router.post(
   "/moliya/oylik/runs/generate",
   requireAuth,
   requireRole("ADMIN"),
+  adminFinanceCommandRateLimit,
   validateBody(generatePayrollRunSchema),
   asyncHandler(payroll.generatePayrollRun),
 );
@@ -607,6 +613,7 @@ router.get(
   "/moliya/oylik/automation/health",
   requireAuth,
   requireRole("ADMIN", "MANAGER"),
+  adminHeavyQueryRateLimit,
   validate({ query: payrollAutomationHealthQuerySchema }),
   asyncHandler(payroll.getPayrollAutomationHealth),
 );
@@ -614,6 +621,7 @@ router.post(
   "/moliya/oylik/automation/run",
   requireAuth,
   requireRole("ADMIN"),
+  adminFinanceCommandRateLimit,
   validateBody(payrollAutomationRunSchema),
   asyncHandler(payroll.runPayrollAutomation),
 );
@@ -621,6 +629,7 @@ router.get(
   "/moliya/oylik/reports/monthly",
   requireAuth,
   requireRole("ADMIN", "MANAGER"),
+  adminHeavyQueryRateLimit,
   validate({ query: payrollMonthlyReportQuerySchema }),
   asyncHandler(payroll.getPayrollMonthlyReport),
 );
@@ -628,6 +637,7 @@ router.get(
   "/moliya/oylik/runs",
   requireAuth,
   requireRole("ADMIN", "MANAGER"),
+  adminHeavyQueryRateLimit,
   validate({ query: listPayrollRunsQuerySchema }),
   asyncHandler(payroll.listPayrollRuns),
 );
@@ -635,6 +645,7 @@ router.get(
   "/moliya/oylik/runs/:runId",
   requireAuth,
   requireRole("ADMIN", "MANAGER"),
+  adminHeavyQueryRateLimit,
   validate({ params: payrollRunIdParamSchema, query: payrollRunLinesQuerySchema }),
   asyncHandler(payroll.getPayrollRunDetail),
 );
@@ -642,6 +653,7 @@ router.get(
   "/moliya/oylik/runs/:runId/export/csv",
   requireAuth,
   requireRole("ADMIN", "MANAGER"),
+  adminExportRateLimit,
   validate({ params: payrollRunIdParamSchema, query: payrollRunLinesQuerySchema.partial() }),
   asyncHandler(payroll.exportPayrollRunCsv),
 );
@@ -649,6 +661,7 @@ router.get(
   "/moliya/oylik/runs/:runId/export/xlsx",
   requireAuth,
   requireRole("ADMIN", "MANAGER"),
+  adminExportRateLimit,
   validate({ params: payrollRunIdParamSchema, query: payrollRunLinesQuerySchema.partial() }),
   asyncHandler(payroll.exportPayrollRunExcel),
 );
@@ -656,6 +669,7 @@ router.post(
   "/moliya/oylik/runs/:runId/adjustments",
   requireAuth,
   requireRole("ADMIN"),
+  adminFinanceCommandRateLimit,
   validate({ params: payrollRunIdParamSchema, body: addPayrollAdjustmentSchema }),
   asyncHandler(payroll.addPayrollAdjustment),
 );
@@ -663,6 +677,7 @@ router.delete(
   "/moliya/oylik/runs/:runId/adjustments/:lineId",
   requireAuth,
   requireRole("ADMIN"),
+  adminFinanceCommandRateLimit,
   validate({ params: payrollRunIdParamSchema.merge(payrollLineIdParamSchema) }),
   asyncHandler(payroll.deletePayrollAdjustment),
 );
@@ -670,6 +685,7 @@ router.post(
   "/moliya/oylik/runs/:runId/approve",
   requireAuth,
   requireRole("ADMIN", "MANAGER"),
+  adminFinanceCommandRateLimit,
   validate({ params: payrollRunIdParamSchema }),
   asyncHandler(payroll.approvePayrollRun),
 );
@@ -677,6 +693,7 @@ router.post(
   "/moliya/oylik/runs/:runId/pay",
   requireAuth,
   requireRole("ADMIN"),
+  adminFinanceCommandRateLimit,
   validate({ params: payrollRunIdParamSchema, body: payPayrollRunSchema }),
   asyncHandler(payroll.payPayrollRun),
 );
@@ -684,6 +701,7 @@ router.post(
   "/moliya/oylik/runs/:runId/items/:itemId/pay",
   requireAuth,
   requireRole("ADMIN"),
+  adminFinanceCommandRateLimit,
   validate({ params: payrollRunIdParamSchema.merge(payrollItemIdParamSchema), body: payPayrollItemSchema }),
   asyncHandler(payroll.payPayrollItem),
 );
@@ -691,6 +709,7 @@ router.post(
   "/moliya/oylik/runs/:runId/reverse",
   requireAuth,
   requireRole("ADMIN"),
+  adminFinanceCommandRateLimit,
   validate({ params: payrollRunIdParamSchema, body: reversePayrollRunSchema }),
   asyncHandler(payroll.reversePayrollRun),
 );

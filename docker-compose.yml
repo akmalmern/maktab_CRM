@@ -45,7 +45,7 @@ services:
       ENABLE_AUTO_FINANCE: ${ENABLE_AUTO_FINANCE:-false}
       ENABLE_REFRESH_SESSION_CLEANUP: ${ENABLE_REFRESH_SESSION_CLEANUP:-true}
       MANAGER_SCOPE_ENFORCED: ${MANAGER_SCOPE_ENFORCED:-true}
-    command: sh -c "npx prisma migrate deploy && npm run dev"
+    command: sh -c "npx prisma migrate deploy && npm run dev -- --legacy-watch"
     ports:
       - "${BACKEND_PORT:-5000}:5000"
     volumes:

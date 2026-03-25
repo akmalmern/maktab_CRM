@@ -259,6 +259,11 @@ function createMemoryRateLimiter(options) {
   });
 }
 
+function buildActorRateLimitKey(req) {
+  const actorUserId = req?.user?.sub ? `user:${req.user.sub}` : "guest";
+  return `${actorUserId}:${normalizeIp(req)}`;
+}
+
 const loginRateLimit = createRateLimiter({
   bucketName: "auth_login",
   windowMs: env.LOGIN_RATE_LIMIT_WINDOW_MINUTES * 60 * 1000,
@@ -303,12 +308,63 @@ const refreshRateLimit = createRateLimiter({
   },
 });
 
+const adminHeavyQueryRateLimit = createRateLimiter({
+  bucketName: "admin_heavy_query",
+  windowMs: 10 * 60 * 1000,
+  max: 120,
+  code: "ADMIN_HEAVY_QUERY_RATE_LIMIT",
+  message: "Og'ir hisobot so'rovlari limiti oshdi. Keyinroq qayta urinib ko'ring.",
+  keyGenerator: buildActorRateLimitKey,
+});
+
+const managerHeavyQueryRateLimit = createRateLimiter({
+  bucketName: "manager_heavy_query",
+  windowMs: 10 * 60 * 1000,
+  max: 90,
+  code: "MANAGER_HEAVY_QUERY_RATE_LIMIT",
+  message: "Og'ir hisobot so'rovlari limiti oshdi. Keyinroq qayta urinib ko'ring.",
+  keyGenerator: buildActorRateLimitKey,
+});
+
+const adminExportRateLimit = createRateLimiter({
+  bucketName: "admin_export",
+  windowMs: 10 * 60 * 1000,
+  max: 20,
+  code: "ADMIN_EXPORT_RATE_LIMIT",
+  message: "Eksport so'rovlari limiti oshdi. Birozdan keyin qayta urinib ko'ring.",
+  keyGenerator: buildActorRateLimitKey,
+});
+
+const adminFinanceCommandRateLimit = createRateLimiter({
+  bucketName: "admin_finance_command",
+  windowMs: 10 * 60 * 1000,
+  max: 45,
+  code: "ADMIN_FINANCE_COMMAND_RATE_LIMIT",
+  message: "Moliyaviy amallar limiti oshdi. Keyinroq qayta urinib ko'ring.",
+  keyGenerator: buildActorRateLimitKey,
+});
+
+const managerFinanceCommandRateLimit = createRateLimiter({
+  bucketName: "manager_finance_command",
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  code: "MANAGER_FINANCE_COMMAND_RATE_LIMIT",
+  message: "Moliyaviy amallar limiti oshdi. Keyinroq qayta urinib ko'ring.",
+  keyGenerator: buildActorRateLimitKey,
+});
+
 module.exports = {
   normalizeIp,
   createRateLimiter,
   createMemoryRateLimitStore,
   createDatabaseRateLimitStore,
   createMemoryRateLimiter,
+  buildActorRateLimitKey,
   loginRateLimit,
   refreshRateLimit,
+  adminHeavyQueryRateLimit,
+  managerHeavyQueryRateLimit,
+  adminExportRateLimit,
+  adminFinanceCommandRateLimit,
+  managerFinanceCommandRateLimit,
 };

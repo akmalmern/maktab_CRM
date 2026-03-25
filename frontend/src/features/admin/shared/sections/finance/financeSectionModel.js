@@ -1,28 +1,35 @@
+import {
+  createClientRequestKey,
+  currentMonthKey,
+  dateInputValueToMonthKey,
+  formatDateTime,
+  formatMonthKey,
+  formatNumberByLocale,
+  monthKeyToDateInputValue,
+  resolveLocale,
+} from '../../../../shared/finance/financeSharedModel';
+import {
+  imtiyozTypeLabel as sharedImtiyozTypeLabel,
+  paymentTypeLabel as sharedPaymentTypeLabel,
+} from '../../../../shared/finance/financeLabelModel';
+
 export const BILLING_MONTH_OPTIONS = [9, 10, 11, 12];
 export const SCHOOL_MONTH_ORDER = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
 
-export function resolveLocale(language) {
-  if (language === 'ru') return 'ru-RU';
-  if (language === 'en') return 'en-US';
-  return 'uz-UZ';
-}
+export {
+  createClientRequestKey,
+  dateInputValueToMonthKey,
+  formatMonthKey,
+  monthKeyToDateInputValue,
+  resolveLocale,
+};
 
 export function sumFormat(value, locale = 'uz-UZ') {
-  return new Intl.NumberFormat(locale).format(Number(value || 0));
+  return formatNumberByLocale(value, locale);
 }
 
 export function todayMonth() {
-  const date = new Date();
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
-}
-
-export function createClientRequestKey() {
-  if (typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID) {
-    return globalThis.crypto.randomUUID();
-  }
-  return `req-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  return currentMonthKey();
 }
 
 export function monthNameByNumber(monthNo, locale = 'uz-UZ') {
@@ -30,15 +37,6 @@ export function monthNameByNumber(monthNo, locale = 'uz-UZ') {
   return new Intl.DateTimeFormat(locale, { month: 'long', timeZone: 'UTC' }).format(
     new Date(Date.UTC(2024, monthNo - 1, 1)),
   );
-}
-
-export function formatMonthKey(value, locale = 'uz-UZ') {
-  const parts = String(value || '').split('-');
-  if (parts.length !== 2) return value;
-  const year = Number(parts[0]);
-  const month = Number(parts[1]);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return value;
-  return new Date(year, month - 1, 1).toLocaleDateString(locale, { month: 'long', year: 'numeric' });
 }
 
 export function normalizeBillingMonths(value, fallback = 10) {
@@ -100,44 +98,10 @@ export function buildAcademicYearOptions(classrooms = [], selectedAcademicYear) 
   return Array.from(set).sort((a, b) => b.localeCompare(a));
 }
 
-export function monthKeyToDateInputValue(monthKey) {
-  const [yearStr, monthStr] = String(monthKey || '').split('-');
-  const year = Number(yearStr);
-  const month = Number(monthStr);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
-    return `${todayMonth()}-01`;
-  }
-  return `${year}-${String(month).padStart(2, '0')}-01`;
-}
-
-export function dateInputValueToMonthKey(dateValue) {
-  const [yearStr, monthStr] = String(dateValue || '').split('-');
-  const year = Number(yearStr);
-  const month = Number(monthStr);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
-    return todayMonth();
-  }
-  return `${year}-${String(month).padStart(2, '0')}`;
-}
-
-export function paymentTypeLabel(type, t) {
-  if (type === 'YILLIK') return t('Yillik');
-  if (type === 'IXTIYORIY') return t('Ixtiyoriy');
-  return t('Oylik');
-}
-
-export function imtiyozTypeLabel(type, t) {
-  if (type === 'FOIZ') return t('Foiz');
-  if (type === 'SUMMA') return t('Summa');
-  if (type === 'TOLIQ_OZOD') return t("To'liq ozod");
-  return type || '-';
-}
+export { sharedPaymentTypeLabel as paymentTypeLabel, sharedImtiyozTypeLabel as imtiyozTypeLabel };
 
 export function formatDateTimeLocale(value, locale = 'uz-UZ') {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleString(locale);
+  return formatDateTime(value, locale);
 }
 
 export function createDefaultPaymentForm() {

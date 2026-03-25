@@ -1,5 +1,5 @@
-import AdminWorkspace from '../../../features/admin/shared/AdminWorkspace';
+import { AdminArchiveWorkspace } from '../../../features/admin/archive';
 
 export default function AdminArchivePage() {
-  return <AdminWorkspace section="archive" />;
+  return <AdminArchiveWorkspace />;
 }

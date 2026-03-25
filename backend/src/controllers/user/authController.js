@@ -348,6 +348,13 @@ async function me(req, res) {
           avatarPath: true,
         },
       },
+      employee: {
+        select: {
+          firstName: true,
+          lastName: true,
+          avatarPath: true,
+        },
+      },
     },
   });
 
@@ -355,7 +362,7 @@ async function me(req, res) {
     throw new ApiError(401, "USER_INVALID", "Foydalanuvchi yaroqsiz");
   }
 
-  const profile = user.admin || user.teacher || user.student || null;
+  const profile = user.admin || user.teacher || user.student || user.employee || null;
   const fullName = profile
     ? `${profile.firstName || ""} ${profile.lastName || ""}`.trim()
     : user.username;

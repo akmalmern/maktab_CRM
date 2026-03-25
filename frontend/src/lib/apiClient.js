@@ -92,6 +92,14 @@ function shouldSkipRefresh(url = '') {
   );
 }
 
+function getApiErrorCode(error) {
+  return (
+    error?.response?.data?.error?.code ||
+    error?.response?.data?.code ||
+    null
+  );
+}
+
 function resolveLangHeaderValue() {
   const lang = i18n.language?.split('-')?.[0];
   if (lang === 'ru' || lang === 'en' || lang === 'uz') return lang;
@@ -128,8 +136,11 @@ function attachInterceptors() {
       const original = error?.config || {};
       const status = error?.response?.status;
       const url = original?.url || '';
+      const code = getApiErrorCode(error);
 
-      if (status !== 401 || original._retry || shouldSkipRefresh(url)) {
+      // Business-level credential errors (for example wrong current password in settings)
+      // should be shown to the user, not treated as a broken auth session.
+      if (status !== 401 || original._retry || shouldSkipRefresh(url) || code === 'INVALID_CREDENTIALS') {
         throw normalizeAxiosError(error);
       }
 

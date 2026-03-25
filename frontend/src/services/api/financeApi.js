@@ -106,6 +106,7 @@ export const financeApi = baseApi.injectEndpoints({
 
 export const {
   useGetFinanceSettingsQuery,
+  useGetFinanceStudentDetailQuery,
   useGetFinanceStudentsQuery,
   useLazyGetFinanceStudentDetailQuery,
   useUpdateFinanceSettingsMutation,

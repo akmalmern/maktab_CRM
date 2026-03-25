@@ -140,6 +140,9 @@ export default function StudentHomePage() {
         <Button variant="secondary" onClick={() => navigate('/student/baholar')}>
           {t('Mening baholarim')}
         </Button>
+        <Button variant="secondary" onClick={() => navigate('/student/sozlamalar')}>
+          {t('Sozlamalar')}
+        </Button>
       </div>
     </Card>
   );

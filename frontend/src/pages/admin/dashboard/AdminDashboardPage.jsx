@@ -1,5 +1,5 @@
-import AdminWorkspace from '../../../features/admin/shared/AdminWorkspace';
+import { AdminDashboardWorkspace } from '../../../features/admin/dashboard';
 
 export default function AdminDashboardPage() {
-  return <AdminWorkspace section="dashboard" />;
+  return <AdminDashboardWorkspace />;
 }

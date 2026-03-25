@@ -3,7 +3,17 @@ import { translateText } from '../../lib/i18nHelpers';
 import Button from './Button';
 import Modal from './Modal';
 
-export default function ConfirmModal({ open, title = 'Tasdiqlash', message, onConfirm, onCancel, loading }) {
+export default function ConfirmModal({
+  open,
+  title = 'Tasdiqlash',
+  message,
+  onConfirm,
+  onCancel,
+  loading,
+  confirmLabel = 'Tasdiqlash',
+  cancelLabel = 'Bekor qilish',
+  confirmVariant = 'danger',
+}) {
   const { t } = useTranslation();
 
   return (
@@ -11,10 +21,10 @@ export default function ConfirmModal({ open, title = 'Tasdiqlash', message, onCo
       <p className="text-sm leading-6 text-slate-600">{translateText(t, message)}</p>
       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
         <Button variant="secondary" onClick={onCancel} disabled={loading}>
-          {t('Bekor qilish')}
+          {translateText(t, cancelLabel)}
         </Button>
-        <Button variant="danger" onClick={onConfirm} disabled={loading}>
-          {t('Tasdiqlash')}
+        <Button variant={confirmVariant} onClick={onConfirm} disabled={loading}>
+          {translateText(t, confirmLabel)}
         </Button>
       </div>
     </Modal>

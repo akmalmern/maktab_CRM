@@ -1,5 +1,5 @@
-import AdminWorkspace from '../features/admin/shared/AdminWorkspace';
+import { AdminDashboardWorkspace } from '../features/admin/dashboard';
 
-export default function DashboardPage({ focusSection = 'dashboard' }) {
-  return <AdminWorkspace section={focusSection} />;
+export default function DashboardPage() {
+  return <AdminDashboardWorkspace />;
 }

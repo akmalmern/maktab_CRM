@@ -310,6 +310,9 @@ export default function DashboardSection() {
                 <Button variant="indigo" className="w-full" onClick={() => navigate('/admin/oylik')}>
                   {t('Oylik')}
                 </Button>
+                <Button variant="secondary" className="w-full" onClick={() => navigate('/admin/sozlamalar')}>
+                  {t('Sozlamalar')}
+                </Button>
               </div>
             </div>
           )}

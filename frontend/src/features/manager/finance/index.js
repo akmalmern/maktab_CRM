@@ -1,0 +1,1 @@
+export { ManagerDebtorsWorkspace } from './ManagerDebtorsWorkspace';

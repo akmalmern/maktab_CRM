@@ -417,7 +417,9 @@ model Enrollment {
   updatedAt DateTime @updatedAt
 
   @@index([studentId])
+  @@index([studentId, isActive, createdAt(sort: Desc)])
   @@index([classroomId])
+  @@index([classroomId, isActive, createdAt(sort: Desc)])
   @@index([isActive])
 }
 
@@ -477,7 +479,6 @@ model Davomat {
 
   sana DateTime
   holat DavomatHolati
-  izoh String?
 
   darsJadvali DarsJadvali @relation(fields: [darsJadvaliId], references: [id], onDelete: Cascade)
   student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
@@ -505,7 +506,6 @@ model Baho {
   turi BahoTuri
   ball Int
   maxBall Int
-  izoh String?
 
   darsJadvali DarsJadvali @relation(fields: [darsJadvaliId], references: [id], onDelete: Cascade)
   student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
@@ -564,6 +564,8 @@ model Employee {
   cardNumber String?
 
   note String?
+  avatarName String?
+  avatarPath String?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)

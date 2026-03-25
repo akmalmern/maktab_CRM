@@ -1,5 +1,5 @@
-import AdminWorkspace from '../../features/admin/shared/AdminWorkspace';
+import { ManagerPayrollWorkspace } from '../../features/manager/payroll';
 
 export default function ManagerPayrollPage() {
-  return <AdminWorkspace section="payroll" />;
+  return <ManagerPayrollWorkspace />;
 }

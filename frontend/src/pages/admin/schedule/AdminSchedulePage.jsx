@@ -1,5 +1,5 @@
-import AdminWorkspace from '../../../features/admin/shared/AdminWorkspace';
+import { AdminScheduleWorkspace } from '../../../features/admin/schedule';
 
 export default function AdminSchedulePage() {
-  return <AdminWorkspace section="jadval" />;
+  return <AdminScheduleWorkspace />;
 }

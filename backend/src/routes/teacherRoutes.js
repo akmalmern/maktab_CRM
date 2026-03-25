@@ -2,10 +2,16 @@ const router = require("express").Router();
 const { asyncHandler } = require("../middlewares/asyncHandler");
 const { requireAuth, requireRole } = require("../middlewares/auth");
 const { validate, validateBody } = require("../middlewares/validate");
+const {
+  uploadAvatar,
+  verifyUploadedAvatarSignature,
+  handleMulterErrors,
+} = require("../middlewares/avatarUpload");
 const attendance = require("../controllers/teacher/attendanceController");
 const schedule = require("../controllers/teacher/scheduleController");
 const grades = require("../controllers/teacher/gradeController");
 const profile = require("../controllers/teacher/profileController");
+const settings = require("../controllers/teacher/settingsController");
 const payroll = require("../controllers/teacher/payrollController");
 const {
   sanaQuerySchema,
@@ -21,12 +27,52 @@ const {
   payrollRunLinesQuerySchema,
   teacherPayslipListQuerySchema,
 } = require("../validators/payrollSchemas");
+const {
+  teacherProfileUpdateSchema,
+  teacherPasswordChangeSchema,
+} = require("../validators/teacherProfileSchemas");
+const teacherProfilePaths = ["/profil", "/profile"];
+const teacherProfilePasswordPaths = ["/profil/password", "/profile/password"];
+const teacherProfileAvatarPaths = ["/profil/avatar", "/profile/avatar"];
 
 router.get(
-  "/profil",
+  teacherProfilePaths,
   requireAuth,
   requireRole("TEACHER"),
   asyncHandler(profile.getTeacherProfile),
+);
+
+router.patch(
+  teacherProfilePaths,
+  requireAuth,
+  requireRole("TEACHER"),
+  validateBody(teacherProfileUpdateSchema),
+  asyncHandler(settings.updateTeacherProfile),
+);
+
+router.post(
+  teacherProfilePasswordPaths,
+  requireAuth,
+  requireRole("TEACHER"),
+  validateBody(teacherPasswordChangeSchema),
+  asyncHandler(settings.changeTeacherPassword),
+);
+
+router.post(
+  teacherProfileAvatarPaths,
+  requireAuth,
+  requireRole("TEACHER"),
+  uploadAvatar.single("file"),
+  verifyUploadedAvatarSignature,
+  handleMulterErrors,
+  asyncHandler(settings.uploadTeacherAvatar),
+);
+
+router.delete(
+  teacherProfileAvatarPaths,
+  requireAuth,
+  requireRole("TEACHER"),
+  asyncHandler(settings.deleteTeacherAvatar),
 );
 
 router.get(

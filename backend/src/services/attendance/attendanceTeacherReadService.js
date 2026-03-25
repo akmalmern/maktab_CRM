@@ -2,7 +2,7 @@ const prisma = require("../../prisma");
 const { ApiError } = require("../../utils/apiError");
 const { parseSanaOrToday } = require("../../utils/attendancePeriod");
 const { localDayRangeUtc } = require("../../utils/tashkentTime");
-const { getTeacherAttendanceScopeByUserId } = require("./attendanceService");
+const { getTeacherAttendanceScopeByUserId } = require("./attendanceScope");
 const {
   haftaKuniFromDate,
   ensureDateMatchesLessonDay,
@@ -144,7 +144,7 @@ async function getTeacherDarsDavomatiByUserId({ userId, darsId, query = {} }) {
       },
       davomatlar: {
         where: { sana: { gte: dayRange.from, lt: dayRange.to } },
-        select: { id: true, studentId: true, holat: true, izoh: true },
+        select: { id: true, studentId: true, holat: true },
       },
       baholar: {
         where: { sana: { gte: dayRange.from, lt: dayRange.to } },
@@ -154,7 +154,6 @@ async function getTeacherDarsDavomatiByUserId({ userId, darsId, query = {} }) {
           turi: true,
           ball: true,
           maxBall: true,
-          izoh: true,
         },
       },
     },
@@ -179,12 +178,10 @@ async function getTeacherDarsDavomatiByUserId({ userId, darsId, query = {} }) {
       fullName: `${enrollment.student.firstName} ${enrollment.student.lastName}`,
       username: enrollment.student.user?.username || "",
       holat: mark?.holat || "KELDI",
-      izoh: mark?.izoh || "",
       belgilangan: Boolean(mark),
       bahoBall: baho?.ball ?? null,
       bahoMaxBall: baho?.maxBall ?? 5,
       bahoTuri: baho?.turi ?? "JORIY",
-      bahoIzoh: baho?.izoh || "",
       baholangan: Boolean(baho),
     };
   });

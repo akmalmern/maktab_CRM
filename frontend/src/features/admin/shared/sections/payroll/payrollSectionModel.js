@@ -132,6 +132,45 @@ export function createRatesDataset() {
   };
 }
 
+export function mergeRatesDatasetPage(prev, response, targetPage) {
+  const incoming = response?.rates || [];
+  const total = Number(response?.total || 0);
+  const pages = Math.max(Number(response?.pages || 1), 1);
+  const nextRates = targetPage <= 1
+    ? incoming
+    : [
+        ...prev.rates,
+        ...incoming.filter((row) => !prev.rates.some((existing) => existing.id === row.id)),
+      ];
+  return {
+    rates: nextRates,
+    page: targetPage,
+    pages,
+    total,
+    loading: false,
+    error: null,
+    partial: nextRates.length < total,
+  };
+}
+
+export function buildRatesDatasetQuery(dataset, { limit = RATES_PAGE_LIMIT } = {}) {
+  return {
+    data: {
+      rates: dataset.rates,
+      page: dataset.page,
+      pages: dataset.pages,
+      total: dataset.total,
+      limit,
+    },
+    isLoading: dataset.loading && dataset.page <= 1,
+    isFetching: dataset.loading,
+    error: dataset.error ? { message: dataset.error } : null,
+    partial: dataset.partial,
+    hasMore: dataset.page < dataset.pages,
+    loadingMore: dataset.loading && dataset.page > 0,
+  };
+}
+
 export function buildSelectedRunTeacherRows({ selectedRun, teachers }) {
   if (!selectedRun) return [];
   const runItems = selectedRun.items || [];

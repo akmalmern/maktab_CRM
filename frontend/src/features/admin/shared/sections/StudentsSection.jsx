@@ -1,5 +1,7 @@
 import { CreatePersonPanel, PersonTable } from '../../../../components/admin';
 import AutoTranslate from '../../../../components/AutoTranslate';
+import { ConfirmModal } from '../../../../components/ui';
+import useAsyncConfirm from '../../../../hooks/useAsyncConfirm';
 import { useDeleteStudentMutation, useGetStudentsQuery } from '../../../../services/api/peopleApi';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +19,7 @@ export default function StudentsSection({
   const { t } = useTranslation();
   const studentsQueryResult = useGetStudentsQuery(studentQuery);
   const [deleteStudent, deleteStudentState] = useDeleteStudentMutation();
+  const { askConfirm, confirmModalProps } = useAsyncConfirm();
   const studentsData = studentsQueryResult.data || {};
   const students = {
     items: studentsData.students || [],
@@ -27,7 +30,10 @@ export default function StudentsSection({
   };
 
   async function handleDeleteStudent(id) {
-    const ok = window.confirm(t("Studentni o'chirish"));
+    const ok = await askConfirm({
+      title: t("Studentni o'chirish"),
+      message: t("Studentni o'chirmoqchimisiz?"),
+    });
     if (!ok) return;
     try {
       await deleteStudent(id).unwrap();
@@ -74,6 +80,8 @@ export default function StudentsSection({
           onDelete={handleDeleteStudent}
           onOpenDetail={onOpenDetail}
         />
+
+        <ConfirmModal {...confirmModalProps} loading={deleteStudentState.isLoading} />
       </div>
     </AutoTranslate>
   );

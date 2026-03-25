@@ -1,4 +1,7 @@
 const { z } = require("zod");
+const {
+  listClassroomStudentsQuerySchema,
+} = require("../modules/classrooms/schemas");
 
 const pageSchema = z.coerce.number().int().min(1).optional();
 const limitSchema = z.coerce.number().int().min(1).max(100).optional();
@@ -79,14 +82,6 @@ const listStudentsQuerySchema = z
     filter: classroomFilterSchema,
     sort: studentSortSchema,
     status: personStatusSchema,
-  })
-  .strict();
-
-const listClassroomStudentsQuerySchema = z
-  .object({
-    page: pageSchema,
-    limit: limitSchema,
-    search: searchSchema,
   })
   .strict();
 

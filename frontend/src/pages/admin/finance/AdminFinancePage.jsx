@@ -1,5 +1,5 @@
-import AdminWorkspace from '../../../features/admin/shared/AdminWorkspace';
+import { AdminFinanceWorkspace } from '../../../features/admin/finance';
 
 export default function AdminFinancePage() {
-  return <AdminWorkspace section="finance" />;
+  return <AdminFinanceWorkspace />;
 }

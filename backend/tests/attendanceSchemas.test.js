@@ -24,6 +24,21 @@ test("davomatSaqlashSchema rejects duplicate student rows", () => {
   );
 });
 
+test("davomatSaqlashSchema rejects removed izoh fields", () => {
+  const parsed = davomatSaqlashSchema.safeParse({
+    sana: "2026-03-10",
+    davomatlar: [
+      {
+        studentId: "cmr0000000000000000000001",
+        holat: "KELDI",
+        izoh: "legacy note",
+        bahoIzoh: "legacy grade note",
+      },
+    ],
+  });
+  assert.equal(parsed.success, false);
+});
+
 test("adminHisobotQuerySchema supports holat + pagination", () => {
   const parsed = adminHisobotQuerySchema.safeParse({
     sana: "2026-03-10",

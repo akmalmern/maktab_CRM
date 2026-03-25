@@ -1,4 +1,9 @@
 const { z } = require("zod");
+const {
+  createClassroomSchema,
+  promoteClassroomSchema,
+  annualClassPromotionSchema,
+} = require("../modules/classrooms/schemas");
 
 const requiredText = (field) =>
   z
@@ -63,60 +68,6 @@ const createStudentSchema = z
 const createSubjectSchema = z
   .object({
     name: requiredText("name"),
-  })
-  .strict();
-
-const classroomNameSchema = requiredText("name")
-  .regex(/^\d{1,2}\s*-\s*.+$/u, "name formati 7-A yoki 10-FizMat bo'lishi kerak")
-  .transform((value) => {
-    const dashIndex = value.indexOf("-");
-    const gradeRaw = dashIndex >= 0 ? value.slice(0, dashIndex) : value;
-    const suffixRaw = dashIndex >= 0 ? value.slice(dashIndex + 1) : "";
-    const grade = Number.parseInt(String(gradeRaw).trim(), 10);
-    let suffix = String(suffixRaw || "").trim().replace(/\s{2,}/g, " ");
-    if (suffix.length === 1) {
-      suffix = suffix.toUpperCase();
-    }
-    return `${grade}-${suffix}`;
-  })
-  .refine(
-    (value) => {
-      const grade = Number.parseInt(value.split("-")[0], 10);
-      return Number.isFinite(grade) && grade >= 1 && grade <= 11;
-    },
-    "name noto'g'ri: sinf darajasi 1 dan 11 gacha bo'lishi kerak",
-  )
-  .refine((value) => String(value.split("-").slice(1).join("-") || "").trim().length > 0, "name suffix bo'sh bo'lishi mumkin emas");
-
-const academicYearSchema = requiredText("academicYear")
-  .regex(
-    /^\d{4}\s*-\s*\d{4}$/,
-    "academicYear formati 2025-2026 bo'lishi kerak",
-  )
-  .transform((value) => value.replace(/\s+/g, ""))
-  .refine((value) => {
-    const [startRaw, endRaw] = value.split("-");
-    const start = Number.parseInt(startRaw, 10);
-    const end = Number.parseInt(endRaw, 10);
-    return Number.isFinite(start) && Number.isFinite(end) && end === start + 1;
-  }, "academicYear noto'g'ri: ikkinchi yil birinchisidan 1 ga katta bo'lishi kerak");
-
-const createClassroomSchema = z
-  .object({
-    name: classroomNameSchema,
-    academicYear: academicYearSchema,
-  })
-  .strict();
-
-const promoteClassroomSchema = z
-  .object({
-    targetClassroomId: z.string().cuid("targetClassroomId noto'g'ri"),
-  })
-  .strict();
-
-const annualClassPromotionSchema = z
-  .object({
-    force: z.coerce.boolean().optional().default(false),
   })
   .strict();
 

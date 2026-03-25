@@ -2,7 +2,7 @@ require("dotenv").config();
 const { env } = require("./config/env");
 const app = require("./app");
 const { logger } = require("./utils/logger");
-const { applyAnnualPromotion } = require("./services/classroomPromotionService");
+const { applyAnnualPromotion } = require("./modules/classrooms");
 const { runAutoPayrollTick } = require("./services/payroll/payrollAutomationRunner");
 const { runAutoFinanceTick } = require("./services/financeAutomationRunner");
 const { runRefreshSessionCleanupTick } = require("./services/refreshSessionCleanupService");

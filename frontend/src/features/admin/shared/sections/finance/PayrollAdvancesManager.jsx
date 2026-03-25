@@ -2,7 +2,8 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { useAppSelector } from '../../../../../app/hooks';
-import { Button, Card } from '../../../../../components/ui';
+import { Button, Card, ConfirmModal } from '../../../../../components/ui';
+import useAsyncConfirm from '../../../../../hooks/useAsyncConfirm';
 import { getErrorMessage } from '../../../../../lib/apiClient';
 import { useGetTeachersQuery } from '../../../../../services/api/peopleApi';
 import {
@@ -68,6 +69,7 @@ export default function PayrollAdvancesManager() {
   const role = useAppSelector((state) => state.auth.role);
   const isAdminView = role === 'ADMIN';
   const locale = resolveLocale(i18n.language);
+  const { askConfirm, confirmModalProps } = useAsyncConfirm();
 
   const [advanceFilters, setAdvanceFilters] = useState({
     ...DEFAULT_ADVANCE_FILTERS,
@@ -139,7 +141,10 @@ export default function PayrollAdvancesManager() {
   }
 
   const handleDeleteAdvance = useCallback(async (advanceId) => {
-    const ok = window.confirm(t("Avans yozuvini o'chirmoqchimisiz?"));
+    const ok = await askConfirm({
+      title: t("Avansni o'chirish"),
+      message: t("Avans yozuvini o'chirmoqchimisiz?"),
+    });
     if (!ok) return;
     try {
       await deletePayrollAdvance(advanceId).unwrap();
@@ -147,7 +152,7 @@ export default function PayrollAdvancesManager() {
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
-  }, [deletePayrollAdvance, t]);
+  }, [askConfirm, deletePayrollAdvance, t]);
 
   const advanceColumns = useMemo(
     () => [
@@ -213,6 +218,8 @@ export default function PayrollAdvancesManager() {
         advanceColumns={advanceColumns}
         advances={advances}
       />
+
+      <ConfirmModal {...confirmModalProps} loading={busy} />
     </div>
   );
 }

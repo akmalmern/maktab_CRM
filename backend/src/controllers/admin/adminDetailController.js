@@ -16,7 +16,6 @@ function mapGradeRow(row) {
     turi: row.turi,
     ball: row.ball,
     maxBall: row.maxBall,
-    izoh: row.izoh || "",
     teacher: row.teacher || null,
     student: row.student || null,
     darsJadvali: row.darsJadvali || null,
@@ -28,7 +27,6 @@ function mapAttendanceRow(row) {
     id: row.id,
     sana: row.sana,
     holat: row.holat,
-    izoh: row.izoh || "",
     darsJadvali: row.darsJadvali || null,
   };
 }

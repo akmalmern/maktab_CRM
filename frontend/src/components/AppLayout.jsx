@@ -211,6 +211,11 @@ export default function AppLayout() {
           label: t("Arxiv"),
           icon: "M4 7h16v12H4zM9 11h6M9 15h6M7 3h10v4H7z",
         },
+        {
+          to: "/admin/sozlamalar",
+          label: t("Sozlamalar"),
+          icon: "M10.5 4.5h3l.6 2.2a1 1 0 0 0 .95.73l2.17.17 1.5 2.6-1.57 1.47a1 1 0 0 0-.26 1.06l.46 2.13-2.12 1.23-1.55-1.37a1 1 0 0 0-1.1-.16L12 18l-1.98-.57a1 1 0 0 0-1.1.16l-1.55 1.37-2.12-1.23.46-2.13a1 1 0 0 0-.26-1.06L3.88 10.2l1.5-2.6 2.17-.17a1 1 0 0 0 .95-.73l.6-2.2ZM12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z",
+        },
       ],
       TEACHER: [
         {
@@ -238,6 +243,11 @@ export default function AppLayout() {
           label: t("Oyliklar"),
           icon: "M4 7h16M7 4h10v4H7V4Zm-3 7h18v9H4v-9Zm4 3h8M8 17h5",
         },
+        {
+          to: "/teacher/sozlamalar",
+          label: t("Sozlamalar"),
+          icon: "M10.5 4.5h3l.6 2.2a1 1 0 0 0 .95.73l2.17.17 1.5 2.6-1.57 1.47a1 1 0 0 0-.26 1.06l.46 2.13-2.12 1.23-1.55-1.37a1 1 0 0 0-1.1-.16L12 18l-1.98-.57a1 1 0 0 0-1.1.16l-1.55 1.37-2.12-1.23.46-2.13a1 1 0 0 0-.26-1.06L3.88 10.2l1.5-2.6 2.17-.17a1 1 0 0 0 .95-.73l.6-2.2ZM12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z",
+        },
       ],
       STUDENT: [
         {
@@ -260,6 +270,11 @@ export default function AppLayout() {
           label: t("Mening Baholarim"),
           icon: "M12 3v18M3 12h18",
         },
+        {
+          to: "/student/sozlamalar",
+          label: t("Sozlamalar"),
+          icon: "M10.5 4.5h3l.6 2.2a1 1 0 0 0 .95.73l2.17.17 1.5 2.6-1.57 1.47a1 1 0 0 0-.26 1.06l.46 2.13-2.12 1.23-1.55-1.37a1 1 0 0 0-1.1-.16L12 18l-1.98-.57a1 1 0 0 0-1.1.16l-1.55 1.37-2.12-1.23.46-2.13a1 1 0 0 0-.26-1.06L3.88 10.2l1.5-2.6 2.17-.17a1 1 0 0 0 .95-.73l.6-2.2ZM12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z",
+        },
       ],
       MANAGER: [
         {
@@ -276,6 +291,11 @@ export default function AppLayout() {
           to: "/manager/oylik",
           label: t("Oyliklar"),
           icon: "M4 7h16M7 4h10v4H7V4Zm-3 7h18v9H4v-9Zm4 3h8M8 17h5",
+        },
+        {
+          to: "/manager/sozlamalar",
+          label: t("Sozlamalar"),
+          icon: "M10.5 4.5h3l.6 2.2a1 1 0 0 0 .95.73l2.17.17 1.5 2.6-1.57 1.47a1 1 0 0 0-.26 1.06l.46 2.13-2.12 1.23-1.55-1.37a1 1 0 0 0-1.1-.16L12 18l-1.98-.57a1 1 0 0 0-1.1.16l-1.55 1.37-2.12-1.23.46-2.13a1 1 0 0 0-.26-1.06L3.88 10.2l1.5-2.6 2.17-.17a1 1 0 0 0 .95-.73l.6-2.2ZM12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z",
         },
       ],
     }),
@@ -302,6 +322,7 @@ export default function AppLayout() {
       baholar: t("Baholar"),
       jadval: t("Dars Jadvali"),
       qarzdorlar: t("Qarzdorlar"),
+      sozlamalar: t("Sozlamalar"),
       login: t("Login"),
     }),
     [t],

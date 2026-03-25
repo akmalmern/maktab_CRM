@@ -1,5 +1,7 @@
 import { CreatePersonPanel, PersonTable } from '../../../../components/admin';
 import AutoTranslate from '../../../../components/AutoTranslate';
+import { ConfirmModal } from '../../../../components/ui';
+import useAsyncConfirm from '../../../../hooks/useAsyncConfirm';
 import { useDeleteTeacherMutation, useGetTeachersQuery } from '../../../../services/api/peopleApi';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +19,7 @@ export default function TeachersSection({
   const { t } = useTranslation();
   const teachersQueryResult = useGetTeachersQuery(teacherQuery);
   const [deleteTeacher, deleteTeacherState] = useDeleteTeacherMutation();
+  const { askConfirm, confirmModalProps } = useAsyncConfirm();
   const teachersData = teachersQueryResult.data || {};
   const teachers = {
     items: teachersData.teachers || [],
@@ -27,7 +30,10 @@ export default function TeachersSection({
   };
 
   async function handleDeleteTeacher(id) {
-    const ok = window.confirm(t("Teacherni o'chirish"));
+    const ok = await askConfirm({
+      title: t("Teacherni o'chirish"),
+      message: t("Teacherni o'chirmoqchimisiz?"),
+    });
     if (!ok) return;
     try {
       await deleteTeacher(id).unwrap();
@@ -71,6 +77,8 @@ export default function TeachersSection({
           onDelete={handleDeleteTeacher}
           onOpenDetail={onOpenDetail}
         />
+
+        <ConfirmModal {...confirmModalProps} loading={deleteTeacherState.isLoading} />
       </div>
     </AutoTranslate>
   );

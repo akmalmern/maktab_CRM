@@ -64,13 +64,15 @@ function buildFilteredDebtScopeSql({
     debt AS (
       SELECT
         m."studentId",
-        COUNT(*) FILTER (WHERE m."qoldiqSumma" > 0)::int AS "debtMonths",
-        COALESCE(SUM(CASE WHEN m."qoldiqSumma" > 0 THEN m."qoldiqSumma" ELSE 0 END), 0)::int AS "totalDebtAmount",
+        COUNT(*)::int AS "debtMonths",
+        COALESCE(SUM(m."qoldiqSumma"), 0)::int AS "totalDebtAmount",
         COALESCE(SUM(CASE WHEN m.yil = ${currentYear} AND m.oy = ${currentMonth} THEN m."qoldiqSumma" ELSE 0 END), 0)::int AS "thisMonthDebtAmount",
         COALESCE(SUM(CASE WHEN m.yil = ${previousYear} AND m.oy = ${previousMonth} THEN m."qoldiqSumma" ELSE 0 END), 0)::int AS "previousMonthDebtAmount",
         COALESCE(SUM(CASE WHEN ${targetYear}::int IS NOT NULL AND m.yil = ${targetYear}::int AND m.oy = ${targetMonth}::int THEN m."qoldiqSumma" ELSE 0 END), 0)::int AS "selectedMonthDebtAmount"
       FROM "StudentOyMajburiyat" m
-      WHERE m.yil < ${currentYear} OR (m.yil = ${currentYear} AND m.oy <= ${currentMonth})
+      WHERE m."holat" IN ('BELGILANDI', 'QISMAN_TOLANGAN')
+        AND m."qoldiqSumma" > 0
+        AND (m.yil < ${currentYear} OR (m.yil = ${currentYear} AND m.oy <= ${currentMonth}))
       GROUP BY m."studentId"
     ),
     filtered AS (

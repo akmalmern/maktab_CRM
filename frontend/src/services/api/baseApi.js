@@ -52,6 +52,12 @@ export const baseApi = createApi({
     'PayrollAdvance',
     'PayrollEmployee',
     'PayrollPayslip',
+    'ManagerClassroom',
+    'ManagerDebtorList',
+    'ManagerDebtorNotes',
+    'ManagerPaymentDetail',
+    'TeacherAttendance',
+    'TeacherProfile',
   ],
   endpoints: () => ({}),
 });
